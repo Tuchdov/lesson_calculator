@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../chat_guides"
+		},
+		{
+			"path": "../vocal_business_calc"
+		}
+	],
+	"settings": {}
+}
