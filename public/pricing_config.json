@@ -1,0 +1,10 @@
+{
+  "calendar_id": "primary",
+  "cancelled_keywords": ["cancelled", "canceled", "cancel", "בוטל", "מבוטל"],
+  "student_name_regex": "^([^-|:]+)",
+  "prices": {
+    "regular":     { "60": 250, "45": 200, "30": 180 },
+    "non_regular": { "60": 270, "45": 220, "30": 200 }
+  },
+  "custom_prices": {}
+}
