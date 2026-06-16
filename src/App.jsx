@@ -1,122 +1,65 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { useState, useEffect } from 'react'
+import { useAuth } from './hooks/useAuth.js'
+import { useUserSettings } from './hooks/useUserSettings.js'
+import { AuthScreen } from './components/AuthScreen.jsx'
+import { Sidebar } from './components/Sidebar.jsx'
+import { CalculatorPage } from './components/CalculatorPage.jsx'
+import { CustomPricesPage } from './components/CustomPricesPage.jsx'
+import styles from './App.module.css'
 
-function App() {
-  const [count, setCount] = useState(0)
+export default function App() {
+  const { accessToken, userEmail, signIn, signOut, error: authError } = useAuth()
+  const { settings, saveSettings, isReady } = useUserSettings(userEmail)
+  const [page, setPage] = useState('calculator')
+  const [config, setConfig] = useState(null)
+
+  useEffect(() => {
+    fetch('/pricing_config.json')
+      .then(r => r.json())
+      .then(setConfig)
+      .catch(() => {})
+  }, [])
+
+  const handleCustomPriceChange = async (student, prices) => {
+    const next = {
+      ...settings,
+      custom_prices: { ...settings.custom_prices, [student]: prices },
+    }
+    await saveSettings(next)
+  }
+
+  if (!accessToken) {
+    return <AuthScreen onSignIn={signIn} error={authError} />
+  }
+
+  if (!config || !isReady) {
+    return (
+      <div className={styles.loading}>
+        <span className={styles.spinner} />
+        Loading…
+      </div>
+    )
+  }
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+    <div className={styles.shell}>
+      <Sidebar page={page} onNavigate={setPage} userEmail={userEmail} onSignOut={signOut} />
+      <main className={styles.main}>
+        {page === 'calculator' && (
+          <CalculatorPage
+            accessToken={accessToken}
+            config={config}
+            customPrices={settings.custom_prices}
+            onCustomPriceChange={handleCustomPriceChange}
+          />
+        )}
+        {page === 'custom-prices' && (
+          <CustomPricesPage
+            settings={settings}
+            onSave={saveSettings}
+          />
+        )}
+      </main>
+    </div>
   )
 }
-
-export default App
