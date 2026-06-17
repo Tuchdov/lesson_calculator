@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useCalendarData } from '../hooks/useCalendarData.js'
 import { EditableTable } from './EditableTable.jsx'
 import { safeTotalsCsvBytes } from '../lib/csvExport.js'
@@ -9,12 +9,16 @@ function currentMonth() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-export function CalculatorPage({ accessToken, config, customPrices, onCustomPriceChange }) {
+export function CalculatorPage({ accessToken, config, customPrices, onCustomPriceChange, onStudentsChange }) {
   const [month, setMonth] = useState(currentMonth)
   const { rows, summary, loading, error, calculate } = useCalendarData(accessToken, {
     ...config,
     custom_prices: customPrices,
   })
+
+  useEffect(() => {
+    if (rows) onStudentsChange?.(rows.map(r => r.student))
+  }, [rows, onStudentsChange])
 
   const handleRun = () => calculate(month)
 

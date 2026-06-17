@@ -85,21 +85,30 @@ export function isRegular(lessons, invoiceStart, invoiceEnd) {
 }
 
 export function resolvePriceTable(student, regular, regularPrices, nonRegularPrices, customPrices) {
+  const defaults = regular ? regularPrices : nonRegularPrices
   if (customPrices && student in customPrices) {
     const entry = customPrices[student]
     if (entry && typeof entry === 'object') {
       if ('regular' in entry || 'non_regular' in entry) {
         const tierKey = regular ? 'regular' : 'non_regular'
         const tierPrices = entry[tierKey]
-        if (tierPrices && typeof tierPrices === 'object') return tierPrices
+        if (tierPrices && typeof tierPrices === 'object') return fillDurations(tierPrices, defaults)
         const fallbackKey = regular ? 'non_regular' : 'regular'
         const fallback = entry[fallbackKey]
-        if (fallback && typeof fallback === 'object') return fallback
+        if (fallback && typeof fallback === 'object') return fillDurations(fallback, defaults)
       }
       if ('60' in entry && '45' in entry && '30' in entry) return entry
     }
   }
-  return regular ? regularPrices : nonRegularPrices
+  return defaults
+}
+
+function fillDurations(prices, defaults) {
+  return {
+    '60': prices['60'] ?? defaults['60'],
+    '45': prices['45'] ?? defaults['45'],
+    '30': prices['30'] ?? defaults['30'],
+  }
 }
 
 export function calculatePayments(events, config, monthStr) {

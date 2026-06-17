@@ -76,7 +76,16 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange }) {
       const v = parseFloat(draft?.[d])
       parsed[d] = isNaN(v) ? prices[d] : v
     }
-    onCustomPriceChange?.(row.student, parsed)
+    // Save in tiered format so both regular and non-regular are covered.
+    // If the student already has tiered custom prices, update the current
+    // type's tier and preserve the other.
+    let update
+    if (custom && ('regular' in custom || 'non_regular' in custom)) {
+      update = { ...custom, [row.student_type]: parsed }
+    } else {
+      update = { regular: parsed, non_regular: parsed }
+    }
+    onCustomPriceChange?.(row.student, update)
     setEditing(false)
   }
 
@@ -131,12 +140,22 @@ function groupByType(rows = []) {
 }
 
 function resolveRowPrices(student, regular, config, custom) {
+  const defaults = regular ? config?.prices?.regular : config?.prices?.non_regular
   if (custom) {
     if ('regular' in custom || 'non_regular' in custom) {
       const key = regular ? 'regular' : 'non_regular'
-      return custom[key] ?? custom[regular ? 'non_regular' : 'regular'] ?? config?.prices?.regular
+      const tier = custom[key] ?? custom[regular ? 'non_regular' : 'regular']
+      if (tier && typeof tier === 'object') return fillMissing(tier, defaults)
     }
     if ('60' in custom) return custom
   }
-  return regular ? config?.prices?.regular : config?.prices?.non_regular
+  return defaults
+}
+
+function fillMissing(prices, defaults = {}) {
+  return {
+    '60': prices['60'] ?? defaults['60'],
+    '45': prices['45'] ?? defaults['45'],
+    '30': prices['30'] ?? defaults['30'],
+  }
 }

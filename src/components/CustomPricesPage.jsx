@@ -5,7 +5,7 @@ const DURATION_LABELS = { '60': '60 min', '45': '45 min', '30': '30 min' }
 const TYPES = ['regular', 'non_regular']
 const TYPE_LABEL = { regular: 'Regular', non_regular: 'Non-regular' }
 
-export function CustomPricesPage({ settings, onSave }) {
+export function CustomPricesPage({ settings, onSave, availableStudents = [] }) {
   const [customPrices, setCustomPrices] = useState(
     () => deepClone(settings?.custom_prices ?? {})
   )
@@ -86,10 +86,16 @@ export function CustomPricesPage({ settings, onSave }) {
         <input
           className={styles.input}
           placeholder="Student name"
+          list="student-suggestions"
           value={newStudent}
           onChange={e => setNewStudent(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleAdd()}
         />
+        <datalist id="student-suggestions">
+          {availableStudents
+            .filter(s => !customPrices[s])
+            .map(s => <option key={s} value={s} />)}
+        </datalist>
         <button className={styles.btnPrimary} onClick={handleAdd}>Add student</button>
       </div>
 

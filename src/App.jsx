@@ -12,6 +12,7 @@ export default function App() {
   const { settings, saveSettings, isReady } = useUserSettings(userEmail)
   const [page, setPage] = useState('calculator')
   const [config, setConfig] = useState(null)
+  const [knownStudents, setKnownStudents] = useState([])
 
   useEffect(() => {
     fetch('/pricing_config.json')
@@ -51,12 +52,14 @@ export default function App() {
             config={config}
             customPrices={settings.custom_prices}
             onCustomPriceChange={handleCustomPriceChange}
+            onStudentsChange={setKnownStudents}
           />
         )}
         {page === 'custom-prices' && (
           <CustomPricesPage
             settings={settings}
             onSave={saveSettings}
+            availableStudents={knownStudents}
           />
         )}
       </main>
