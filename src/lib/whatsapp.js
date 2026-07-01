@@ -19,7 +19,8 @@ export function validateIsraeliPhone(phone) {
 export function buildPaymentMessage(studentName, amount, monthStr) {
   const [, mm] = (monthStr ?? '').split('-')
   const monthName = HEBREW_MONTHS[parseInt(mm, 10)] ?? monthStr
-  return `שלום ${studentName} 😊\nהנה סיכום השיעורים שלך לחודש ${monthName}:\nסה״כ לתשלום: ₪${amount}\nלתשלום: [קישור לתשלום]\nתודה ונתראה! 🎵`
+  const safeName = (studentName ?? '').replace(/[\r\n]+/g, ' ').trim()
+  return `שלום ${safeName} 😊\nהנה סיכום השיעורים שלך לחודש ${monthName}:\n סה״כ לתשלום: ₪${amount}\n🔗 לתשלום: [קישור לתשלום]\nתודה ונתראה! 🙏`
 }
 
 export function buildWhatsAppUrl(phone, message) {

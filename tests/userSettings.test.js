@@ -35,3 +35,11 @@ Deno.test('sha256Hex: produces consistent hex string', async () => {
   assertEquals(hash, '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824')
   assertEquals(hash.length, 64)
 })
+
+Deno.test('loadUserSettings: returns defaults when stored JSON is corrupt', async () => {
+  const stub = makeStub()
+  const key = 'vocalCalc:settings:' + await sha256Hex('user@example.com')
+  stub.setItem(key, '{ this is not valid JSON !!!')
+  const settings = await loadUserSettings('user@example.com', stub)
+  assertEquals(settings, { custom_prices: {}, customer_details: {} })
+})

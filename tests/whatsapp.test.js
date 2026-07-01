@@ -99,6 +99,25 @@ Deno.test('buildWhatsAppUrl: URL-encodes the message', () => {
   assertEquals(url.includes('שלום'), false)
 })
 
+Deno.test('buildPaymentMessage: null monthStr falls back gracefully', () => {
+  // monthStr ?? '' → '' → split('-') → ['', undefined] → parseInt(undefined) = NaN → fallback is monthStr (null)
+  // The message should still contain the student name and amount without crashing
+  const msg = buildPaymentMessage('Test', 100, null)
+  assertMatch(msg, /Test/)
+  assertMatch(msg, /100/)
+})
+
+Deno.test('buildPaymentMessage: undefined monthStr falls back gracefully', () => {
+  const msg = buildPaymentMessage('Test', 100, undefined)
+  assertMatch(msg, /Test/)
+  assertMatch(msg, /100/)
+})
+
+Deno.test('formatPhoneForWhatsApp: empty string yields 972 with empty suffix', () => {
+  // Edge: no digits → digits = '' → slice(1) = '' → '972'
+  assertEquals(formatPhoneForWhatsApp(''), '972')
+})
+
 Deno.test('buildWhatsAppUrl: full round-trip produces valid URL', () => {
   const phone = '054-7654321'
   const msg = buildPaymentMessage('רחל כהן', 350, '2026-06')

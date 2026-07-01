@@ -130,6 +130,11 @@
   color: #fff;
 }
 .waChipReady:hover { background: #128C7E; }
+.waChipReady:focus-visible,
+.waChipMissing:focus-visible {
+  outline: 2px solid var(--md-blue);
+  outline-offset: 2px;
+}
 
 .waChipMissing {
   background: var(--md-amber-tonal);
@@ -180,7 +185,7 @@
   transition: border-color 0.15s;
   text-align: left;
 }
-.phoneInput:focus { outline: none; border-color: var(--md-blue); box-shadow: 0 0 0 2px rgba(26,115,232,.15); }
+.phoneInput:focus { outline: 2px solid transparent; border-color: var(--md-blue); box-shadow: 0 0 0 2px rgba(26,115,232,.15); }
 .phoneInputError { border-color: var(--md-red) !important; background: var(--md-red-tonal); }
 
 .phoneErrorMsg {
@@ -201,6 +206,7 @@
   white-space: nowrap;
 }
 .btnSavePhone:hover { background: var(--md-blue-hover); }
+.btnSavePhone:focus-visible { outline: 2px solid var(--md-blue); outline-offset: 2px; }
 
 .btnCancelPhone {
   background: none;
@@ -212,3 +218,4 @@
   padding: 7px 6px;
 }
 .btnCancelPhone:hover { color: var(--md-text); }
+.btnCancelPhone:focus-visible { outline: 2px solid var(--md-border); outline-offset: 2px; }

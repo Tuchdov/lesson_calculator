@@ -32,7 +32,10 @@ export default function App() {
   const handleCustomerDetailChange = async (student, details) => {
     const next = {
       ...settings,
-      customer_details: { ...settings.customer_details, [student]: details },
+      customer_details: {
+        ...settings.customer_details,
+        [student]: { ...settings.customer_details?.[student], ...details },
+      },
     }
     await saveSettings(next)
   }

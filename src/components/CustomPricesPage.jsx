@@ -31,7 +31,7 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [] }) {
         non_regular: { '60': '', '45': '', '30': '' },
       },
     }))
-    setPhones(prev => ({ ...prev, [name]: phones[name] ?? '' }))
+    setPhones(prev => ({ ...prev, [name]: prev[name] ?? '' }))
     setNewStudent('')
     setSaved(false)
   }

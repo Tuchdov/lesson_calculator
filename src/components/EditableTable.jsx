@@ -111,12 +111,12 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, onC
     }
   }
 
-  const handleSaveAndSend = () => {
+  const handleSaveAndSend = async () => {
     if (!validateIsraeliPhone(phoneInput)) {
       setPhoneError(true)
       return
     }
-    onCustomerDetailChange?.(row.student, { phone: phoneInput })
+    await onCustomerDetailChange?.(row.student, { phone: phoneInput })
     setExpandedRow(null)
     const msg = buildPaymentMessage(row.student, roundedAmount, month)
     window.open(buildWhatsAppUrl(phoneInput, msg), '_blank', 'noopener')
