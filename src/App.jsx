@@ -29,6 +29,14 @@ export default function App() {
     await saveSettings(next)
   }
 
+  const handleCustomerDetailChange = async (student, details) => {
+    const next = {
+      ...settings,
+      customer_details: { ...settings.customer_details, [student]: details },
+    }
+    await saveSettings(next)
+  }
+
   if (!accessToken) {
     return <AuthScreen onSignIn={signIn} error={authError} />
   }
@@ -53,6 +61,8 @@ export default function App() {
             customPrices={settings.custom_prices}
             onCustomPriceChange={handleCustomPriceChange}
             onStudentsChange={setKnownStudents}
+            customerDetails={settings.customer_details}
+            onCustomerDetailChange={handleCustomerDetailChange}
           />
         )}
         {page === 'custom-prices' && (
