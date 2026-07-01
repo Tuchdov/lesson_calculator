@@ -101,3 +101,114 @@
 .saveBtn { background: var(--md-blue); color: #fff; }
 .saveBtn:hover { background: var(--md-blue-hover); }
 .cancelBtn { background: var(--md-hover); color: var(--md-text-muted); }
+
+/* ── WhatsApp column ── */
+.waCell {
+  text-align: center;
+  white-space: nowrap;
+  padding: 8px 12px !important;
+}
+
+.waChipReady,
+.waChipMissing {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 12px;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-gs);
+  transition: background 0.15s, opacity 0.15s;
+  line-height: 1;
+}
+
+.waChipReady {
+  background: #25D366;
+  color: #fff;
+}
+.waChipReady:hover { background: #128C7E; }
+
+.waChipMissing {
+  background: var(--md-amber-tonal);
+  color: var(--md-amber);
+  border: 1.5px solid color-mix(in srgb, var(--md-amber) 35%, transparent);
+}
+.waChipMissing:hover { background: color-mix(in srgb, var(--md-amber-tonal) 70%, var(--md-amber) 10%); }
+.waChipActive { opacity: 0.7; }
+
+/* ── Inline phone expansion row ── */
+.expandRow td { padding: 0 !important; border-bottom: none !important; }
+
+.expandCell {
+  background: var(--md-amber-tonal) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--md-amber) 30%, transparent) !important;
+  border-right: 3px solid var(--md-amber);
+  padding: 10px 16px !important;
+}
+
+.expandInner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.expandLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--md-amber);
+  white-space: nowrap;
+}
+
+.expandInputWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.phoneInput {
+  padding: 7px 11px;
+  border: 1px solid var(--md-border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-family: var(--font-rb);
+  width: 160px;
+  background: var(--md-surface);
+  transition: border-color 0.15s;
+  text-align: left;
+}
+.phoneInput:focus { outline: none; border-color: var(--md-blue); box-shadow: 0 0 0 2px rgba(26,115,232,.15); }
+.phoneInputError { border-color: var(--md-red) !important; background: var(--md-red-tonal); }
+
+.phoneErrorMsg {
+  font-size: 11px;
+  color: var(--md-red);
+}
+
+.btnSavePhone {
+  background: var(--md-blue);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: var(--font-gs);
+  white-space: nowrap;
+}
+.btnSavePhone:hover { background: var(--md-blue-hover); }
+
+.btnCancelPhone {
+  background: none;
+  border: none;
+  color: var(--md-text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  font-family: var(--font-gs);
+  padding: 7px 6px;
+}
+.btnCancelPhone:hover { color: var(--md-text); }
