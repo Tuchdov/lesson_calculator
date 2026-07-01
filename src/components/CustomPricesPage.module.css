@@ -142,3 +142,42 @@
   padding: 48px;
   font-size: 15px;
 }
+
+/* ── Phone field ── */
+.phoneRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--md-border);
+}
+
+.phoneLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--md-text-muted);
+  padding-top: 9px;
+  white-space: nowrap;
+  min-width: 60px;
+}
+
+.phoneInputWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.phoneInput {
+  width: 180px;
+  text-align: left;
+}
+
+.phoneInputError {
+  border-color: var(--md-red) !important;
+  background: var(--md-red-tonal);
+}
+
+.phoneError {
+  font-size: 11px;
+  color: var(--md-red);
+}

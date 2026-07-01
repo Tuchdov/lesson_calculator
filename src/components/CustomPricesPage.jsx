@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { validateIsraeliPhone } from '../lib/whatsapp.js'
 import styles from './CustomPricesPage.module.css'
 
 const DURATION_LABELS = { '60': '60 min', '45': '45 min', '30': '30 min' }
@@ -9,6 +10,14 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [] }) {
   const [customPrices, setCustomPrices] = useState(
     () => deepClone(settings?.custom_prices ?? {})
   )
+  const [phones, setPhones] = useState(() => {
+    const p = {}
+    for (const [student, det] of Object.entries(settings?.customer_details ?? {})) {
+      if (det?.phone) p[student] = det.phone
+    }
+    return p
+  })
+  const [phoneErrors, setPhoneErrors] = useState({})
   const [newStudent, setNewStudent] = useState('')
   const [saved, setSaved] = useState(false)
 
@@ -22,12 +31,23 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [] }) {
         non_regular: { '60': '', '45': '', '30': '' },
       },
     }))
+    setPhones(prev => ({ ...prev, [name]: phones[name] ?? '' }))
     setNewStudent('')
     setSaved(false)
   }
 
   const handleRemove = (student) => {
     setCustomPrices(prev => {
+      const next = { ...prev }
+      delete next[student]
+      return next
+    })
+    setPhones(prev => {
+      const next = { ...prev }
+      delete next[student]
+      return next
+    })
+    setPhoneErrors(prev => {
       const next = { ...prev }
       delete next[student]
       return next
@@ -46,7 +66,23 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [] }) {
     setSaved(false)
   }
 
+  const handlePhone = (student, value) => {
+    setPhones(prev => ({ ...prev, [student]: value }))
+    setPhoneErrors(prev => ({ ...prev, [student]: false }))
+    setSaved(false)
+  }
+
   const handleSave = async () => {
+    const errors = {}
+    for (const student of students) {
+      const ph = (phones[student] ?? '').trim()
+      if (ph && !validateIsraeliPhone(ph)) errors[student] = true
+    }
+    if (Object.keys(errors).length > 0) {
+      setPhoneErrors(errors)
+      return
+    }
+
     const cleaned = {}
     for (const [student, entry] of Object.entries(customPrices)) {
       if (typeof entry === 'object') {
@@ -71,7 +107,19 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [] }) {
         }
       }
     }
-    await onSave({ ...settings, custom_prices: cleaned })
+
+    const updatedCustomerDetails = { ...(settings?.customer_details ?? {}) }
+    for (const student of students) {
+      const ph = (phones[student] ?? '').trim()
+      if (ph) {
+        updatedCustomerDetails[student] = {
+          ...(updatedCustomerDetails[student] ?? {}),
+          phone: ph,
+        }
+      }
+    }
+
+    await onSave({ ...settings, custom_prices: cleaned, customer_details: updatedCustomerDetails })
     setSaved(true)
   }
 
@@ -106,11 +154,27 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [] }) {
       {students.map(student => {
         const entry = customPrices[student]
         const isTiered = 'regular' in entry || 'non_regular' in entry
+        const phoneVal = phones[student] ?? ''
+        const phoneErr = phoneErrors[student]
         return (
           <div key={student} className={styles.card}>
             <div className={styles.cardHeader}>
               <span className={styles.studentName}>{student}</span>
               <button className={styles.removeBtn} onClick={() => handleRemove(student)}>Remove</button>
+            </div>
+            <div className={styles.phoneRow}>
+              <span className={styles.phoneLabel}>📱 Phone</span>
+              <div className={styles.phoneInputWrap}>
+                <input
+                  type="tel"
+                  className={`${styles.input} ${styles.phoneInput} ${phoneErr ? styles.phoneInputError : ''}`}
+                  placeholder="050-1234567"
+                  value={phoneVal}
+                  onChange={e => handlePhone(student, e.target.value)}
+                  dir="ltr"
+                />
+                {phoneErr && <span className={styles.phoneError}>Invalid format — e.g. 050-1234567</span>}
+              </div>
             </div>
             {isTiered
               ? TYPES.map(type => (
