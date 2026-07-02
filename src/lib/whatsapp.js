@@ -15,12 +15,24 @@ export function validateIsraeliPhone(phone) {
   return /^05[0-9]{8}$/.test(phone.replace(/[-\s]/g, ''))
 }
 
-// monthStr is "YYYY-MM"
-export function buildPaymentMessage(studentName, amount, monthStr) {
+export const DEFAULT_MESSAGE_TEMPLATE =
+  ` שלום {student} :)\nהנה סיכום השיעורים שלך לחודש {month}:\n סה״כ לתשלום: ₪{amount}\n לתשלום: [קישור לתשלום]\nתודה ונתראה! `
+
+// Substitutes {student}, {amount}, {month} tokens into a user-editable template.
+export function renderMessageTemplate(template, { studentName, amount, monthName }) {
+  const safeName = (studentName ?? '').replace(/[\r\n]+/g, ' ').trim()
+  return (template ?? '')
+    .replaceAll('{student}', safeName)
+    .replaceAll('{amount}', String(amount))
+    .replaceAll('{month}', monthName ?? '')
+}
+
+// monthStr is "YYYY-MM"; template defaults to the built-in Hebrew message but
+// can be overridden with a user-customized template from settings.
+export function buildPaymentMessage(studentName, amount, monthStr, template = DEFAULT_MESSAGE_TEMPLATE) {
   const [, mm] = (monthStr ?? '').split('-')
   const monthName = HEBREW_MONTHS[parseInt(mm, 10)] ?? monthStr
-  const safeName = (studentName ?? '').replace(/[\r\n]+/g, ' ').trim()
-  return  ` שלום ${safeName} :)\nהנה סיכום השיעורים שלך לחודש ${monthName}:\n סה״כ לתשלום: ₪${amount}\n לתשלום: [קישור לתשלום]\nתודה ונתראה! `
+  return renderMessageTemplate(template, { studentName, amount, monthName })
 }
 
 export function buildWhatsAppUrl(phone, message) {

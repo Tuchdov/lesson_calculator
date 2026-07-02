@@ -4,6 +4,8 @@ import {
   formatPhoneForWhatsApp,
   buildPaymentMessage,
   buildWhatsAppUrl,
+  renderMessageTemplate,
+  DEFAULT_MESSAGE_TEMPLATE,
 } from '../src/lib/whatsapp.js'
 
 // ── validateIsraeliPhone ──────────────────────────────────────────────────────
@@ -116,6 +118,38 @@ Deno.test('buildPaymentMessage: undefined monthStr falls back gracefully', () =>
 Deno.test('formatPhoneForWhatsApp: empty string yields 972 with empty suffix', () => {
   // Edge: no digits → digits = '' → slice(1) = '' → '972'
   assertEquals(formatPhoneForWhatsApp(''), '972')
+})
+
+// ── renderMessageTemplate / custom templates ─────────────────────────────────
+
+Deno.test('renderMessageTemplate: substitutes all three tokens', () => {
+  const msg = renderMessageTemplate('Hi {student}, you owe ₪{amount} for {month}', {
+    studentName: 'Alice', amount: 250, monthName: 'June',
+  })
+  assertEquals(msg, 'Hi Alice, you owe ₪250 for June')
+})
+
+Deno.test('renderMessageTemplate: repeated tokens all get replaced', () => {
+  const msg = renderMessageTemplate('{student}! {student}, pay ₪{amount}', {
+    studentName: 'Bob', amount: 100, monthName: 'July',
+  })
+  assertEquals(msg, 'Bob! Bob, pay ₪100')
+})
+
+Deno.test('renderMessageTemplate: sanitizes newlines in student name', () => {
+  const msg = renderMessageTemplate('{student}', { studentName: 'Alice\nEvil', amount: 1, monthName: 'July' })
+  assertEquals(msg, 'Alice Evil')
+})
+
+Deno.test('buildPaymentMessage: custom template overrides the default', () => {
+  const msg = buildPaymentMessage('Alice', 250, '2026-06', 'Hi {student}, ₪{amount} due {month}')
+  assertEquals(msg, 'Hi Alice, ₪250 due יוני')
+})
+
+Deno.test('buildPaymentMessage: no template falls back to DEFAULT_MESSAGE_TEMPLATE', () => {
+  const msg = buildPaymentMessage('Alice', 250, '2026-06')
+  assertMatch(msg, /Alice/)
+  assertMatch(msg, /250/)
 })
 
 Deno.test('buildWhatsAppUrl: full round-trip produces valid URL', () => {

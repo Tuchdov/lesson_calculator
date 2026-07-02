@@ -6,7 +6,7 @@ const DURATION_COLS = ['60', '45', '30']
 const TYPE_LABEL = { regular: 'Regular', non_regular: 'Non-regular' }
 const TYPE_CHIP = { regular: styles.chipGreen, non_regular: styles.chipAmber }
 
-export function EditableTable({ rows, config, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, month }) {
+export function EditableTable({ rows, config, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, month, defaultMessage }) {
   const grouped = groupByType(rows)
   const [expandedRow, setExpandedRow] = useState(null)
 
@@ -40,6 +40,7 @@ export function EditableTable({ rows, config, customPrices, onCustomPriceChange,
                   phone={customerDetails?.[row.student]?.phone}
                   onCustomerDetailChange={onCustomerDetailChange}
                   month={month}
+                  defaultMessage={defaultMessage}
                   expandedRow={expandedRow}
                   setExpandedRow={setExpandedRow}
                 />
@@ -62,7 +63,7 @@ function GroupHeader({ type }) {
   )
 }
 
-function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, onCustomerDetailChange, month, expandedRow, setExpandedRow }) {
+function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, onCustomerDetailChange, month, defaultMessage, expandedRow, setExpandedRow }) {
   const custom = customPrices?.[row.student]
   const prices = resolveRowPrices(row.student, row.student_type === 'regular', config, custom)
 
@@ -118,12 +119,12 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, onC
     }
     await onCustomerDetailChange?.(row.student, { phone: phoneInput })
     setExpandedRow(null)
-    const msg = buildPaymentMessage(row.student, roundedAmount, month)
+    const msg = buildPaymentMessage(row.student, roundedAmount, month, defaultMessage || undefined)
     window.open(buildWhatsAppUrl(phoneInput, msg), '_blank', 'noopener')
   }
 
   const handleSendDirect = () => {
-    const msg = buildPaymentMessage(row.student, roundedAmount, month)
+    const msg = buildPaymentMessage(row.student, roundedAmount, month, defaultMessage || undefined)
     window.open(buildWhatsAppUrl(phone, msg), '_blank', 'noopener')
   }
 
