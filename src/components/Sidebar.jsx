@@ -3,6 +3,7 @@ import styles from './Sidebar.module.css'
 const NAV_ITEMS = [
   { id: 'calculator', label: 'Calculator', icon: '📊' },
   { id: 'custom-prices', label: 'Custom Prices', icon: '✏️' },
+  { id: 'settings', label: 'Settings', icon: '⚙️' },
 ]
 
 export function Sidebar({ page, onNavigate, userEmail, onSignOut }) {

@@ -15,6 +15,9 @@ dist-ssr
 # gstack local artifacts (security reports, plans — keep local)
 .gstack/
 
+# Local specs (kept off remote)
+specs/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
