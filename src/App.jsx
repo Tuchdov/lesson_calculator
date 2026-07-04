@@ -44,8 +44,14 @@ export default function App() {
   const effectiveConfig = useMemo(() => {
     if (!config) return config
     const hasCustomDefaults = settings.default_prices?.regular && settings.default_prices?.non_regular
-    return hasCustomDefaults ? { ...config, prices: settings.default_prices } : config
-  }, [config, settings.default_prices])
+    const hasCustomPhrases = settings.paid_cancellation_phrases?.length > 0
+    if (!hasCustomDefaults && !hasCustomPhrases) return config
+    return {
+      ...config,
+      ...(hasCustomDefaults ? { prices: settings.default_prices } : {}),
+      ...(hasCustomPhrases ? { paid_cancellation_phrases: settings.paid_cancellation_phrases } : {}),
+    }
+  }, [config, settings.default_prices, settings.paid_cancellation_phrases])
 
   if (!accessToken) {
     return <AuthScreen onSignIn={signIn} error={authError} />

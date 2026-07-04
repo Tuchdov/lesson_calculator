@@ -135,11 +135,46 @@ Deno.test('isRegular: shifted weekday across weeks = still regular', () => {
 })
 
 // 13
-Deno.test('isPaidCancellation: Hebrew phrase detected / not detected', () => {
+Deno.test('isPaidCancellation: Hebrew phrase detected / not detected (default phrase list)', () => {
   assertEquals(isPaidCancellation('ליאור פיתוח קול ביטול בתשלום'), true)
   assertEquals(isPaidCancellation('ביטול בתשלום פיתוח קול'), true)
   assertFalse(isPaidCancellation('ליאור פיתוח קול'))
   assertFalse(isPaidCancellation('Alice - lesson cancelled'))
+})
+
+Deno.test('isPaidCancellation: accepts a custom phrase list, matching any entry', () => {
+  const phrases = ['ביטול בתשלום', 'cancelled - billed', 'paid cancellation']
+  assertEquals(isPaidCancellation('דנה - cancelled - billed', phrases), true)
+  assertEquals(isPaidCancellation('דנה - paid cancellation', phrases), true)
+  assertEquals(isPaidCancellation('דנה - ביטול בתשלום', phrases), true)
+  assertFalse(isPaidCancellation('דנה - lesson', phrases))
+})
+
+Deno.test('isPaidCancellation: empty phrase list never matches', () => {
+  assertFalse(isPaidCancellation('דנה - ביטול בתשלום', []))
+})
+
+Deno.test('calculatePayments: honors config.paid_cancellation_phrases for a custom phrase', () => {
+  const events = [
+    makeLessonEvent(
+      'דנה - פיתוח קול - cancel - school holiday paid',
+      '2026-02-02T10:00:00.000Z',
+      '2026-02-02T11:00:00.000Z',
+    ),
+  ]
+
+  // Without the custom phrase configured, "cancel" matches a generic cancelled
+  // keyword and the lesson is dropped entirely (not billed).
+  const withoutPhrase = calculatePayments(events, BASE_CONFIG, '2026-02')
+  assertEquals(withoutPhrase.rows.length, 0)
+
+  // With the custom phrase configured, it's recognized as a paid cancellation
+  // and billed at the regular rate despite being a single, non-regular lesson.
+  const configWithPhrase = { ...BASE_CONFIG, paid_cancellation_phrases: ['school holiday paid'] }
+  const { rows } = calculatePayments(events, configWithPhrase, '2026-02')
+  assertEquals(rows.length, 1)
+  assertEquals(rows[0].lessons_60, 1)
+  assertEquals(rows[0].amount_due, BASE_CONFIG.prices.regular['60'])
 })
 
 // 14

@@ -1,5 +1,5 @@
 const REQUIRED_LESSON_PHRASE = 'פיתוח קול'
-const PAID_CANCELLATION_PHRASE = 'ביטול בתשלום'
+export const DEFAULT_PAID_CANCELLATION_PHRASES = ['ביטול בתשלום']
 const DEFAULT_CANCELLED_KEYWORDS = ['cancelled', 'canceled', 'cancel', 'בוטל', 'מבוטל']
 
 export function monthWindow(monthStr) {
@@ -49,8 +49,8 @@ export function isCancelledLesson(summary, keywords = DEFAULT_CANCELLED_KEYWORDS
   return keywords.some(kw => lower.includes(kw.toLowerCase()))
 }
 
-export function isPaidCancellation(summary) {
-  return Boolean(summary) && summary.includes(PAID_CANCELLATION_PHRASE)
+export function isPaidCancellation(summary, phrases = DEFAULT_PAID_CANCELLATION_PHRASES) {
+  return Boolean(summary) && phrases.some(phrase => summary.includes(phrase))
 }
 
 export function normalizeStudentName(name) {
@@ -129,6 +129,7 @@ function fillDurations(prices, defaults) {
 export function calculatePayments(events, config, monthStr) {
   const { start: monthStart, end: monthEnd } = monthWindow(monthStr)
   const cancelledKeywords = config.cancelled_keywords ?? DEFAULT_CANCELLED_KEYWORDS
+  const paidCancellationPhrases = config.paid_cancellation_phrases ?? DEFAULT_PAID_CANCELLATION_PHRASES
   const nameRegex = config.student_name_regex ?? null
   const regularPrices = config.prices.regular
   const nonRegularPrices = config.prices.non_regular
@@ -142,7 +143,7 @@ export function calculatePayments(events, config, monthStr) {
     const summary = event.summary ?? ''
     if (!isTargetLesson(summary)) continue
 
-    const paidCancel = isPaidCancellation(summary)
+    const paidCancel = isPaidCancellation(summary, paidCancellationPhrases)
     if (!paidCancel && isCancelledLesson(summary, cancelledKeywords)) continue
 
     const student = inferStudentName(summary, nameRegex)

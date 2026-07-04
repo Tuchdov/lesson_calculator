@@ -186,3 +186,53 @@
 
 .btnPrimary:hover { background: var(--md-blue-hover); }
 .btnPrimary:focus-visible { outline: 2px solid var(--md-blue); outline-offset: 2px; }
+
+.phraseList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.phraseRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--md-bg);
+  border-radius: var(--radius-sm);
+}
+
+.phraseText {
+  font-size: 14px;
+  font-family: var(--font-rb);
+  color: var(--md-text);
+}
+
+.emptyPhrases {
+  font-size: 13px;
+  color: var(--md-text-muted);
+  padding: 8px 0;
+}
+
+.removeBtn {
+  background: none;
+  border: 1px solid var(--md-border);
+  border-radius: var(--radius-pill);
+  padding: 4px 12px;
+  font-size: 13px;
+  color: var(--md-red);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.removeBtn:hover { background: var(--md-red-tonal); border-color: var(--md-red); }
+.removeBtn:focus-visible { outline: 2px solid var(--md-blue); outline-offset: 2px; }
+
+.addPhraseRow {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.addPhraseRow .input { flex: 1; width: auto; }
