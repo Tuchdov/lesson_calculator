@@ -9,7 +9,7 @@ function makeStub() {
 Deno.test('loadUserSettings: returns defaults when key absent', async () => {
   const stub = makeStub()
   const settings = await loadUserSettings('user@example.com', stub)
-  assertEquals(settings, { custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '' })
+  assertEquals(settings, { custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '', paid_cancellation_phrases: null, cancelled_keywords: null })
 })
 
 Deno.test('saveUserSettings + loadUserSettings: round-trip persists data', async () => {
@@ -19,6 +19,8 @@ Deno.test('saveUserSettings + loadUserSettings: round-trip persists data', async
     customer_details: {},
     default_prices: { regular: { '60': 260, '45': 210, '30': 190 }, non_regular: { '60': 280, '45': 230, '30': 210 } },
     default_message: 'Hi {student}, you owe ₪{amount} for {month}',
+    paid_cancellation_phrases: ['ביטול בתשלום', 'cancelled - billed'],
+    cancelled_keywords: ['בוטל', 'מבוטל', 'cancelled'],
   }
   await saveUserSettings('user@example.com', data, stub)
   const loaded = await loadUserSettings('user@example.com', stub)
@@ -46,7 +48,7 @@ Deno.test('loadUserSettings: returns defaults when stored JSON is corrupt', asyn
   const key = 'vocalCalc:settings:' + await sha256Hex('user@example.com')
   stub.setItem(key, '{ this is not valid JSON !!!')
   const settings = await loadUserSettings('user@example.com', stub)
-  assertEquals(settings, { custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '' })
+  assertEquals(settings, { custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '', paid_cancellation_phrases: null, cancelled_keywords: null })
 })
 
 Deno.test('loadUserSettings: back-fills default_prices/default_message when loading legacy settings', async () => {
@@ -56,4 +58,34 @@ Deno.test('loadUserSettings: back-fills default_prices/default_message when load
   const loaded = await loadUserSettings('user@example.com', stub)
   assertEquals(loaded.default_prices, {})
   assertEquals(loaded.default_message, '')
+})
+
+Deno.test('loadUserSettings: back-fills paid_cancellation_phrases (as null = not customized) when loading legacy settings', async () => {
+  const stub = makeStub()
+  const key = 'vocalCalc:settings:' + await sha256Hex('user@example.com')
+  stub.setItem(key, JSON.stringify({ custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '' }))
+  const loaded = await loadUserSettings('user@example.com', stub)
+  assertEquals(loaded.paid_cancellation_phrases, null)
+})
+
+Deno.test('loadUserSettings: back-fills cancelled_keywords (as null = not customized) when loading legacy settings', async () => {
+  const stub = makeStub()
+  const key = 'vocalCalc:settings:' + await sha256Hex('user@example.com')
+  stub.setItem(key, JSON.stringify({
+    custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '', paid_cancellation_phrases: null,
+  }))
+  const loaded = await loadUserSettings('user@example.com', stub)
+  assertEquals(loaded.cancelled_keywords, null)
+})
+
+Deno.test('loadUserSettings: preserves an intentionally emptied list, distinct from never-customized null', async () => {
+  const stub = makeStub()
+  const data = {
+    custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '',
+    paid_cancellation_phrases: [], cancelled_keywords: [],
+  }
+  await saveUserSettings('user@example.com', data, stub)
+  const loaded = await loadUserSettings('user@example.com', stub)
+  assertEquals(loaded.paid_cancellation_phrases, [])
+  assertEquals(loaded.cancelled_keywords, [])
 })

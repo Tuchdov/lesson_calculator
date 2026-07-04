@@ -1,5 +1,9 @@
 const KEY_PREFIX = 'vocalCalc:settings:'
-const DEFAULT_SETTINGS = { custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '' }
+// paid_cancellation_phrases/cancelled_keywords use `null` (not `[]`) to mean
+// "never customized, fall back to the built-in default list" — an explicit
+// `[]` means the user intentionally cleared the list, which must be
+// distinguishable from "not customized yet" everywhere these are read.
+const DEFAULT_SETTINGS = { custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '', paid_cancellation_phrases: null, cancelled_keywords: null }
 
 export async function sha256Hex(str) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str))
