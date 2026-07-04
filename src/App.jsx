@@ -45,13 +45,15 @@ export default function App() {
     if (!config) return config
     const hasCustomDefaults = settings.default_prices?.regular && settings.default_prices?.non_regular
     const hasCustomPhrases = settings.paid_cancellation_phrases?.length > 0
-    if (!hasCustomDefaults && !hasCustomPhrases) return config
+    const hasCustomKeywords = settings.cancelled_keywords?.length > 0
+    if (!hasCustomDefaults && !hasCustomPhrases && !hasCustomKeywords) return config
     return {
       ...config,
       ...(hasCustomDefaults ? { prices: settings.default_prices } : {}),
       ...(hasCustomPhrases ? { paid_cancellation_phrases: settings.paid_cancellation_phrases } : {}),
+      ...(hasCustomKeywords ? { cancelled_keywords: settings.cancelled_keywords } : {}),
     }
-  }, [config, settings.default_prices, settings.paid_cancellation_phrases])
+  }, [config, settings.default_prices, settings.paid_cancellation_phrases, settings.cancelled_keywords])
 
   if (!accessToken) {
     return <AuthScreen onSignIn={signIn} error={authError} />

@@ -1,6 +1,7 @@
 import { assertEquals, assertFalse } from '@std/assert'
 import {
   calculatePayments,
+  DEFAULT_CANCELLED_KEYWORDS,
   doubleLessonDurationMinutes,
   inferStudentName,
   isCancelledLesson,
@@ -175,6 +176,28 @@ Deno.test('calculatePayments: honors config.paid_cancellation_phrases for a cust
   assertEquals(rows.length, 1)
   assertEquals(rows[0].lessons_60, 1)
   assertEquals(rows[0].amount_due, BASE_CONFIG.prices.regular['60'])
+})
+
+Deno.test('isCancelledLesson: DEFAULT_CANCELLED_KEYWORDS is exported and usable as a default', () => {
+  assertEquals(isCancelledLesson('דנה - שיעור בוטל', DEFAULT_CANCELLED_KEYWORDS), true)
+  assertEquals(isCancelledLesson('דנה - שיעור מבוטל', DEFAULT_CANCELLED_KEYWORDS), true)
+  assertFalse(isCancelledLesson('דנה - שיעור', DEFAULT_CANCELLED_KEYWORDS))
+})
+
+Deno.test('calculatePayments: honors config.cancelled_keywords for a custom keyword', () => {
+  const events = [
+    makeLessonEvent('דנה - פיתוח קול - postponed', '2026-02-02T10:00:00.000Z', '2026-02-02T11:00:00.000Z'),
+  ]
+
+  // "postponed" isn't a keyword in BASE_CONFIG, so this lesson is billed normally.
+  const withoutKeyword = calculatePayments(events, BASE_CONFIG, '2026-02')
+  assertEquals(withoutKeyword.rows.length, 1)
+  assertEquals(withoutKeyword.rows[0].lessons_60, 1)
+
+  // With "postponed" configured as a cancelled keyword, the lesson is dropped.
+  const configWithKeyword = { ...BASE_CONFIG, cancelled_keywords: ['postponed'] }
+  const { rows } = calculatePayments(events, configWithKeyword, '2026-02')
+  assertEquals(rows.length, 0)
 })
 
 // 14

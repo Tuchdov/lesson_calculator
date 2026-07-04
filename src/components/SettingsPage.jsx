@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { buildPaymentMessage, DEFAULT_MESSAGE_TEMPLATE } from '../lib/whatsapp.js'
-import { DEFAULT_PAID_CANCELLATION_PHRASES } from '../lib/calendarPayments.js'
+import { DEFAULT_CANCELLED_KEYWORDS, DEFAULT_PAID_CANCELLATION_PHRASES } from '../lib/calendarPayments.js'
 import styles from './SettingsPage.module.css'
 
 const DURATION_LABELS = { '60': '60 min', '45': '45 min', '30': '30 min' }
@@ -24,6 +24,11 @@ function initialPhrases(settings) {
     : [...DEFAULT_PAID_CANCELLATION_PHRASES]
 }
 
+function initialKeywords(settings, config) {
+  if (settings?.cancelled_keywords?.length) return [...settings.cancelled_keywords]
+  return [...(config?.cancelled_keywords ?? DEFAULT_CANCELLED_KEYWORDS)]
+}
+
 export function SettingsPage({ config, settings, onSave }) {
   const [prices, setPrices] = useState(() => initialPrices(settings, config))
   const [messageTemplate, setMessageTemplate] = useState(
@@ -31,6 +36,8 @@ export function SettingsPage({ config, settings, onSave }) {
   )
   const [paidCancelPhrases, setPaidCancelPhrases] = useState(() => initialPhrases(settings))
   const [newPhrase, setNewPhrase] = useState('')
+  const [keywords, setKeywords] = useState(() => initialKeywords(settings, config))
+  const [newKeyword, setNewKeyword] = useState('')
   const [saved, setSaved] = useState(false)
 
   const handlePrice = (type, duration, value) => {
@@ -69,6 +76,24 @@ export function SettingsPage({ config, settings, onSave }) {
     setSaved(false)
   }
 
+  const handleAddKeyword = () => {
+    const keyword = newKeyword.trim()
+    if (!keyword || keywords.includes(keyword)) return
+    setKeywords(prev => [...prev, keyword])
+    setNewKeyword('')
+    setSaved(false)
+  }
+
+  const handleRemoveKeyword = (index) => {
+    setKeywords(prev => prev.filter((_, i) => i !== index))
+    setSaved(false)
+  }
+
+  const handleResetKeywords = () => {
+    setKeywords([...(config?.cancelled_keywords ?? DEFAULT_CANCELLED_KEYWORDS)])
+    setSaved(false)
+  }
+
   const handleSave = async () => {
     const cleaned = {}
     for (const type of TYPES) {
@@ -83,6 +108,7 @@ export function SettingsPage({ config, settings, onSave }) {
       default_prices: cleaned,
       default_message: messageTemplate,
       paid_cancellation_phrases: paidCancelPhrases,
+      cancelled_keywords: keywords,
     })
     setSaved(true)
   }
@@ -186,6 +212,47 @@ export function SettingsPage({ config, settings, onSave }) {
             onKeyDown={e => e.key === 'Enter' && handleAddPhrase()}
           />
           <button className={styles.btnPrimary} onClick={handleAddPhrase}>Add phrase</button>
+        </div>
+      </div>
+
+      <div className={styles.card}>
+        <div className={styles.cardHeader}>
+          <h3 className={styles.cardTitle}>Cancelled lesson keywords</h3>
+          <button className={styles.resetBtn} onClick={handleResetKeywords}>
+            Reset to original
+          </button>
+        </div>
+        <p className={styles.tokenHint}>
+          A lesson whose title contains any of these keywords is treated as
+          cancelled and excluded (unless it also matches a paid cancellation
+          phrase above).
+        </p>
+        <div className={styles.phraseList}>
+          {keywords.length === 0 && (
+            <div className={styles.emptyPhrases}>
+              No keywords — cancelled lessons won't be detected.
+            </div>
+          )}
+          {keywords.map((keyword, i) => (
+            <div key={i} className={styles.phraseRow}>
+              <span className={styles.phraseText} dir="rtl">{keyword}</span>
+              <button className={styles.removeBtn} onClick={() => handleRemoveKeyword(i)}>
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className={styles.addPhraseRow}>
+          <input
+            type="text"
+            className={styles.input}
+            dir="rtl"
+            placeholder="בוטל"
+            value={newKeyword}
+            onChange={e => setNewKeyword(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleAddKeyword()}
+          />
+          <button className={styles.btnPrimary} onClick={handleAddKeyword}>Add keyword</button>
         </div>
       </div>
 

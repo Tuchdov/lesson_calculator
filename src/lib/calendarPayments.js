@@ -1,6 +1,6 @@
 const REQUIRED_LESSON_PHRASE = 'פיתוח קול'
 export const DEFAULT_PAID_CANCELLATION_PHRASES = ['ביטול בתשלום']
-const DEFAULT_CANCELLED_KEYWORDS = [ 'בוטל', 'מבוטל']
+export const DEFAULT_CANCELLED_KEYWORDS = ['בוטל', 'מבוטל']
 
 export function monthWindow(monthStr) {
   const [year, month] = monthStr.split('-').map(Number)
