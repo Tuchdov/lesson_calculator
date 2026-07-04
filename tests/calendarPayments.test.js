@@ -1,5 +1,7 @@
 import { assertEquals, assertFalse } from '@std/assert'
 import {
+  calculatePayments,
+  doubleLessonDurationMinutes,
   inferStudentName,
   isCancelledLesson,
   isPaidCancellation,
@@ -14,8 +16,22 @@ function makeEvent(startIso, endIso) {
   return { start: { dateTime: startIso }, end: { dateTime: endIso } }
 }
 
+function makeLessonEvent(summary, startIso, endIso) {
+  return { summary, start: { dateTime: startIso }, end: { dateTime: endIso } }
+}
+
 function utc(year, month, day, hour = 0) {
   return new Date(Date.UTC(year, month - 1, day, hour))
+}
+
+const BASE_CONFIG = {
+  cancelled_keywords: ['cancelled', 'canceled', 'cancel', 'בוטל', 'מבוטל'],
+  student_name_regex: null,
+  prices: {
+    regular: { '60': 250, '45': 200, '30': 180 },
+    non_regular: { '60': 270, '45': 220, '30': 200 },
+  },
+  custom_prices: {},
 }
 
 // 1
@@ -168,4 +184,129 @@ Deno.test('normalizeStudentName: strips parenthetical tokens', () => {
   assertEquals(normalizeStudentName('עומר (8)'), 'עומר')
   assertEquals(normalizeStudentName('אהרון פיטוסי'), 'אהרון פיטוסי')
   assertEquals(normalizeStudentName('אחינועם'), 'אחינועם')
+})
+
+// ── back-to-back double lessons ───────────────────────────────────────────────
+
+// 17
+Deno.test('calculatePayments: two back-to-back 60-min events count as two separate lessons', () => {
+  const events = [
+    makeLessonEvent('דנה - פיתוח קול', '2026-02-02T10:00:00.000Z', '2026-02-02T11:00:00.000Z'),
+    makeLessonEvent('דנה - פיתוח קול', '2026-02-02T11:00:00.000Z', '2026-02-02T12:00:00.000Z'),
+  ]
+  const { rows } = calculatePayments(events, BASE_CONFIG, '2026-02')
+  assertEquals(rows.length, 1)
+  assertEquals(rows[0].lessons_60, 2)
+  assertEquals(rows[0].amount_due, 2 * BASE_CONFIG.prices.non_regular['60'])
+})
+
+// 18
+Deno.test('calculatePayments: two back-to-back 45-min events count as two separate lessons', () => {
+  const events = [
+    makeLessonEvent('דנה - פיתוח קול', '2026-02-02T10:00:00.000Z', '2026-02-02T10:45:00.000Z'),
+    makeLessonEvent('דנה - פיתוח קול', '2026-02-02T10:45:00.000Z', '2026-02-02T11:30:00.000Z'),
+  ]
+  const { rows } = calculatePayments(events, BASE_CONFIG, '2026-02')
+  assertEquals(rows.length, 1)
+  assertEquals(rows[0].lessons_45, 2)
+  assertEquals(rows[0].amount_due, 2 * BASE_CONFIG.prices.non_regular['45'])
+})
+
+// 19
+Deno.test('lessonDurationMinutes: a single 120-min block is not one of the standard single-lesson durations', () => {
+  const base = utc(2026, 2, 1, 10)
+  const add = (min) => new Date(base.getTime() + min * 60000).toISOString()
+  assertEquals(lessonDurationMinutes(makeEvent(base.toISOString(), add(120))), null)
+})
+
+// 20
+Deno.test('lessonDurationMinutes: a single 90-min block is not one of the standard single-lesson durations', () => {
+  const base = utc(2026, 2, 1, 10)
+  const add = (min) => new Date(base.getTime() + min * 60000).toISOString()
+  assertEquals(lessonDurationMinutes(makeEvent(base.toISOString(), add(90))), null)
+})
+
+// 21
+Deno.test('doubleLessonDurationMinutes: 120-min block detected as a double 60-min lesson', () => {
+  const base = utc(2026, 2, 1, 10)
+  const add = (min) => new Date(base.getTime() + min * 60000).toISOString()
+  assertEquals(doubleLessonDurationMinutes(makeEvent(base.toISOString(), add(120))), 60)
+  assertEquals(doubleLessonDurationMinutes(makeEvent(base.toISOString(), add(117))), 60)
+  assertEquals(doubleLessonDurationMinutes(makeEvent(base.toISOString(), add(123))), 60)
+})
+
+// 22
+Deno.test('doubleLessonDurationMinutes: 90-min block detected as a double 45-min lesson', () => {
+  const base = utc(2026, 2, 1, 10)
+  const add = (min) => new Date(base.getTime() + min * 60000).toISOString()
+  assertEquals(doubleLessonDurationMinutes(makeEvent(base.toISOString(), add(90))), 45)
+  assertEquals(doubleLessonDurationMinutes(makeEvent(base.toISOString(), add(87))), 45)
+  assertEquals(doubleLessonDurationMinutes(makeEvent(base.toISOString(), add(93))), 45)
+})
+
+// 23
+Deno.test('doubleLessonDurationMinutes: single-length durations (30/45/60) are not double blocks', () => {
+  const base = utc(2026, 2, 1, 10)
+  const add = (min) => new Date(base.getTime() + min * 60000).toISOString()
+  assertEquals(doubleLessonDurationMinutes(makeEvent(base.toISOString(), add(30))), null)
+  assertEquals(doubleLessonDurationMinutes(makeEvent(base.toISOString(), add(45))), null)
+  assertEquals(doubleLessonDurationMinutes(makeEvent(base.toISOString(), add(60))), null)
+})
+
+// 24
+Deno.test('calculatePayments: a single 120-min event is counted as two 60-min lessons', () => {
+  const events = [
+    makeLessonEvent('דנה - פיתוח קול', '2026-02-02T10:00:00.000Z', '2026-02-02T12:00:00.000Z'),
+  ]
+  const { rows } = calculatePayments(events, BASE_CONFIG, '2026-02')
+  assertEquals(rows.length, 1)
+  assertEquals(rows[0].lessons_60, 2)
+  assertEquals(rows[0].amount_due, 2 * BASE_CONFIG.prices.non_regular['60'])
+})
+
+// 25
+Deno.test('calculatePayments: a single 90-min event is counted as two 45-min lessons', () => {
+  const events = [
+    makeLessonEvent('דנה - פיתוח קול', '2026-02-02T10:00:00.000Z', '2026-02-02T11:30:00.000Z'),
+  ]
+  const { rows } = calculatePayments(events, BASE_CONFIG, '2026-02')
+  assertEquals(rows.length, 1)
+  assertEquals(rows[0].lessons_45, 2)
+  assertEquals(rows[0].amount_due, 2 * BASE_CONFIG.prices.non_regular['45'])
+})
+
+// ── high lesson volume per month ───────────────────────────────────────────────
+
+// 26
+Deno.test('calculatePayments: 8 lessons in a month are all counted (no artificial 4-5 lesson cap)', () => {
+  const days = [2, 6, 9, 13, 16, 20, 23, 27]
+  const events = days.map(day =>
+    makeLessonEvent(
+      'יואב - פיתוח קול',
+      `2026-02-${String(day).padStart(2, '0')}T10:00:00.000Z`,
+      `2026-02-${String(day).padStart(2, '0')}T11:00:00.000Z`,
+    )
+  )
+  const { rows } = calculatePayments(events, BASE_CONFIG, '2026-02')
+  assertEquals(rows.length, 1)
+  assertEquals(rows[0].lessons_60, 8)
+  assertEquals(rows[0].student_type, 'regular')
+  assertEquals(rows[0].amount_due, 8 * BASE_CONFIG.prices.regular['60'])
+})
+
+// 27
+Deno.test('calculatePayments: 25 lessons in a month (near-daily) are all counted', () => {
+  const events = []
+  for (let day = 1; day <= 25; day++) {
+    events.push(makeLessonEvent(
+      'מאיה - פיתוח קול',
+      `2026-02-${String(day).padStart(2, '0')}T09:00:00.000Z`,
+      `2026-02-${String(day).padStart(2, '0')}T10:00:00.000Z`,
+    ))
+  }
+  const { rows } = calculatePayments(events, BASE_CONFIG, '2026-02')
+  assertEquals(rows.length, 1)
+  assertEquals(rows[0].lessons_60, 25)
+  assertEquals(rows[0].student_type, 'regular')
+  assertEquals(rows[0].amount_due, 25 * BASE_CONFIG.prices.regular['60'])
 })

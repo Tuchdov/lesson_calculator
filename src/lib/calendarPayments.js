@@ -24,6 +24,21 @@ export function lessonDurationMinutes(event) {
   return null
 }
 
+// Detects a single calendar block that covers two back-to-back lessons booked
+// as one event (e.g. a 120-min block instead of two separate 60-min events).
+// Returns the half-duration (45 or 60) so the caller can count it twice, or
+// null if the event isn't a recognized double-length block.
+export function doubleLessonDurationMinutes(event) {
+  const startRaw = event?.start?.dateTime
+  const endRaw = event?.end?.dateTime
+  if (!startRaw || !endRaw) return null
+
+  const diffMin = Math.round((new Date(endRaw) - new Date(startRaw)) / 60000)
+  if (diffMin >= 87 && diffMin <= 93) return 45
+  if (diffMin >= 117 && diffMin <= 123) return 60
+  return null
+}
+
 export function isTargetLesson(summary) {
   return Boolean(summary) && summary.includes(REQUIRED_LESSON_PHRASE)
 }
@@ -132,8 +147,9 @@ export function calculatePayments(events, config, monthStr) {
 
     const student = inferStudentName(summary, nameRegex)
     const duration = lessonDurationMinutes(event)
+    const doubleDuration = duration ? null : doubleLessonDurationMinutes(event)
     const startRaw = event?.start?.dateTime
-    if (!student || !duration || !startRaw) continue
+    if (!student || (!duration && !doubleDuration) || !startRaw) continue
 
     if (paidCancel) forceRegular.add(student)
 
@@ -147,6 +163,8 @@ export function calculatePayments(events, config, monthStr) {
     if (duration === 60) stats[student].count_60++
     else if (duration === 45) stats[student].count_45++
     else if (duration === 30) stats[student].count_30++
+    else if (doubleDuration === 60) stats[student].count_60 += 2
+    else if (doubleDuration === 45) stats[student].count_45 += 2
   }
 
   const rows = []
