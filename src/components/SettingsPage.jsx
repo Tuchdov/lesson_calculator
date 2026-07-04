@@ -19,13 +19,13 @@ function initialPrices(settings, config) {
 }
 
 function initialPhrases(settings) {
-  return settings?.paid_cancellation_phrases?.length
+  return settings?.paid_cancellation_phrases != null
     ? [...settings.paid_cancellation_phrases]
     : [...DEFAULT_PAID_CANCELLATION_PHRASES]
 }
 
 function initialKeywords(settings, config) {
-  if (settings?.cancelled_keywords?.length) return [...settings.cancelled_keywords]
+  if (settings?.cancelled_keywords != null) return [...settings.cancelled_keywords]
   return [...(config?.cancelled_keywords ?? DEFAULT_CANCELLED_KEYWORDS)]
 }
 
