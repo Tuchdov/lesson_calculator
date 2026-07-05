@@ -1,25 +1,44 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { validateIsraeliPhone } from '../lib/whatsapp.js'
+import { DURATION_LABELS, TYPES, TYPE_LABEL } from '../lib/priceConstants.js'
+import { ImportPricesPanel } from './ImportPricesPanel.jsx'
 import styles from './CustomPricesPage.module.css'
 
-const DURATION_LABELS = { '60': '60 min', '45': '45 min', '30': '30 min' }
-const TYPES = ['regular', 'non_regular']
-const TYPE_LABEL = { regular: 'Regular', non_regular: 'Non-regular' }
+function initialPhones(settings) {
+  const p = {}
+  for (const [student, det] of Object.entries(settings?.customer_details ?? {})) {
+    if (det?.phone) p[student] = det.phone
+  }
+  return p
+}
 
-export function CustomPricesPage({ settings, onSave, availableStudents = [] }) {
+export function CustomPricesPage({ settings, onSave, availableStudents = [], onDirtyChange = () => {} }) {
   const [customPrices, setCustomPrices] = useState(
     () => deepClone(settings?.custom_prices ?? {})
   )
-  const [phones, setPhones] = useState(() => {
-    const p = {}
-    for (const [student, det] of Object.entries(settings?.customer_details ?? {})) {
-      if (det?.phone) p[student] = det.phone
-    }
-    return p
-  })
+  const [phones, setPhones] = useState(() => initialPhones(settings))
   const [phoneErrors, setPhoneErrors] = useState({})
   const [newStudent, setNewStudent] = useState('')
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState(null)
+  const [importOpen, setImportOpen] = useState(false)
+
+  // Snapshot of the raw, on-screen state as of the last successful save (or
+  // initial load) — compared against the live state to report "dirty" to the
+  // parent. Intentionally NOT the cleaned/parsed save payload: customPrices
+  // holds a mix of numbers (from the initial settings clone) and raw input
+  // strings (from edits), so comparing against a re-parsed payload would
+  // always look dirty. Comparing state-to-itself over time avoids that.
+  const lastSavedRef = useRef({
+    customPrices: deepClone(settings?.custom_prices ?? {}),
+    phones: initialPhones(settings),
+  })
+
+  useEffect(() => {
+    const dirty = JSON.stringify(customPrices) !== JSON.stringify(lastSavedRef.current.customPrices)
+      || JSON.stringify(phones) !== JSON.stringify(lastSavedRef.current.phones)
+    onDirtyChange(dirty)
+  }, [customPrices, phones, onDirtyChange])
 
   const handleAdd = () => {
     const name = newStudent.trim()
@@ -34,6 +53,7 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [] }) {
     setPhones(prev => ({ ...prev, [name]: prev[name] ?? '' }))
     setNewStudent('')
     setSaved(false)
+    setSaveError(null)
   }
 
   const handleRemove = (student) => {
@@ -53,6 +73,7 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [] }) {
       return next
     })
     setSaved(false)
+    setSaveError(null)
   }
 
   const handlePrice = (student, type, duration, value) => {
@@ -64,12 +85,23 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [] }) {
       },
     }))
     setSaved(false)
+    setSaveError(null)
   }
 
   const handlePhone = (student, value) => {
     setPhones(prev => ({ ...prev, [student]: value }))
     setPhoneErrors(prev => ({ ...prev, [student]: false }))
     setSaved(false)
+    setSaveError(null)
+  }
+
+  const handleImportResult = ({ entries, phones: importedPhones }) => {
+    setCustomPrices(prev => ({ ...prev, ...entries }))
+    if (Object.keys(importedPhones).length > 0) {
+      setPhones(prev => ({ ...prev, ...importedPhones }))
+    }
+    setSaved(false)
+    setSaveError(null)
   }
 
   const handleSave = async () => {
@@ -119,8 +151,20 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [] }) {
       }
     }
 
-    await onSave({ ...settings, custom_prices: cleaned, customer_details: updatedCustomerDetails })
-    setSaved(true)
+    try {
+      await onSave({ ...settings, custom_prices: cleaned, customer_details: updatedCustomerDetails })
+      lastSavedRef.current = { customPrices: deepClone(customPrices), phones: deepClone(phones) }
+      onDirtyChange(false)
+      setSaved(true)
+      setSaveError(null)
+    } catch (err) {
+      setSaved(false)
+      setSaveError(
+        err?.name === 'QuotaExceededError'
+          ? "Couldn't save — storage is full."
+          : "Couldn't save — please try again."
+      )
+    }
   }
 
   const students = Object.keys(customPrices)
@@ -145,7 +189,19 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [] }) {
             .map(s => <option key={s} value={s} />)}
         </datalist>
         <button className={styles.btnPrimary} onClick={handleAdd}>Add student</button>
+        <button className={styles.btnSecondary} onClick={() => setImportOpen(v => !v)}>
+          {importOpen ? 'Close import' : 'Import CSV'}
+        </button>
       </div>
+
+      {importOpen && (
+        <ImportPricesPanel
+          existingKeys={students}
+          availableStudents={availableStudents}
+          onImport={handleImportResult}
+          onClose={() => setImportOpen(false)}
+        />
+      )}
 
       {students.length === 0 && (
         <div className={styles.empty}>No custom prices set. Add a student above.</div>
@@ -219,7 +275,8 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [] }) {
 
       {students.length > 0 && (
         <div className={styles.footer}>
-          {saved && <span className={styles.savedMsg}>Saved!</span>}
+          {saveError && <span className={styles.saveErrorMsg} role="alert">{saveError}</span>}
+          {saved && !saveError && <span className={styles.savedMsg}>Saved!</span>}
           <button className={styles.btnPrimary} onClick={handleSave}>Save all</button>
         </div>
       )}
