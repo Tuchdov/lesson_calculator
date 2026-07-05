@@ -141,6 +141,18 @@ Deno.test('renderMessageTemplate: sanitizes newlines in student name', () => {
   assertEquals(msg, 'Alice Evil')
 })
 
+Deno.test('renderMessageTemplate: substitutes {lessons}', () => {
+  const msg = renderMessageTemplate('{student} had {lessons} lessons', {
+    studentName: 'Alice', amount: 100, monthName: 'July', lessons: 6,
+  })
+  assertEquals(msg, 'Alice had 6 lessons')
+})
+
+Deno.test('renderMessageTemplate: missing lessons renders as empty string, not "undefined"', () => {
+  const msg = renderMessageTemplate('lessons: {lessons}', { studentName: 'Alice', amount: 1, monthName: 'July' })
+  assertEquals(msg, 'lessons: ')
+})
+
 Deno.test('buildPaymentMessage: custom template overrides the default', () => {
   const msg = buildPaymentMessage('Alice', 250, '2026-06', 'Hi {student}, ₪{amount} due {month}')
   assertEquals(msg, 'Hi Alice, ₪250 due יוני')
@@ -150,6 +162,16 @@ Deno.test('buildPaymentMessage: no template falls back to DEFAULT_MESSAGE_TEMPLA
   const msg = buildPaymentMessage('Alice', 250, '2026-06')
   assertMatch(msg, /Alice/)
   assertMatch(msg, /250/)
+})
+
+Deno.test('buildPaymentMessage: passes lessons count through to the template', () => {
+  const msg = buildPaymentMessage('Alice', 250, '2026-06', '{student}: {lessons} lessons', 5)
+  assertEquals(msg, 'Alice: 5 lessons')
+})
+
+Deno.test('buildPaymentMessage: DEFAULT_MESSAGE_TEMPLATE includes the lesson count', () => {
+  const msg = buildPaymentMessage('Alice', 250, '2026-06', undefined, 7)
+  assertMatch(msg, /7/)
 })
 
 Deno.test('buildWhatsAppUrl: full round-trip produces valid URL', () => {

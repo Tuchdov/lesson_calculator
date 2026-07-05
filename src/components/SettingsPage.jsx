@@ -113,7 +113,7 @@ export function SettingsPage({ config, settings, onSave }) {
     setSaved(true)
   }
 
-  const preview = buildPaymentMessage('דנה', 300, currentMonth(), messageTemplate)
+  const preview = buildPaymentMessage('דנה', 300, currentMonth(), messageTemplate, 4)
 
   return (
     <div className={styles.page}>
@@ -159,8 +159,9 @@ export function SettingsPage({ config, settings, onSave }) {
           </button>
         </div>
         <p className={styles.tokenHint}>
-          Use <code>{'{student}'}</code>, <code>{'{amount}'}</code>, and{' '}
-          <code>{'{month}'}</code> — they're replaced automatically per student.
+          Use <code>{'{student}'}</code>, <code>{'{amount}'}</code>,{' '}
+          <code>{'{month}'}</code>, and <code>{'{lessons}'}</code> — they're
+          replaced automatically per student.
         </p>
         <textarea
           className={styles.textarea}

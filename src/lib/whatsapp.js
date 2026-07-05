@@ -16,23 +16,26 @@ export function validateIsraeliPhone(phone) {
 }
 
 export const DEFAULT_MESSAGE_TEMPLATE =
-  ` שלום {student} :)\nהנה סיכום השיעורים שלך לחודש {month}:\n סה״כ לתשלום: ₪{amount}\n לתשלום: [קישור לתשלום]\nתודה ונתראה! `
+  ` שלום {student} :)\nהנה סיכום השיעורים שלך לחודש {month}:\n מספר שיעורים: {lessons}\n סה״כ לתשלום: ₪{amount}\n לתשלום: [קישור לתשלום]\nתודה ונתראה! `
 
-// Substitutes {student}, {amount}, {month} tokens into a user-editable template.
-export function renderMessageTemplate(template, { studentName, amount, monthName }) {
+// Substitutes {student}, {amount}, {month}, {lessons} tokens into a user-editable template.
+export function renderMessageTemplate(template, { studentName, amount, monthName, lessons }) {
   const safeName = (studentName ?? '').replace(/[\r\n]+/g, ' ').trim()
   return (template ?? '')
     .replaceAll('{student}', safeName)
     .replaceAll('{amount}', String(amount))
     .replaceAll('{month}', monthName ?? '')
+    .replaceAll('{lessons}', String(lessons ?? ''))
 }
 
 // monthStr is "YYYY-MM"; template defaults to the built-in Hebrew message but
-// can be overridden with a user-customized template from settings.
-export function buildPaymentMessage(studentName, amount, monthStr, template = DEFAULT_MESSAGE_TEMPLATE) {
+// can be overridden with a user-customized template from settings. `lessons`
+// is the total lesson count for the student that month (optional — omitted
+// templates simply won't have a {lessons} token to replace).
+export function buildPaymentMessage(studentName, amount, monthStr, template = DEFAULT_MESSAGE_TEMPLATE, lessons) {
   const [, mm] = (monthStr ?? '').split('-')
   const monthName = HEBREW_MONTHS[parseInt(mm, 10)] ?? monthStr
-  return renderMessageTemplate(template, { studentName, amount, monthName })
+  return renderMessageTemplate(template, { studentName, amount, monthName, lessons })
 }
 
 export function buildWhatsAppUrl(phone, message) {

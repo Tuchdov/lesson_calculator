@@ -81,6 +81,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, onC
     + row.lessons_45 * Number(prices['45'])
     + row.lessons_30 * Number(prices['30'])
   const roundedAmount = Math.round(amount * 100) / 100
+  const totalLessons = row.lessons_60 + row.lessons_45 + row.lessons_30
 
   const handleSave = () => {
     const parsed = {}
@@ -119,12 +120,12 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, onC
     }
     await onCustomerDetailChange?.(row.student, { phone: phoneInput })
     setExpandedRow(null)
-    const msg = buildPaymentMessage(row.student, roundedAmount, month, defaultMessage || undefined)
+    const msg = buildPaymentMessage(row.student, roundedAmount, month, defaultMessage || undefined, totalLessons)
     window.open(buildWhatsAppUrl(phoneInput, msg), '_blank', 'noopener')
   }
 
   const handleSendDirect = () => {
-    const msg = buildPaymentMessage(row.student, roundedAmount, month, defaultMessage || undefined)
+    const msg = buildPaymentMessage(row.student, roundedAmount, month, defaultMessage || undefined, totalLessons)
     window.open(buildWhatsAppUrl(phone, msg), '_blank', 'noopener')
   }
 
