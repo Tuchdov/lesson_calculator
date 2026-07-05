@@ -16,8 +16,12 @@ export function useUserSettings(userEmail) {
 
   const saveSettings = useCallback(async (next) => {
     if (!userEmail) return
-    setSettings(next)
+    // Persist BEFORE updating in-memory state. If saveUserSettings throws
+    // (e.g. localStorage quota exceeded), state must stay at the
+    // last-persisted value so a caller's dirty/unsaved-changes check stays
+    // truthful — setting state first would make a failed save look saved.
     await saveUserSettings(userEmail, next)
+    setSettings(next)
   }, [userEmail])
 
   return { settings, saveSettings, isReady }

@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert'
+import { assertEquals, assertRejects } from '@std/assert'
 import { loadUserSettings, saveUserSettings, sha256Hex } from '../src/lib/userSettings.js'
 
 function makeStub() {
@@ -76,6 +76,29 @@ Deno.test('loadUserSettings: back-fills cancelled_keywords (as null = not custom
   }))
   const loaded = await loadUserSettings('user@example.com', stub)
   assertEquals(loaded.cancelled_keywords, null)
+})
+
+// Regression guard for plan-eng-review outside-voice finding 1: useUserSettings
+// .saveSettings persists BEFORE updating in-memory state precisely because
+// saveUserSettings must reject on a storage failure rather than swallow it —
+// otherwise a failed save (e.g. QuotaExceededError) would look identical to a
+// successful one to the caller, and the in-memory state would already have
+// been optimistically updated. This test pins the propagation contract the
+// hook-level fix depends on.
+Deno.test('saveUserSettings: propagates a storage error instead of swallowing it', async () => {
+  const throwingStorage = {
+    getItem: () => null,
+    setItem: () => {
+      const err = new Error('quota exceeded')
+      err.name = 'QuotaExceededError'
+      throw err
+    },
+  }
+  await assertRejects(
+    () => saveUserSettings('user@example.com', { custom_prices: {} }, throwingStorage),
+    Error,
+    'quota exceeded',
+  )
 })
 
 Deno.test('loadUserSettings: preserves an intentionally emptied list, distinct from never-customized null', async () => {
