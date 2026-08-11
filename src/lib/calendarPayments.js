@@ -58,31 +58,62 @@ export function normalizeStudentName(name) {
   return words.slice(0, 2).join(' ') || name
 }
 
-export function inferStudentName(summary, regex = null) {
+function cleanNameCandidate(name) {
+  return name
+    .replace(/^(?:\s*[-|:]\s*)+/, '')
+    .replace(/(?:\s*[-|:]\s*)+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function nameAroundLessonPhrase(text) {
+  if (!text.includes(REQUIRED_LESSON_PHRASE)) return normalizeStudentName(text)
+
+  const phraseIndex = text.indexOf(REQUIRED_LESSON_PHRASE)
+  const prefix = cleanNameCandidate(text.slice(0, phraseIndex))
+  if (prefix) return normalizeStudentName(prefix)
+
+  const suffix = cleanNameCandidate(text.slice(phraseIndex + REQUIRED_LESSON_PHRASE.length))
+  return suffix ? normalizeStudentName(suffix) : null
+}
+
+function withoutIgnoredPhrases(summary, ignoredPhrases) {
+  let cleaned = summary
+  // Prefer the most specific label when configured phrases overlap.
+  const phrases = [...ignoredPhrases].sort((a, b) => String(b).length - String(a).length)
+  for (const phrase of phrases) {
+    if (typeof phrase === 'string' && phrase) cleaned = cleaned.replaceAll(phrase, ' ')
+  }
+  return cleanNameCandidate(cleaned)
+}
+
+export function inferStudentName(summary, regex = null, ignoredPhrases = []) {
   if (!summary) return null
+  const cleanedSummary = withoutIgnoredPhrases(summary, ignoredPhrases)
+  if (!cleanedSummary) return null
 
   if (regex) {
-    const match = summary.match(new RegExp(regex))
+    const match = cleanedSummary.match(new RegExp(regex))
     if (match) {
-      const name = match[1].trim()
-      if (name.includes(REQUIRED_LESSON_PHRASE)) {
-        const prefix = name.split(REQUIRED_LESSON_PHRASE)[0].trim()
-        return prefix ? normalizeStudentName(prefix) : null
-      }
-      return name
+      const name = cleanNameCandidate(match[1] ?? '')
+      const candidate = name && nameAroundLessonPhrase(name)
+      if (candidate) return candidate
     }
   }
 
   for (const sep of [' - ', ' | ', ': ']) {
-    if (summary.includes(sep)) return summary.split(sep)[0].trim()
+    if (!cleanedSummary.includes(sep)) continue
+    for (const part of cleanedSummary.split(sep)) {
+      const cleanedPart = cleanNameCandidate(part)
+      const candidate = cleanedPart && nameAroundLessonPhrase(cleanedPart)
+      if (candidate) return candidate
+    }
   }
 
-  if (summary.includes(REQUIRED_LESSON_PHRASE)) {
-    const prefix = summary.split(REQUIRED_LESSON_PHRASE)[0].trim()
-    if (prefix) return normalizeStudentName(prefix)
-  }
+  const candidate = nameAroundLessonPhrase(cleanedSummary)
+  if (candidate) return candidate
 
-  return normalizeStudentName(summary.trim())
+  return normalizeStudentName(cleanedSummary)
 }
 
 export function isRegular(lessons, invoiceStart, invoiceEnd) {
@@ -146,7 +177,10 @@ export function calculatePayments(events, config, monthStr) {
     const paidCancel = isPaidCancellation(summary, paidCancellationPhrases)
     if (!paidCancel && isCancelledLesson(summary, cancelledKeywords)) continue
 
-    const student = inferStudentName(summary, nameRegex)
+    // Paid-cancellation labels describe the event; they are not student names.
+    // Remove them before applying the configured name parser so titles may put
+    // the label either before or after the actual student name.
+    const student = inferStudentName(summary, nameRegex, paidCancellationPhrases)
     const duration = lessonDurationMinutes(event)
     const doubleDuration = duration ? null : doubleLessonDurationMinutes(event)
     const startRaw = event?.start?.dateTime
