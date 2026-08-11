@@ -9,7 +9,7 @@ import { SettingsPage } from './components/SettingsPage.jsx'
 import styles from './App.module.css'
 
 export default function App() {
-  const { accessToken, userEmail, signIn, signOut, error: authError } = useAuth()
+  const { accessToken, userEmail, signIn, signOut, error: authError, getValidAccessToken } = useAuth()
   const { settings, saveSettings, isReady } = useUserSettings(userEmail)
   const [page, setPage] = useState('calculator')
   const [config, setConfig] = useState(null)
@@ -86,7 +86,7 @@ export default function App() {
       <main className={styles.main}>
         {page === 'calculator' && (
           <CalculatorPage
-            accessToken={accessToken}
+            getAccessToken={getValidAccessToken}
             config={effectiveConfig}
             customPrices={settings.custom_prices}
             onCustomPriceChange={handleCustomPriceChange}

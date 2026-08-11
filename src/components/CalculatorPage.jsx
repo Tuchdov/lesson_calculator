@@ -9,9 +9,9 @@ function currentMonth() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-export function CalculatorPage({ accessToken, config, customPrices, onCustomPriceChange, onStudentsChange, customerDetails, onCustomerDetailChange, defaultMessage }) {
+export function CalculatorPage({ getAccessToken, config, customPrices, onCustomPriceChange, onStudentsChange, customerDetails, onCustomerDetailChange, defaultMessage }) {
   const [month, setMonth] = useState(currentMonth)
-  const { rows, summary, loading, error, calculate } = useCalendarData(accessToken, {
+  const { rows, summary, loading, error, calculate } = useCalendarData(getAccessToken, {
     ...config,
     custom_prices: customPrices,
   })

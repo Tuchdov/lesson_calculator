@@ -2,14 +2,17 @@ import { useState, useCallback } from 'react'
 import { fetchCalendarEvents } from '../api/calendarApi.js'
 import { calculatePayments, monthWindow } from '../lib/calendarPayments.js'
 
-export function useCalendarData(accessToken, config) {
+export function useCalendarData(getAccessToken, config) {
   const [rows, setRows] = useState(null)
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
   const calculate = useCallback(async (monthStr) => {
-    if (!accessToken || !config) return
+    // getAccessToken is a function reference, always truthy once wired up —
+    // only the !config half of this guard can actually fire in practice.
+    // Left over from the original !accessToken (nullable string) check.
+    if (!getAccessToken || !config) return
     setLoading(true)
     setError(null)
     try {
@@ -18,7 +21,7 @@ export function useCalendarData(accessToken, config) {
       const windowStart = new Date(start)
       windowStart.setMonth(windowStart.getMonth() - 2)
       const events = await fetchCalendarEvents(
-        accessToken,
+        getAccessToken,
         config.calendar_id ?? 'primary',
         windowStart,
         end,
@@ -31,7 +34,7 @@ export function useCalendarData(accessToken, config) {
     } finally {
       setLoading(false)
     }
-  }, [accessToken, config])
+  }, [getAccessToken, config])
 
   return { rows, summary, loading, error, calculate }
 }

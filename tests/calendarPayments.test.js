@@ -207,6 +207,54 @@ Deno.test('inferStudentName: strips lesson phrase + parenthetical tokens', () =>
   assertEquals(inferStudentName('ליאור פיתוח קול ביטול בתשלום'), 'ליאור')
 })
 
+Deno.test('inferStudentName: ignores a paid-cancellation phrase before the student name', () => {
+  const phrases = ['ביטול ברגע האחרון']
+  const regex = '^([^-|:]+)'
+
+  assertEquals(
+    inferStudentName('ביטול ברגע האחרון - אשלי - פיתוח קול', regex, phrases),
+    'אשלי',
+  )
+  assertEquals(
+    inferStudentName('ביטול ברגע האחרון - פיתוח קול - אשלי', regex, phrases),
+    'אשלי',
+  )
+  assertEquals(
+    inferStudentName('ביטול ברגע האחרון אשלי פיתוח קול', regex, phrases),
+    'אשלי',
+  )
+    assertEquals(
+    inferStudentName('אשלי פיתוח קול - ביטול ברגע האחרון שיעור כפול', regex, phrases),
+    'אשלי',
+  )
+})
+
+Deno.test('calculatePayments: paid-cancellation phrase is not used as the student name', () => {
+  const events = [
+    makeLessonEvent(
+      'אשלי - פיתוח קול',
+      '2026-02-01T10:00:00.000Z',
+      '2026-02-01T11:00:00.000Z',
+    ),
+    makeLessonEvent(
+      'ביטול ברגע האחרון - אשלי - פיתוח קול',
+      '2026-02-02T10:00:00.000Z',
+      '2026-02-02T11:00:00.000Z',
+    ),
+  ]
+  const config = {
+    ...BASE_CONFIG,
+    student_name_regex: '^([^-|:]+)',
+    paid_cancellation_phrases: ['ביטול ברגע האחרון'],
+  }
+
+  const { rows } = calculatePayments(events, config, '2026-02')
+  assertEquals(rows.length, 1)
+  assertEquals(rows[0].student, 'אשלי')
+  assertEquals(rows[0].lessons_60, 2)
+  assertEquals(rows[0].amount_due, 2 * BASE_CONFIG.prices.regular['60'])
+})
+
 // 15
 Deno.test('resolvePriceTable: legacy flat format overrides both types', () => {
   const regular = { '60': 250, '45': 200, '30': 180 }
