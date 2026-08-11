@@ -56,6 +56,21 @@
 
 .btnPrimary:hover { background: var(--md-blue-hover); }
 
+.btnSecondary {
+  background: #fff;
+  color: var(--md-blue);
+  border: 1px solid var(--md-blue);
+  border-radius: var(--radius-pill);
+  padding: 8px 20px;
+  font-family: var(--font-gs);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btnSecondary:hover { background: var(--md-blue-tonal); }
+
 .card {
   background: var(--md-surface);
   border: 1px solid var(--md-border);
@@ -133,6 +148,12 @@
 .savedMsg {
   font-size: 14px;
   color: var(--md-green);
+  font-weight: 500;
+}
+
+.saveErrorMsg {
+  font-size: 14px;
+  color: var(--md-red);
   font-weight: 500;
 }
 

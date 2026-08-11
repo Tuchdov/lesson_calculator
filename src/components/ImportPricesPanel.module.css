@@ -1,0 +1,249 @@
+.panel {
+  background: var(--md-surface);
+  border: 1px solid var(--md-border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.heading {
+  font-family: var(--font-gs);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--md-text);
+  margin: 0;
+  outline: none;
+}
+
+.fileRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.fileInput {
+  font-family: var(--font-rb);
+  font-size: 14px;
+}
+
+.fileHint {
+  font-size: 13px;
+  color: var(--md-text-muted);
+}
+
+.loadingRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--md-text-muted);
+  font-size: 14px;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--md-border);
+  border-top-color: var(--md-blue);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.errorBlock {
+  background: var(--md-red-tonal);
+  color: var(--md-red);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 13px;
+}
+
+.mapRow {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.mapField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lbl {
+  font-size: 12px;
+  color: var(--md-text-muted);
+}
+
+.req {
+  color: var(--md-red);
+}
+
+.mapField select {
+  border: 1px solid var(--md-border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 14px;
+  font-family: var(--font-rb);
+  color: var(--md-text);
+  background: #fff;
+  min-width: 150px;
+}
+
+.mapField select:focus {
+  outline: 2px solid rgba(26, 115, 232, .2);
+  border-color: var(--md-blue);
+}
+
+.warnInline {
+  font-size: 12px;
+  color: var(--md-red);
+}
+
+.emptyResult {
+  color: var(--md-text-muted);
+  font-size: 14px;
+  padding: 16px;
+  text-align: center;
+}
+
+.warn {
+  background: var(--md-amber-tonal);
+  color: var(--md-amber);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  font-size: 13px;
+}
+
+.counts {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--md-text-muted);
+}
+
+.counts b {
+  color: var(--md-text);
+}
+
+.skipDetail {
+  font-size: 13px;
+}
+
+.skipList {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  color: var(--md-text-muted);
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tblWrap {
+  overflow-x: auto;
+  border: 1px solid var(--md-border);
+  border-radius: var(--radius);
+}
+
+.tblWrap table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+
+.tblWrap th,
+.tblWrap td {
+  padding: 8px 12px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.name {
+  text-align: left !important;
+  font-weight: 500;
+}
+
+.grpReg {
+  background: var(--md-green-tonal);
+  color: var(--md-green);
+  font-family: var(--font-gs);
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.grpNon {
+  background: var(--md-amber-tonal);
+  color: var(--md-amber);
+  font-family: var(--font-gs);
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.tblWrap thead tr:last-child th {
+  color: var(--md-text-muted);
+  font-weight: 500;
+  background: var(--md-hover);
+  border-bottom: 1px solid var(--md-border);
+}
+
+.tblWrap tbody tr:not(:last-child) td {
+  border-bottom: 1px solid var(--md-hover);
+}
+
+.chipNew,
+.chipRep {
+  display: inline-block;
+  border-radius: var(--radius-pill);
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.chipNew {
+  background: var(--md-green-tonal);
+  color: var(--md-green);
+}
+
+.chipRep {
+  background: var(--md-amber-tonal);
+  color: var(--md-amber);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.btnPrimary {
+  background: var(--md-blue);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 9px 24px;
+  font-family: var(--font-gs);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.btnPrimary:hover:not(:disabled) { background: var(--md-blue-hover); }
+.btnPrimary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btnText {
+  background: none;
+  border: none;
+  color: var(--md-blue);
+  font-family: var(--font-gs);
+  font-weight: 500;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 8px 12px;
+}

@@ -71,6 +71,9 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, onC
   const [draft, setDraft] = useState(custom ? { ...custom } : null)
   const [phoneInput, setPhoneInput] = useState('')
   const [phoneError, setPhoneError] = useState(false)
+  const [amountOverride, setAmountOverride] = useState(null)
+  const [editingAmount, setEditingAmount] = useState(false)
+  const [amountDraft, setAmountDraft] = useState('')
 
   useEffect(() => {
     setDraft(custom ? { ...custom } : null)
@@ -80,7 +83,25 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, onC
   const amount = row.lessons_60 * Number(prices['60'])
     + row.lessons_45 * Number(prices['45'])
     + row.lessons_30 * Number(prices['30'])
-  const roundedAmount = Math.round(amount * 100) / 100
+  const computedAmount = Math.round(amount * 100) / 100
+  const roundedAmount = amountOverride ?? computedAmount
+  const totalLessons = row.lessons_60 + row.lessons_45 + row.lessons_30
+
+  const handleStartAmountEdit = () => {
+    setAmountDraft(String(roundedAmount))
+    setEditingAmount(true)
+  }
+
+  const handleSaveAmount = () => {
+    const v = parseFloat(amountDraft)
+    if (!isNaN(v)) setAmountOverride(Math.round(v * 100) / 100)
+    setEditingAmount(false)
+  }
+
+  const handleResetAmount = () => {
+    setAmountOverride(null)
+    setEditingAmount(false)
+  }
 
   const handleSave = () => {
     const parsed = {}
@@ -119,21 +140,23 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, onC
     }
     await onCustomerDetailChange?.(row.student, { phone: phoneInput })
     setExpandedRow(null)
-    const msg = buildPaymentMessage(row.student, roundedAmount, month, defaultMessage || undefined)
+    const msg = buildPaymentMessage(row.student, roundedAmount, month, defaultMessage || undefined, totalLessons)
     window.open(buildWhatsAppUrl(phoneInput, msg), '_blank', 'noopener')
   }
 
   const handleSendDirect = () => {
-    const msg = buildPaymentMessage(row.student, roundedAmount, month, defaultMessage || undefined)
+    const msg = buildPaymentMessage(row.student, roundedAmount, month, defaultMessage || undefined, totalLessons)
     window.open(buildWhatsAppUrl(phone, msg), '_blank', 'noopener')
   }
 
   return (
     <>
       <tr className={styles.row}>
-        <td className={styles.studentCell}>
-          {row.student}
-          {custom && <span className={styles.customBadge}>custom</span>}
+        <td>
+          <span className={styles.studentCell}>
+            {row.student}
+            {custom && <span className={styles.customBadge}>custom</span>}
+          </span>
         </td>
         <td>
           <span className={`${styles.chip} ${TYPE_CHIP[row.student_type]}`}>
@@ -149,25 +172,60 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, onC
                       className={styles.priceInput}
                       value={draft?.[d] ?? prices[d]}
                       onChange={e => setDraft(prev => ({ ...prev, [d]: e.target.value }))}
+                      autoFocus
                     />
-                  : <span className={styles.price}>₪{prices[d]}</span>
+                  : <span
+                      className={styles.priceEditable}
+                      title="Double-click to change this student's ₪/lesson rate"
+                      onDoubleClick={() => {
+                        if (editingAmount) return
+                        setDraft({ '60': prices['60'], '45': prices['45'], '30': prices['30'] })
+                        setEditing(true)
+                      }}
+                    >
+                      ₪{prices[d]}
+                    </span>
                 }
               </span>
             )}
           </td>
         ))}
         <td className={`${styles.center} ${styles.amount}`}>
-          ₪{roundedAmount}
-          {!editing
-            ? <button className={styles.editBtn} onClick={() => {
-                setDraft({ '60': prices['60'], '45': prices['45'], '30': prices['30'] })
-                setEditing(true)
-              }}>edit</button>
-            : <>
-                <button className={styles.saveBtn} onClick={handleSave}>save</button>
-                <button className={styles.cancelBtn} onClick={() => setEditing(false)}>✕</button>
-              </>
-          }
+          {editingAmount ? (
+            <div className={styles.amountEditRow}>
+              <input
+                className={styles.amountInput}
+                value={amountDraft}
+                onChange={e => setAmountDraft(e.target.value)}
+                autoFocus
+              />
+              <button className={styles.miniSave} onClick={handleSaveAmount} title="Save">✓</button>
+              <button className={styles.miniCancel} onClick={() => setEditingAmount(false)} title="Cancel">✕</button>
+              {amountOverride != null && (
+                <button className={styles.miniReset} onClick={handleResetAmount} title="Reset to calculated amount">↺</button>
+              )}
+            </div>
+          ) : editing ? (
+            <div className={styles.amountEditRow}>
+              <span className={styles.amountValue}>₪{roundedAmount}</span>
+              <button className={styles.miniSave} onClick={handleSave} title="Save price">✓</button>
+              <button className={styles.miniCancel} onClick={() => setEditing(false)} title="Cancel">✕</button>
+            </div>
+          ) : (
+            <span
+              className={styles.amountEditable}
+              title="Double-click to set a one-off amount due for this invoice"
+              onDoubleClick={() => {
+                if (editing) return
+                handleStartAmountEdit()
+              }}
+            >
+              ₪{roundedAmount}
+              {amountOverride != null && (
+                <span className={styles.adjustedBadge} title="Manually adjusted — double-click to change or reset">adjusted</span>
+              )}
+            </span>
+          )}
         </td>
         <td className={styles.waCell}>
           {phone

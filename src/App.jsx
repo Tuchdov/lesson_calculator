@@ -14,6 +14,18 @@ export default function App() {
   const [page, setPage] = useState('calculator')
   const [config, setConfig] = useState(null)
   const [knownStudents, setKnownStudents] = useState([])
+  const [dirty, setDirty] = useState(false)
+
+  // Guards navigation away from a page with unsaved changes (currently only
+  // Custom Prices reports dirty state, e.g. a pending import not yet saved).
+  // Confirming discards the flag and switches; cancelling leaves the user
+  // exactly where they were, changes intact.
+  const handleNavigate = (nextPage) => {
+    if (nextPage === page) return
+    if (dirty && !window.confirm('You have unsaved changes on this page. Discard them?')) return
+    setDirty(false)
+    setPage(nextPage)
+  }
 
   useEffect(() => {
     fetch('/pricing_config.json')
@@ -70,7 +82,7 @@ export default function App() {
 
   return (
     <div className={styles.shell}>
-      <Sidebar page={page} onNavigate={setPage} userEmail={userEmail} onSignOut={signOut} />
+      <Sidebar page={page} onNavigate={handleNavigate} userEmail={userEmail} onSignOut={signOut} />
       <main className={styles.main}>
         {page === 'calculator' && (
           <CalculatorPage
@@ -89,6 +101,7 @@ export default function App() {
             settings={settings}
             onSave={saveSettings}
             availableStudents={knownStudents}
+            onDirtyChange={setDirty}
           />
         )}
         {page === 'settings' && (
