@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from './hooks/useAuth.js'
 import { useUserSettings } from './hooks/useUserSettings.js'
+import { loadAmountOverrides, saveAmountOverride, loadPaymentLinks, savePaymentLink } from './lib/payments.js'
 import { AuthScreen } from './components/AuthScreen.jsx'
 import { Sidebar } from './components/Sidebar.jsx'
 import { CalculatorPage } from './components/CalculatorPage.jsx'
@@ -15,6 +16,8 @@ export default function App() {
   const [config, setConfig] = useState(null)
   const [knownStudents, setKnownStudents] = useState([])
   const [dirty, setDirty] = useState(false)
+  const [amountOverrides, setAmountOverrides] = useState({})
+  const [paymentLinks, setPaymentLinks] = useState({})
 
   // Guards navigation away from a page with unsaved changes (currently only
   // Custom Prices reports dirty state, e.g. a pending import not yet saved).
@@ -33,6 +36,22 @@ export default function App() {
       .then(setConfig)
       .catch(() => {})
   }, [])
+
+  useEffect(() => {
+    if (!userEmail) return
+    loadAmountOverrides(userEmail).then(setAmountOverrides).catch(err => console.error('Failed to load amount overrides:', err))
+    loadPaymentLinks(userEmail).then(setPaymentLinks).catch(err => console.error('Failed to load payment links:', err))
+  }, [userEmail])
+
+  const handleAmountOverrideChange = async (month, student, amount) => {
+    const next = await saveAmountOverride(userEmail, month, student, amount)
+    setAmountOverrides(next)
+  }
+
+  const handlePaymentLinkChange = async (month, student, link, amount) => {
+    const next = await savePaymentLink(userEmail, month, student, link, amount)
+    setPaymentLinks(next)
+  }
 
   const handleCustomPriceChange = async (student, prices) => {
     const next = {
@@ -94,6 +113,10 @@ export default function App() {
             customerDetails={settings.customer_details}
             onCustomerDetailChange={handleCustomerDetailChange}
             defaultMessage={settings.default_message}
+            amountOverrides={amountOverrides}
+            onAmountOverrideChange={handleAmountOverrideChange}
+            paymentLinks={paymentLinks}
+            onPaymentLinkChange={handlePaymentLinkChange}
           />
         )}
         {page === 'custom-prices' && (

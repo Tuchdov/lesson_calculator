@@ -199,6 +199,47 @@
 .waChipMissing:hover { background: color-mix(in srgb, var(--md-amber-tonal) 70%, var(--md-amber) 10%); }
 .waChipActive { opacity: 0.7; }
 
+.waChipPrepare {
+  background: var(--md-blue-tonal);
+  color: var(--md-blue);
+  border: 1.5px solid color-mix(in srgb, var(--md-blue) 35%, transparent);
+}
+.waChipPrepare:hover { background: color-mix(in srgb, var(--md-blue-tonal) 70%, var(--md-blue) 10%); }
+.waChipPrepare:disabled { opacity: 0.6; cursor: default; }
+
+.waChipError {
+  background: var(--md-red-tonal);
+  color: var(--md-red);
+  border: 1.5px solid color-mix(in srgb, var(--md-red) 35%, transparent);
+}
+.waChipError:hover { background: color-mix(in srgb, var(--md-red-tonal) 70%, var(--md-red) 10%); }
+.waChipError:disabled { opacity: 0.6; cursor: default; }
+
+.waChipReady:disabled { opacity: 0.6; cursor: default; }
+
+.waReadyGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.regenBtn {
+  border: none;
+  background: var(--md-hover);
+  color: var(--md-text-muted);
+  border-radius: var(--radius-pill);
+  width: 24px;
+  height: 24px;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.regenBtn:hover { background: var(--md-border); color: var(--md-text); }
+.regenBtn:disabled { opacity: 0.5; cursor: default; }
+
 /* ── Inline phone expansion row ── */
 .expandRow td { padding: 0 !important; border-bottom: none !important; }
 
