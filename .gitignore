@@ -28,3 +28,9 @@ specs/
 *.njsproj
 *.sln
 *.sw?
+.vercel
+.env*
+
+# Local AI-tool session artifacts (not project source)
+.claude/
+.context/
