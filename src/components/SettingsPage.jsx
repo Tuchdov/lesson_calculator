@@ -160,8 +160,10 @@ export function SettingsPage({ config, settings, onSave }) {
         </div>
         <p className={styles.tokenHint}>
           Use <code>{'{student}'}</code>, <code>{'{amount}'}</code>,{' '}
-          <code>{'{month}'}</code>, and <code>{'{lessons}'}</code> — they're
-          replaced automatically per student.
+          <code>{'{month}'}</code>, <code>{'{lessons}'}</code>, and{' '}
+          <code>{'{link}'}</code> — they're replaced automatically per
+          student. If <code>{'{link}'}</code> isn't in the template, the
+          payment link is added at the end instead.
         </p>
         <textarea
           className={styles.textarea}

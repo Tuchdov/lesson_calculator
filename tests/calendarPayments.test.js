@@ -176,6 +176,11 @@ Deno.test('calculatePayments: honors config.paid_cancellation_phrases for a cust
   assertEquals(rows.length, 1)
   assertEquals(rows[0].lessons_60, 1)
   assertEquals(rows[0].amount_due, BASE_CONFIG.prices.regular['60'])
+  // student_type must agree with the rate actually billed — otherwise any UI
+  // that re-derives the amount from student_type (as EditableTable/
+  // CalculatorPage do for display and payment links) computes a different
+  // number than amount_due above.
+  assertEquals(rows[0].student_type, 'regular')
 })
 
 Deno.test('isCancelledLesson: DEFAULT_CANCELLED_KEYWORDS is exported and usable as a default', () => {

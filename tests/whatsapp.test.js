@@ -5,7 +5,9 @@ import {
   buildPaymentMessage,
   buildWhatsAppUrl,
   renderMessageTemplate,
+  applyPaymentLink,
   DEFAULT_MESSAGE_TEMPLATE,
+  HEBREW_MONTHS,
 } from '../src/lib/whatsapp.js'
 
 // ── validateIsraeliPhone ──────────────────────────────────────────────────────
@@ -172,6 +174,53 @@ Deno.test('buildPaymentMessage: passes lessons count through to the template', (
 Deno.test('buildPaymentMessage: DEFAULT_MESSAGE_TEMPLATE includes the lesson count', () => {
   const msg = buildPaymentMessage('Alice', 250, '2026-06', undefined, 7)
   assertMatch(msg, /7/)
+})
+
+// ── HEBREW_MONTHS ─────────────────────────────────────────────────────────
+
+Deno.test('HEBREW_MONTHS: exported and has all 12 months', () => {
+  assertEquals(Object.keys(HEBREW_MONTHS).length, 12)
+  assertEquals(HEBREW_MONTHS[8], 'אוגוסט')
+})
+
+// ── applyPaymentLink ──────────────────────────────────────────────────────
+
+Deno.test('applyPaymentLink: no link leaves the message unchanged', () => {
+  const msg = 'לתשלום: [קישור לתשלום]'
+  assertEquals(applyPaymentLink(msg, undefined), msg)
+  assertEquals(applyPaymentLink(msg, null), msg)
+  assertEquals(applyPaymentLink(msg, ''), msg)
+})
+
+Deno.test('applyPaymentLink: replaces an explicit {link} token', () => {
+  const msg = applyPaymentLink('pay here: {link}', 'https://pay.grow.link/abc')
+  assertEquals(msg, 'pay here: https://pay.grow.link/abc')
+})
+
+Deno.test('applyPaymentLink: {link} token wins even if the legacy placeholder is also present', () => {
+  const msg = applyPaymentLink('{link} or [קישור לתשלום]', 'https://pay.grow.link/abc')
+  assertEquals(msg, 'https://pay.grow.link/abc or [קישור לתשלום]')
+})
+
+Deno.test('applyPaymentLink: replaces the legacy placeholder when no {link} token exists', () => {
+  const msg = applyPaymentLink('לתשלום: [קישור לתשלום]', 'https://pay.grow.link/abc')
+  assertEquals(msg, 'לתשלום: https://pay.grow.link/abc')
+})
+
+Deno.test('applyPaymentLink: appends the link when neither token nor placeholder exists', () => {
+  const msg = applyPaymentLink('תודה ונתראה!', 'https://pay.grow.link/abc')
+  assertEquals(msg, 'תודה ונתראה!\nhttps://pay.grow.link/abc')
+})
+
+Deno.test('buildPaymentMessage: link replaces the default template placeholder', () => {
+  const msg = buildPaymentMessage('רחל', 350, '2026-06', undefined, 4, 'https://pay.grow.link/xyz')
+  assertMatch(msg, /https:\/\/pay\.grow\.link\/xyz/)
+  assertEquals(msg.includes('[קישור לתשלום]'), false)
+})
+
+Deno.test('buildPaymentMessage: no link leaves the placeholder in place', () => {
+  const msg = buildPaymentMessage('רחל', 350, '2026-06')
+  assertMatch(msg, /\[קישור לתשלום\]/)
 })
 
 Deno.test('buildWhatsAppUrl: full round-trip produces valid URL', () => {

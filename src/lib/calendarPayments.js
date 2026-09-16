@@ -223,7 +223,7 @@ export function calculatePayments(events, config, monthStr) {
 
     rows.push({
       student,
-      student_type: regular ? 'regular' : 'non_regular',
+      student_type: (regular || forceRegular.has(student)) ? 'regular' : 'non_regular',
       lessons_60: s.count_60,
       lessons_45: s.count_45,
       lessons_30: s.count_30,
