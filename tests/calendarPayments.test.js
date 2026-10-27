@@ -13,6 +13,7 @@ import {
   resolvePriceTable,
   resolveSavedStudent,
   savedNameConflicts,
+  rowNeedsRecalc,
 } from '../src/lib/calendarPayments.js'
 import { computeRowAmount } from '../src/lib/rowPricing.js'
 
@@ -681,4 +682,29 @@ Deno.test('calculatePayments: a row built from contradicting saved spellings car
   }
   const { rows } = calculatePayments(events, config, '2026-10')
   assertEquals(rows[0].name_conflicts, ['phone'])
+})
+
+// ── normalized conflicts and recalculation (Codex review, cycle 3) ───────────
+
+// Value: protects=the same phone typed two ways, or the same price written flat vs tiered, is not flagged as two students; fails_when=raw values are compared, blocking sending for one student; why_new=conflict tests used distinct values only; seam=none
+Deno.test('savedNameConflicts: equivalent phones, names and prices are not conflicts', () => {
+  const details = { 'אלה עוז (9.5)': { phone: '050-1234567', full_name: 'נועה  עוז' }, 'אלה עוז (אמה נועה)': { phone: '0501234567', full_name: 'נועה עוז' } }
+  const custom = { 'אלה עוז (9.5)': { '60': 240, '45': 200, '30': 180 }, 'אלה עוז (אמה נועה)': { regular: { '60': 240, '45': 200, '30': 180 } } }
+  assertEquals(savedNameConflicts(['אלה עוז (9.5)', 'אלה עוז (אמה נועה)'], custom, details), [])
+  assertEquals(savedNameConflicts(['a', 'b'], { a: { '60': 240 }, b: { '60': 250 } }, {}), ['price'])
+  assertEquals(savedNameConflicts(['a', 'b'], { a: { regular: {}, non_regular: {} }, b: { '60': 250 } }, {}), [])
+})
+
+// Value: protects=a conflicting spelling added after Calculate pauses sending until recalculation; fails_when=only the row key is compared, so the stale conflict-free row can be billed; why_new=rowNeedsRecalc is new; seam=none
+Deno.test('rowNeedsRecalc: flags a row whose spellings or conflicts changed since Calculate', () => {
+  const custom = { 'ענבר 11.5 (אמא עינת)': { '60': 230, '45': 200, '30': 180 } }
+  const details = { 'ענבר 11.5 (אמא עינת)': { phone: '050-1111111' } }
+  const events = [makeLessonEvent('ענבר - פיתוח קול', '2026-10-05T10:00:00Z', '2026-10-05T11:00:00Z')]
+  const [row] = calculatePayments(events, { ...BASE_CONFIG, custom_prices: custom, customer_details: details }, '2026-10').rows
+  assertEquals(rowNeedsRecalc(row, custom, details), false)
+  // A second ענבר with another phone is saved afterwards: same key, new alias and a conflict.
+  const later = { ...details, 'ענבר 3.2 (אמא רות)': { phone: '050-2222222' } }
+  assertEquals(rowNeedsRecalc(row, custom, later), true)
+  // A phone saved from the table under the row's own key changes nothing.
+  assertEquals(rowNeedsRecalc(row, custom, { 'ענבר 11.5 (אמא עינת)': { phone: '050-1111111', full_name: 'עינת שמש' } }), false)
 })

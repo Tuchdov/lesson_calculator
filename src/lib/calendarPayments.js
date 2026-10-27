@@ -113,16 +113,49 @@ export function resolveSavedStudent(student, customPrices = {}, customerDetails 
 // other: price under one key and phone under another is one student, two
 // different phones (or names, or prices) is probably two students who share a
 // first name. Returns the conflicting fields; a non-empty result blocks sending.
-const CONFLICT_FIELDS = ['phone', 'full_name']
+// Values are compared in a normalized form, so "050-1234567" vs "0501234567",
+// extra spaces in a name, or a flat price vs the same tiered price are not
+// mistaken for two students.
+const CONFLICT_FIELDS = {
+  phone: v => String(v).replace(/\D/g, ''),
+  full_name: v => String(v).trim().replace(/\s+/g, ' '),
+}
 export function savedNameConflicts(keys, customPrices = {}, customerDetails = {}) {
   const conflicts = []
-  for (const field of CONFLICT_FIELDS) {
-    const values = new Set(keys.map(k => customerDetails?.[k]?.[field]).filter(v => v !== '' && v != null))
+  for (const [field, normalize] of Object.entries(CONFLICT_FIELDS)) {
+    const values = new Set(keys.map(k => customerDetails?.[k]?.[field]).filter(v => v !== '' && v != null).map(normalize).filter(Boolean))
     if (values.size > 1) conflicts.push(field)
   }
-  const prices = new Set(keys.filter(k => customPrices?.[k]).map(k => JSON.stringify(customPrices[k])))
+  const prices = new Set(keys.map(k => normalizedPriceKey(customPrices?.[k])).filter(Boolean))
   if (prices.size > 1) conflicts.push('price')
   return conflicts
+}
+
+// One comparable string per custom price, mirroring resolvePriceTable: a flat
+// entry applies to both tiers, and a single tier stands in for the missing one.
+// Null when the entry holds no price at all.
+function normalizedPriceKey(entry) {
+  if (!entry || typeof entry !== 'object') return null
+  const tiered = 'regular' in entry || 'non_regular' in entry
+  const regular = tiered ? (entry.regular ?? entry.non_regular) : entry
+  const nonRegular = tiered ? (entry.non_regular ?? entry.regular) : entry
+  const nums = t => Object.fromEntries(['60', '45', '30'].map(d => [d, Number(t?.[d])]).filter(([, v]) => Number.isFinite(v)))
+  const r = nums(regular)
+  const n = nums(nonRegular)
+  if (!Object.keys(r).length && !Object.keys(n).length) return null
+  return JSON.stringify({ r, n })
+}
+
+// A calculated row was matched to saved students at Calculate time. It needs
+// recalculating (and sending waits) when, with the saved students as they are
+// now, its key, its other spellings or its conflicts would come out different,
+// e.g. a conflicting spelling added on Custom Prices since then.
+export function rowNeedsRecalc(row, customPrices = {}, customerDetails = {}) {
+  const now = resolveSavedStudent(normalizeStudentName(row.student), customPrices, customerDetails)
+  if (now.key !== row.student) return true
+  const same = (a, b) => [...a].sort().join('\u0000') === [...b].sort().join('\u0000')
+  if (!same(now.aliases, row.aliases ?? [])) return true
+  return !same(savedNameConflicts([now.key, ...now.aliases], customPrices, customerDetails), row.name_conflicts ?? [])
 }
 
 function cleanNameCandidate(name) {

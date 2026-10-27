@@ -2,7 +2,7 @@ import { EditableTable } from './EditableTable.jsx'
 import { resolveRowPrices, computeRowAmount, detailsFor, totalLessons, payerName, lessonStudentName } from '../lib/rowPricing.js'
 import { safeTotalsCsvBytes } from '../lib/csvExport.js'
 import { invoiceRecord, isValidAmount, isLinkUsable, hasFullName, linkInputs } from '../lib/payments.js'
-import { normalizeStudentName, resolveSavedStudent } from '../lib/calendarPayments.js'
+import { rowNeedsRecalc } from '../lib/calendarPayments.js'
 import { requestPaymentLink } from '../lib/paymentLinkClient.js'
 import styles from './CalculatorPage.module.css'
 
@@ -54,11 +54,9 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
   const billing = rows?.map(row => ({ row, ...rowBilling(row) })) ?? []
   const liveTotal = Math.round(billing.reduce((sum, b) => sum + b.amount, 0) * 100) / 100
   const needsReview = billing.filter(b => b.unresolved > 0).length
-  // Names are matched to saved students at Calculate time; a saved name added
-  // or removed since then can change which student a row belongs to.
-  const namesStale = rows?.some(r =>
-    resolveSavedStudent(normalizeStudentName(r.student), customPrices, customerDetails).key !== r.student
-  ) ?? false
+  // Names are matched to saved students at Calculate time; a saved spelling or
+  // a conflicting detail added since then can change the row or its safety check.
+  const namesStale = rows?.some(r => rowNeedsRecalc(r, customPrices, customerDetails)) ?? false
   // Settings that decide which events count, and how, were applied at
   // Calculate time too.
   const settingsStale = !!calculatedWith && STALE_KEYS.some(k => JSON.stringify(calculatedWith[k] ?? null) !== JSON.stringify(config?.[k] ?? null))

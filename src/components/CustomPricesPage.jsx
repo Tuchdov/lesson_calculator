@@ -57,8 +57,9 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState(null)
   const [importOpen, setImportOpen] = useState(false)
-  // Students removed this session: their saved per-student fields are cleared
-  // on save (the phone is kept for the table).
+  // Students removed this session: everything saved under that spelling
+  // (phone included) is deleted on save, so removing the wrong spelling of a
+  // student actually clears a name conflict.
   const [removed, setRemoved] = useState([])
 
   // Snapshot of the raw, on-screen state as of the last successful save (or
@@ -214,11 +215,7 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
 
     const updatedCustomerDetails = { ...(settings?.customer_details ?? {}) }
     for (const student of removed) {
-      if (students.includes(student) || !updatedCustomerDetails[student]) continue
-      const kept = { ...updatedCustomerDetails[student] }
-      for (const f of EXTRA_FIELDS) delete kept[f]
-      if (Object.keys(kept).length) updatedCustomerDetails[student] = kept
-      else delete updatedCustomerDetails[student]
+      if (!students.includes(student)) delete updatedCustomerDetails[student]
     }
     for (const student of students) {
       const ph = (phones[student] ?? '').trim()
@@ -257,8 +254,9 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
     }
   }
 
-  // Cards: every student with a custom price or any per-student field.
-  const students = [...new Set([...Object.keys(customPrices), ...Object.keys(extras)])]
+  // Cards: every saved student, i.e. anyone with a custom price, a phone or a
+  // per-student field.
+  const students = [...new Set([...Object.keys(customPrices), ...Object.keys(phones), ...Object.keys(extras)])]
   const visibleStudents = students
     .filter(s => matchesQuery(s, extras[s]?.full_name, query))
   const knownProfiles = [...new Set([DEFAULT_PAYMENT_PROFILE, ...Object.values(extras).map(e => e?.payment_profile?.trim()).filter(Boolean)])]
@@ -266,7 +264,7 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
   return (
     <div className={styles.page}>
       <h2 className={styles.heading}>Custom Prices</h2>
-      <p className={styles.hint}>Per-student prices, payer and payment options. Leave a field blank to use the default.</p>
+      <p className={styles.hint}>Every saved student: prices, phone, payer and payment options. Leave a field blank to use the default; Remove deletes everything saved under that name.</p>
 
       <div className={styles.addRow}>
         <input
@@ -312,7 +310,7 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
       </datalist>
 
       {students.length === 0 && (
-        <div className={styles.empty}>No custom prices set. Add a student above.</div>
+        <div className={styles.empty}>No saved students yet. Add a student above.</div>
       )}
       {students.length > 0 && visibleStudents.length === 0 && (
         <div className={styles.empty}>No students match “{query.trim()}”.</div>
