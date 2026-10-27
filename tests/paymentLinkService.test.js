@@ -320,6 +320,11 @@ for (const [label, overrides, message] of [
   ['profile with spaces', { paymentProfile: 'two words' }, 'Invalid payment profile.'],
   ['non-string profile', { paymentProfile: 42 }, 'Invalid payment profile.'],
   ['non-string student name', { lessonStudent: 7 }, 'Invalid student name.'],
+  // Value: protects=a missing, non-string or over-long payer/student name is refused, never truncated or sent blank to Grow; fails_when=studentName is unchecked or lessonStudent is silently cut to 80; why_new=name validation is new; seam=none
+  ['blank payer name', { studentName: '   ' }, 'Invalid name.'],
+  ['non-string payer name', { studentName: ['רחל'] }, 'Invalid name.'],
+  ['over-long payer name', { studentName: 'א'.repeat(81) }, 'Invalid name.'],
+  ['over-long student name', { lessonStudent: 'א'.repeat(81) }, 'Invalid student name.'],
   ['non-string invoice text', { invoiceDescription: 42 }, 'Invalid invoice description.'],
   ['over-long invoice text', { invoiceDescription: 'א'.repeat(201) }, 'Invoice description is too long.'],
 ]) {
