@@ -73,7 +73,13 @@ export function CalculatorPage({ getAccessToken, config, customPrices, onCustomP
 
     await runWithConcurrency(eligible, PREPARE_CONCURRENCY, async ({ row, phone, name, amount }) => {
       try {
-        const link = await requestPaymentLink(getAccessToken, { studentName: name, phone, amount, month: summary.month })
+        const link = await requestPaymentLink(getAccessToken, {
+          studentName: name,
+          phone,
+          amount,
+          month: summary.month,
+          lessons: row.lessons_60 + row.lessons_45 + row.lessons_30,
+        })
         await onPaymentLinkChange?.(summary.month, row.student, link, amount)
         setPrepareStatus(prev => ({ ...prev, [row.student]: null }))
       } catch {

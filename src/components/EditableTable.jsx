@@ -206,6 +206,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
         phone,
         amount: roundedAmount,
         month,
+        lessons: totalLessons,
       })
       await onPaymentLinkChange?.(month, row.student, link, roundedAmount)
     } catch (err) {
