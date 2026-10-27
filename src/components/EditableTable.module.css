@@ -315,3 +315,6 @@
 }
 .btnCancelPhone:hover { color: var(--md-text); }
 .btnCancelPhone:focus-visible { outline: 2px solid var(--md-border); outline-offset: 2px; }
+
+/* Billing columns remain readable on small screens through tableWrap scrolling. */
+.table { min-width: 1120px; }
