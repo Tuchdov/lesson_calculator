@@ -20,7 +20,8 @@ Student pricing is determined automatically:
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org) 18+ (or [Deno](https://deno.land) 2+)
+- [Node.js](https://nodejs.org) 22 (22.22.2+) or 24 (24.15+) for the app and React hook tests
+- [Deno](https://deno.land) 2+ (for the unit tests)
 - A Google Cloud project with the **Google Calendar API** and **Google Identity Services** enabled
 - An OAuth 2.0 Client ID (Web application type) from Google Cloud Console
 
@@ -67,11 +68,30 @@ Per-student price overrides are managed through the **Custom Prices** page in th
 
 ## Running tests
 
-Tests use Deno:
+Run both the existing Deno unit tests and the React hook tests:
 
 ```bash
-deno test
+npm test
 ```
+
+Run either suite independently:
+
+```bash
+npm run test:unit        # Deno tests for the API and calculation/storage helpers
+npm run test:hooks       # React hook tests, once
+npm run test:hooks:watch # React hook tests, watch mode
+```
+
+The hook suite lives in `tests/hooks/` and uses Vitest, React Testing Library's
+`renderHook`, and jsdom. It covers authentication/session refresh, calendar
+loading and payment results, and settings loading/persistence. Google Identity
+Services, network requests, and persistence helpers are mocked; no credentials
+or live services are needed. Deferred promises and fake timers exercise pending
+states, failures, retries, and authentication timeouts without real delays.
+
+`deno test` still runs the original suite directly. Each runner excludes the
+other suite. Add hook tests as `tests/hooks/*.test.js`; shared cleanup unmounts
+hooks and resets timers, mocks, globals, and browser storage after every test.
 
 ## Security
 

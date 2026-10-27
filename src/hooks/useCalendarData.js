@@ -2,6 +2,12 @@ import { useState, useCallback, useRef } from 'react'
 import { fetchCalendarEvents } from '../api/calendarApi.js'
 import { calculatePayments, monthWindow } from '../lib/calendarPayments.js'
 
+/**
+ * Fetch calendar events and calculate lesson payments for a selected month.
+ * @param {Function} getAccessToken Supplies a valid Google access token.
+ * @param {object|null} config Calendar and pricing configuration.
+ * @returns {{rows: Array|null, summary: object|null, loading: boolean, error: string|null, calculate: Function, reset: Function}} Calculation state and actions; reset clears it and discards any run in flight.
+ */
 export function useCalendarData(getAccessToken, config) {
   const [rows, setRows] = useState(null)
   const [summary, setSummary] = useState(null)
@@ -23,7 +29,9 @@ export function useCalendarData(getAccessToken, config) {
       const { start, end } = monthWindow(monthStr)
       // Fetch 3-month window for regularity detection
       const windowStart = new Date(start)
-      windowStart.setMonth(windowStart.getMonth() - 2)
+      // monthWindow returns UTC boundaries; local month arithmetic can shift
+      // the date across month ends or daylight-saving transitions.
+      windowStart.setUTCMonth(windowStart.getUTCMonth() - 2)
       const events = await fetchCalendarEvents(
         getAccessToken,
         config.calendar_id ?? 'primary',

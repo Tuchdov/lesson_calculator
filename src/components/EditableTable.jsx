@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { validateIsraeliPhone, buildPaymentMessage, buildWhatsAppUrl } from '../lib/whatsapp.js'
 import { hasFullName, invoiceRecord, invoiceRecordName, amountChanged, isValidAmount } from '../lib/payments.js'
 import { requestPaymentLink } from '../lib/paymentLinkClient.js'
@@ -75,6 +75,12 @@ function GroupHeader({ type }) {
   )
 }
 
+/**
+ * Render one student's invoice row, including price edits, contact details,
+ * payment-link preparation, review items, and WhatsApp actions.
+ * @param {object} props Student data, pricing, payment state, and callbacks.
+ * @returns {import('react').ReactNode} The invoice row and optional details rows.
+ */
 function StudentRow({ row, config, customPrices, onCustomPriceChange, details, onCustomerDetailChange, month, defaultMessage, expandedRow, setExpandedRow, amountOverride, amountOverrideName, onAmountOverrideChange, linkEntry, onPaymentLinkChange, getAccessToken, batchState, reviewResolutions, onReviewResolutionChange }) {
   const { phone, full_name: fullName } = details
   const custom = customPrices?.[row.student]
@@ -82,6 +88,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
 
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(custom ? { ...custom } : null)
+  const [previousCustom, setPreviousCustom] = useState(custom)
   const [phoneInput, setPhoneInput] = useState('')
   const [phoneError, setPhoneError] = useState(false)
   const [nameInput, setNameInput] = useState('')
@@ -92,10 +99,11 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
   const [localBusy, setLocalBusy] = useState(false)
   const [localError, setLocalError] = useState(null)
 
-  useEffect(() => {
+  if (previousCustom !== custom) {
+    setPreviousCustom(custom)
     setDraft(custom ? { ...custom } : null)
     setEditing(false)
-  }, [custom])
+  }
 
   const { amount: computedAmount, extra: reviewExtra, unresolved: reviewUnresolved } = computeRowAmount(row, prices, reviewResolutions, month)
   const roundedAmount = amountOverride ?? computedAmount
