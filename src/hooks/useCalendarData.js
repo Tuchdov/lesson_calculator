@@ -19,7 +19,9 @@ export function useCalendarData(getAccessToken, config) {
       const { start, end } = monthWindow(monthStr)
       // Fetch 3-month window for regularity detection
       const windowStart = new Date(start)
-      windowStart.setMonth(windowStart.getMonth() - 2)
+      // monthWindow returns UTC boundaries; local month arithmetic can shift
+      // the date across month ends or daylight-saving transitions.
+      windowStart.setUTCMonth(windowStart.getUTCMonth() - 2)
       const events = await fetchCalendarEvents(
         getAccessToken,
         config.calendar_id ?? 'primary',
