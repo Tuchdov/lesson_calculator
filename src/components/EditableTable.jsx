@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { validateIsraeliPhone, buildPaymentMessage, buildWhatsAppUrl } from '../lib/whatsapp.js'
 import { invoiceKey, hasFullName, getStoredLink, amountChanged, isValidAmount } from '../lib/payments.js'
 import { requestPaymentLink } from '../lib/paymentLinkClient.js'
@@ -79,6 +79,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
 
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(custom ? { ...custom } : null)
+  const [previousCustom, setPreviousCustom] = useState(custom)
   const [phoneInput, setPhoneInput] = useState('')
   const [phoneError, setPhoneError] = useState(false)
   const [nameInput, setNameInput] = useState('')
@@ -89,10 +90,11 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
   const [localBusy, setLocalBusy] = useState(false)
   const [localError, setLocalError] = useState(null)
 
-  useEffect(() => {
+  if (previousCustom !== custom) {
+    setPreviousCustom(custom)
     setDraft(custom ? { ...custom } : null)
     setEditing(false)
-  }, [custom])
+  }
 
   const computedAmount = computeLessonAmount(row, prices)
   const roundedAmount = amountOverride ?? computedAmount

@@ -98,6 +98,24 @@ describe('useUserSettings', () => {
     expect(result.current.settings).toEqual(defaults)
   })
 
+  it('returns to loading after signing back in as the same user', async () => {
+    const { result, rerender } = renderHook(email => useUserSettings(email), {
+      initialProps: 'alice@example.com',
+    })
+    await act(async () => {})
+    expect(result.current.isReady).toBe(true)
+    rerender(null)
+    expect(result.current.isReady).toBe(false)
+
+    const load = deferred()
+    loadUserSettings.mockReturnValueOnce(load.promise)
+    rerender('alice@example.com')
+    expect(result.current.isReady).toBe(false)
+    await act(async () => { load.resolve(next) })
+    expect(result.current.isReady).toBe(true)
+    expect(result.current.settings).toEqual(next)
+  })
+
   it('does not publish a previous user’s pending save after switching users', async () => {
     const { result, rerender } = renderHook(email => useUserSettings(email), {
       initialProps: 'alice@example.com',

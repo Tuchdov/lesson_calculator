@@ -4,18 +4,24 @@ import { loadUserSettings, saveUserSettings } from '../lib/userSettings.js'
 export function useUserSettings(userEmail) {
   const [settings, setSettings] = useState({ custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '', paid_cancellation_phrases: null, cancelled_keywords: null })
   const [isReady, setIsReady] = useState(false)
+  const [previousEmail, setPreviousEmail] = useState(userEmail)
   const userGeneration = useRef(0)
 
-  useEffect(() => {
-    const generation = ++userGeneration.current
+  if (previousEmail !== userEmail) {
+    setPreviousEmail(userEmail)
     setIsReady(false)
+  }
+
+  useEffect(() => {
+    const generationRef = userGeneration
+    const generation = ++generationRef.current
     if (!userEmail) return
     loadUserSettings(userEmail).then(s => {
-      if (userGeneration.current !== generation) return
+      if (generationRef.current !== generation) return
       setSettings(s)
       setIsReady(true)
     })
-    return () => { userGeneration.current++ }
+    return () => { generationRef.current++ }
   }, [userEmail])
 
   const saveSettings = useCallback(async (next) => {

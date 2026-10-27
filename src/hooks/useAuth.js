@@ -52,7 +52,7 @@ export function useAuth() {
       }
       cancelInFlightRef.current = () => settle(reject, new Error('Google sign-in was cancelled.'))
 
-      const client = google.accounts.oauth2.initTokenClient({
+      const client = window.google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
         scope: 'https://www.googleapis.com/auth/calendar.readonly email profile',
         callback: (tokenResponse) => {
@@ -142,7 +142,7 @@ export function useAuth() {
     inFlightRef.current = null
     cancelInFlightRef.current = null
     const token = sessionStorage.getItem(SESSION_KEYS.TOKEN)
-    if (token) google.accounts.oauth2.revoke(token, () => {})
+    if (token) window.google.accounts.oauth2.revoke(token, () => {})
     sessionStorage.removeItem(SESSION_KEYS.TOKEN)
     sessionStorage.removeItem(SESSION_KEYS.EXPIRES_AT)
     sessionStorage.removeItem(SESSION_KEYS.EMAIL)

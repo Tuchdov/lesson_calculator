@@ -23,7 +23,7 @@ Deno.test('safeTotalsCsvBytes: valid CSV bytes with UTF-8 BOM and correct column
   assertEquals(bytes[2], 0xBF)
 
   const text = new TextDecoder().decode(bytes)
-  const lines = text.replace(/^﻿/, '').split('\r\n')
+  const lines = text.replace(/^\uFEFF/, '').split('\r\n')
   assertEquals(lines[0], 'student,type,lessons_60,lessons_45,lessons_30,amount_due')
   assertEquals(lines[1], 'Alice,regular,4,0,0,1000')
   assertEquals(lines[2], 'Bob,non_regular,2,1,0,750')
