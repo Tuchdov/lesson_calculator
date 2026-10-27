@@ -2,6 +2,12 @@ import { useState, useCallback } from 'react'
 import { fetchCalendarEvents } from '../api/calendarApi.js'
 import { calculatePayments, monthWindow } from '../lib/calendarPayments.js'
 
+/**
+ * Fetch calendar events and calculate lesson payments for a selected month.
+ * @param {Function} getAccessToken Supplies a valid Google access token.
+ * @param {object|null} config Calendar and pricing configuration.
+ * @returns {{rows: Array|null, summary: object|null, loading: boolean, error: string|null, calculate: Function}} Calculation state and action.
+ */
 export function useCalendarData(getAccessToken, config) {
   const [rows, setRows] = useState(null)
   const [summary, setSummary] = useState(null)

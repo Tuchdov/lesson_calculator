@@ -10,6 +10,11 @@ const SESSION_KEYS = {
   EMAIL: 'gis_user_email',
 }
 
+/**
+ * Manage the Google session, including sign-in, sign-out, and token refresh.
+ * Concurrent token requests share a result; sign-out invalidates pending work.
+ * @returns {{accessToken: string|null, userEmail: string|null, signIn: Function, signOut: Function, error: string|null, getValidAccessToken: Function}} Session state and actions.
+ */
 export function useAuth() {
   const [accessToken, setAccessToken] = useState(
     () => sessionStorage.getItem(SESSION_KEYS.TOKEN)

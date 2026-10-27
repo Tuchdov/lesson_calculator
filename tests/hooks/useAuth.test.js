@@ -8,12 +8,21 @@ let clients
 let initTokenClient
 let revoke
 
+/**
+ * Seed session storage with an authenticated user for a hook test.
+ * @param {number} expiresAt Token expiry in milliseconds since the epoch.
+ */
 function storeSession(expiresAt = NOW + 3_600_000) {
   sessionStorage.setItem('gis_access_token', 'stored-token')
   sessionStorage.setItem('gis_expires_at', String(expiresAt))
   sessionStorage.setItem('gis_user_email', 'alice@example.com')
 }
 
+/**
+ * Deliver a simulated Google token response to a previously created client.
+ * @param {number} index Position of the client in the current test.
+ * @param {object} response Token response passed to the client's callback.
+ */
 function respond(index = 0, response = { access_token: 'new-token', expires_in: 3600 }) {
   clients[index].callback(response)
 }

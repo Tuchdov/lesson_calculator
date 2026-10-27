@@ -1,6 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { loadUserSettings, saveUserSettings } from '../lib/userSettings.js'
 
+/**
+ * Load and save settings for the signed-in user, ignoring stale async results
+ * after the user changes. A save updates state only after persistence succeeds.
+ * @param {string|null} userEmail The signed-in user's email, or null.
+ * @returns {{settings: object, saveSettings: Function, isReady: boolean}} Settings, persistence action, and loading status.
+ */
 export function useUserSettings(userEmail) {
   const [settings, setSettings] = useState({ custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '', paid_cancellation_phrases: null, cancelled_keywords: null })
   const [isReady, setIsReady] = useState(false)

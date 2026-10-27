@@ -73,6 +73,12 @@ function GroupHeader({ type }) {
   )
 }
 
+/**
+ * Render one student's invoice row, including price edits, contact details,
+ * payment-link preparation, and WhatsApp actions.
+ * @param {object} props Student data, pricing, payment state, and callbacks.
+ * @returns {import('react').ReactNode} The invoice row and optional details row.
+ */
 function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, fullName, onCustomerDetailChange, month, defaultMessage, expandedRow, setExpandedRow, amountOverride, onAmountOverrideChange, linkEntry, onPaymentLinkChange, getAccessToken, batchState }) {
   const custom = customPrices?.[row.student]
   const prices = resolveRowPrices(row.student, row.student_type === 'regular', config, custom)

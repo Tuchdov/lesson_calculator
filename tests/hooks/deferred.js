@@ -1,4 +1,7 @@
-// Control completion explicitly so tests can inspect pending state without sleeps.
+/**
+ * Create a promise whose completion can be controlled by a test.
+ * @returns {{promise: Promise, resolve: Function, reject: Function}} The promise and its settlement functions.
+ */
 export function deferred() {
   let resolve
   let reject
