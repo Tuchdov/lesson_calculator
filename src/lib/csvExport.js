@@ -1,5 +1,5 @@
 const CSV_FORMULA_PREFIXES = ['=', '+', '-', '@']
-const CSV_FIELDS = ['student', 'type', 'lessons_60', 'lessons_45', 'lessons_30', 'amount_due']
+const CSV_FIELDS = ['student', 'type', 'lessons_60', 'lessons_45', 'lessons_30', 'amount_due', 'status']
 
 export function escapeCsvFormula(value) {
   if (typeof value !== 'string' || !value) return value
@@ -18,6 +18,7 @@ export function safeTotalsCsvBytes(rows) {
       row.lessons_45 ?? 0,
       row.lessons_30 ?? 0,
       row.amount_due ?? 0,
+      csvCell(escapeCsvFormula(String(row.status ?? ''))),
     ].join(',')
   })
   const csv = [header, ...lines].join('\r\n')

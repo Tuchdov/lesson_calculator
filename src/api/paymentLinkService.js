@@ -1,8 +1,8 @@
-import { isValidAmount, normalizePhoneForGrow, buildGrowDescription, DEFAULT_PAYMENT_PROFILE, isValidPaymentProfile } from '../lib/payments.js'
+import { isValidAmount, normalizePhoneForGrow, buildGrowDescription, DEFAULT_PAYMENT_PROFILE, isValidPaymentProfile, MAX_INVOICE_DESCRIPTION } from '../lib/payments.js'
 import { validateIsraeliPhone } from '../lib/whatsapp.js'
 
 const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo'
-const MAX_INVOICE_DESCRIPTION = 200
+const MAX_STUDENT_NAME = 80
 
 // Carries an HTTP status and a retryable flag through to the thin Vercel
 // adapter, so the UI can tell "sign in again" apart from "try again".
@@ -94,10 +94,12 @@ function validNumberOfLessons(value) {
 // Grow's payment page — callers must pass summary.month, never a live month
 // input (see CalculatorPage.jsx / design decision 12).
 //
-// paymentProfile picks which branch of the Make scenario runs (e.g. a student
-// allowed extra payment methods); invoiceDescription is a per-student
-// {student}/{month} template replacing the default description. Both are
-// optional so a cached older tab keeps working.
+// studentName is the payer (a child's parent), shown on Grow's payment page
+// and invoice; lessonStudent is whose lessons they are (the child), used for
+// the product line and the description's {student}. paymentProfile picks
+// which branch of the Make scenario runs (e.g. a student paying with Bit);
+// invoiceDescription is a per-student {student}/{month} template replacing the
+// default description. All optional so a cached older tab keeps working.
 export async function createPaymentLink({
   accessToken,
   studentName,
@@ -107,6 +109,7 @@ export async function createPaymentLink({
   numberOfLessons,
   paymentProfile,
   invoiceDescription,
+  lessonStudent,
   allowedEmail,
   clientId,
   webhookUrl,
@@ -122,6 +125,11 @@ export async function createPaymentLink({
   if (!phone || !validateIsraeliPhone(phone)) {
     throw new ServiceError(400, 'Invalid phone number.')
   }
+
+  if (lessonStudent != null && typeof lessonStudent !== 'string') {
+    throw new ServiceError(400, 'Invalid student name.')
+  }
+  const student = lessonStudent?.trim().slice(0, MAX_STUDENT_NAME) || studentName
 
   if (!validNumberOfLessons(numberOfLessons)) {
     throw new ServiceError(400, 'Invalid number of lessons.')
@@ -139,7 +147,7 @@ export async function createPaymentLink({
     throw new ServiceError(400, 'Invalid invoice description.')
   }
   const customDescription = invoiceDescription?.trim()
-    ? buildGrowDescription(studentName, month, invoiceDescription)
+    ? buildGrowDescription(student, month, invoiceDescription)
     : ''
   if (customDescription.length > MAX_INVOICE_DESCRIPTION) {
     throw new ServiceError(400, 'Invoice description is too long.')
@@ -154,9 +162,10 @@ export async function createPaymentLink({
     apiKey,
     payload: {
       customer_name: studentName,
+      student_name: student,
       amount,
       phone: normalizePhoneForGrow(phone),
-      description: customDescription || buildGrowDescription(studentName, month),
+      description: customDescription || buildGrowDescription(student, month),
       // Empty when the student uses the default wording, so the scenario can
       // tell a custom invoice apart.
       invoice_description: customDescription,

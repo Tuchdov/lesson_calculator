@@ -9,6 +9,8 @@ import {
   detailsFor,
   defaultReviewMode,
   totalLessons,
+  payerName,
+  lessonStudentName,
 } from '../src/lib/rowPricing.js'
 import { invoiceRecord, invoiceRecordName } from '../src/lib/payments.js'
 
@@ -183,4 +185,12 @@ Deno.test('computeRowAmount: a review answer saved under an alias still applies'
 Deno.test('defaultReviewMode: an item flagged as a make-up by Settings pre-selects the standard lesson', () => {
   assertEquals(defaultReviewMode({ summary: 'פיתוח קול תוספת', minutes: 135, makeup: true }, PRICES), 'base')
   assertEquals(defaultReviewMode({ summary: 'פיתוח קול תוספת', minutes: 135, makeup: false }, PRICES), 'prorata')
+})
+
+// Value: protects=the parent's saved name is the payer, else the student's calendar name (never the raw saved key with notes); fails_when=the raw key is used as the payer, so the full-name prompt never fires; why_new=new helpers; seam=none
+Deno.test('payerName / lessonStudentName: saved payer first, else the calendar name, never the raw key', () => {
+  const row = { student: 'ענבר 11.5 (אמא עינת)' }
+  assertEquals(lessonStudentName(row), 'ענבר')
+  assertEquals(payerName({}, row), 'ענבר')
+  assertEquals(payerName({ full_name: 'עינת שמש' }, row), 'עינת שמש')
 })

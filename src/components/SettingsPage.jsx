@@ -178,7 +178,7 @@ export function SettingsPage({ config, settings, onSave }) {
 
       <PhraseListCard
         title="Make-up phrases"
-        hint="A lesson with a non-standard length (e.g. 75 min) whose title contains one of these is charged as the standard lesson inside it, with the extra minutes free, instead of asking you each month."
+        hint="A 30–89 minute lesson with a non-standard length (e.g. 75 min) whose title contains one of these is charged as the standard lesson inside it, with the extra minutes free, instead of asking you each month. Shorter or longer events still ask you."
         items={makeupPhrases}
         defaults={DEFAULT_MAKEUP_PHRASES}
         onChange={listChanger(setMakeupPhrases)}

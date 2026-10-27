@@ -1,15 +1,17 @@
 import { useState } from 'react'
 import { validateIsraeliPhone, buildPaymentMessage, buildWhatsAppUrl } from '../lib/whatsapp.js'
-import { hasFullName, invoiceRecord, invoiceRecordName, amountChanged, isValidAmount } from '../lib/payments.js'
+import { hasFullName, invoiceRecord, invoiceRecordNames, isLinkUsable, isValidAmount, linkInputs } from '../lib/payments.js'
 import { requestPaymentLink } from '../lib/paymentLinkClient.js'
-import { resolveRowPrices, computeRowAmount, detailsFor, totalLessons, reviewKey, reviewResolution, storedReviewResolution, storedReviewName, reviewItemAmount, baseLessonPrice, proRataPrice, defaultReviewMode } from '../lib/rowPricing.js'
+import { resolveRowPrices, computeRowAmount, detailsFor, totalLessons, reviewKey, reviewResolution, storedReviewResolution, storedReviewNames, reviewItemAmount, baseLessonPrice, proRataPrice, defaultReviewMode, payerName, lessonStudentName } from '../lib/rowPricing.js'
 import styles from './EditableTable.module.css'
 
 const DURATION_COLS = ['60', '45', '30']
 const TYPE_LABEL = { regular: 'Regular', non_regular: 'Non-regular' }
 const TYPE_CHIP = { regular: styles.chipGreen, non_regular: styles.chipAmber }
+const CONFLICT_LABEL = { phone: 'phone', full_name: 'full name', price: 'prices' }
+const CONFLICT_HINT = 'These saved spellings disagree, so this is probably two students. Give their calendar events distinct names (e.g. add a surname), or remove the wrong spelling on Custom Prices, then press Calculate again.'
 
-export function EditableTable({ rows, config, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, month, defaultMessage, amountOverrides, onAmountOverrideChange, paymentLinks, onPaymentLinkChange, getAccessToken, prepareStatus, reviewResolutions, onReviewResolutionChange }) {
+export function EditableTable({ rows, config, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, month, defaultMessage, amountOverrides, onAmountOverrideChange, paymentLinks, onPaymentLinkChange, getAccessToken, prepareStatus, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange }) {
   const grouped = groupByType(rows)
   const [expandedRow, setExpandedRow] = useState(null)
 
@@ -47,12 +49,15 @@ export function EditableTable({ rows, config, customPrices, onCustomPriceChange,
                   expandedRow={expandedRow}
                   setExpandedRow={setExpandedRow}
                   amountOverride={invoiceRecord(amountOverrides, month, row)}
-                  amountOverrideName={invoiceRecordName(amountOverrides, month, row)}
+                  amountOverrideNames={invoiceRecordNames(amountOverrides, month, row)}
+                  paymentLinks={paymentLinks}
                   onAmountOverrideChange={onAmountOverrideChange}
                   linkEntry={invoiceRecord(paymentLinks, month, row)}
                   onPaymentLinkChange={onPaymentLinkChange}
                   getAccessToken={getAccessToken}
                   batchState={prepareStatus?.[row.student]}
+                  onRowStatusChange={onRowStatusChange}
+                  sendBlocked={sendBlocked}
                   reviewResolutions={reviewResolutions}
                   onReviewResolutionChange={onReviewResolutionChange}
                 />
@@ -81,7 +86,7 @@ function GroupHeader({ type }) {
  * @param {object} props Student data, pricing, payment state, and callbacks.
  * @returns {import('react').ReactNode} The invoice row and optional details rows.
  */
-function StudentRow({ row, config, customPrices, onCustomPriceChange, details, onCustomerDetailChange, month, defaultMessage, expandedRow, setExpandedRow, amountOverride, amountOverrideName, onAmountOverrideChange, linkEntry, onPaymentLinkChange, getAccessToken, batchState, reviewResolutions, onReviewResolutionChange }) {
+function StudentRow({ row, config, customPrices, onCustomPriceChange, details, onCustomerDetailChange, month, defaultMessage, expandedRow, setExpandedRow, amountOverride, amountOverrideNames, onAmountOverrideChange, linkEntry, paymentLinks, onPaymentLinkChange, getAccessToken, batchState, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange }) {
   const { phone, full_name: fullName } = details
   const custom = customPrices?.[row.student]
   const prices = resolveRowPrices(row.student, row.student_type === 'regular', config, custom)
@@ -96,8 +101,6 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
   const [editingAmount, setEditingAmount] = useState(false)
   const [amountDraft, setAmountDraft] = useState('')
   const [amountSaveError, setAmountSaveError] = useState(null)
-  const [localBusy, setLocalBusy] = useState(false)
-  const [localError, setLocalError] = useState(null)
 
   if (previousCustom !== custom) {
     setPreviousCustom(custom)
@@ -112,12 +115,17 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
   const needsReview = amountOverride == null && reviewUnresolved > 0
   const hasReviewItems = row.review_items?.length > 0
 
-  const effectiveName = fullName || row.student
+  // The payer (a child's parent) is who the payment page, invoice and WhatsApp
+  // greeting address; the product line names the student.
+  const effectiveName = payerName(details, row)
+  const lessonStudent = lessonStudentName(row)
   const nameOk = hasFullName(effectiveName)
   const needsDetails = !phone || !nameOk
-  const linkUsable = !!linkEntry && !amountChanged(linkEntry.amount, roundedAmount)
-  const busy = localBusy || batchState === 'loading'
-  const errorMessage = localError || batchState?.error || null
+  const inputs = linkInputs({ payerName: effectiveName, phone, lessonStudent, paymentProfile: details.payment_profile, invoiceDescription: details.invoice_description })
+  const linkUsable = isLinkUsable(paymentLinks, month, row, roundedAmount, inputs)
+  // Mint progress lives in App (prepareStatus), so it survives page switches.
+  const busy = batchState === 'loading'
+  const errorMessage = batchState?.error || null
   // Saved spellings that contradict each other are probably two students.
   const nameConflict = row.name_conflicts?.length > 0
 
@@ -144,10 +152,10 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
 
   const handleResetAmount = async () => {
     try {
-      await onAmountOverrideChange?.(month, row.student, null)
-      // An adjustment found under an older spelling is cleared there too.
-      if (amountOverrideName && amountOverrideName !== row.student) {
-        await onAmountOverrideChange?.(month, amountOverrideName, null)
+      // Clear the adjustment under every spelling it was saved under, so an
+      // older one can't reappear after the reset.
+      for (const name of new Set([row.student, ...(amountOverrideNames ?? [])])) {
+        await onAmountOverrideChange?.(month, name, null)
       }
       setEditingAmount(false)
       setAmountSaveError(null)
@@ -187,7 +195,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
       setExpandedRow(row.student)
       setPhoneInput('')
       setPhoneError(false)
-      setNameInput(fullName || (hasFullName(row.student) ? '' : row.student))
+      setNameInput(fullName ?? '')
       setNameError(false)
     }
   }
@@ -217,14 +225,14 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
 
   const mintLink = async () => {
     if (!isValidAmount(roundedAmount)) {
-      setLocalError('Invalid amount.')
+      onRowStatusChange?.(row.student, { error: 'Invalid amount.' })
       return
     }
-    setLocalBusy(true)
-    setLocalError(null)
+    onRowStatusChange?.(row.student, 'loading')
     try {
       const link = await requestPaymentLink(getAccessToken, {
         studentName: effectiveName,
+        lessonStudent,
         phone,
         amount: roundedAmount,
         month,
@@ -232,16 +240,15 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
         paymentProfile: details.payment_profile,
         invoiceDescription: details.invoice_description,
       })
-      await onPaymentLinkChange?.(month, row.student, link, roundedAmount)
+      await onPaymentLinkChange?.(month, row.student, link, roundedAmount, inputs)
+      onRowStatusChange?.(row.student, null)
     } catch (err) {
-      setLocalError(err.message ?? 'Failed to create the link. Try again.')
-    } finally {
-      setLocalBusy(false)
+      onRowStatusChange?.(row.student, { error: err.message ?? 'Failed to create the link. Try again.' })
     }
   }
 
   const handleSendClick = async () => {
-    if (busy || needsReview || nameConflict) return
+    if (busy || needsReview || nameConflict || sendBlocked) return
     if (linkUsable) {
       const template = details.message || defaultMessage || undefined
       const msg = buildPaymentMessage(effectiveName, roundedAmount, month, template, lessonCount, linkEntry.link)
@@ -253,7 +260,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
 
   const handleRegenerate = async (e) => {
     e.stopPropagation()
-    if (busy || needsReview || nameConflict) return
+    if (busy || needsReview || nameConflict || sendBlocked) return
     await mintLink()
   }
 
@@ -266,8 +273,8 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
             {custom && <span className={styles.customBadge}>custom</span>}
           </span>
           {nameConflict && (
-            <span className={styles.reviewChip} title={`Different ${row.name_conflicts.join(', ')} saved under: ${[row.student, ...(row.aliases ?? [])].join(' / ')}`}>
-              ⚠️ two students? different {row.name_conflicts.join(' / ')}
+            <span className={styles.conflictChip} title={`${CONFLICT_HINT} Saved as: ${[row.student, ...(row.aliases ?? [])].join(' / ')}`}>
+              ⚠️ two students? different {row.name_conflicts.map(f => CONFLICT_LABEL[f] ?? f).join(' / ')}
             </span>
           )}
           {hasReviewItems && (
@@ -354,7 +361,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
         </td>
         <td className={styles.waCell}>
           {nameConflict ? (
-            <span className={styles.waChipMissing} title={`Saved as: ${[row.student, ...(row.aliases ?? [])].join(' / ')}. Give each student a distinct name on Custom Prices, then Calculate again.`}>
+            <span className={`${styles.waChipMissing} ${styles.waChipStatic}`} title={`${CONFLICT_HINT} Saved as: ${[row.student, ...(row.aliases ?? [])].join(' / ')}`}>
               ⚠️ שני תלמידים?
             </span>
           ) : needsReview ? (
@@ -363,19 +370,19 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
             </button>
           ) : needsDetails ? (
             <button className={`${styles.waChipMissing} ${isExpanded ? styles.waChipActive : ''}`} onClick={handleToggleExpand}>
-              {!phone ? '📱 הוסף טלפון' : '⚠️ השלם שם מלא'}
+              {!phone ? '📱 הוסף טלפון' : '⚠️ שם המשלם'}
             </button>
           ) : errorMessage ? (
-            <button className={styles.waChipError} onClick={handleSendClick} title={errorMessage} disabled={busy}>
+            <button className={styles.waChipError} onClick={handleSendClick} title={errorMessage} disabled={busy || sendBlocked}>
               {busy ? '…' : '⚠️ נסה שוב'}
             </button>
           ) : linkUsable ? (
             <span className={styles.waReadyGroup}>
-              <button className={styles.waChipReady} onClick={handleSendClick} disabled={busy}>📱 שלח</button>
-              <button className={styles.regenBtn} onClick={handleRegenerate} disabled={busy} title="Create a new link">↻</button>
+              <button className={styles.waChipReady} onClick={handleSendClick} disabled={busy || sendBlocked}>📱 שלח</button>
+              <button className={styles.regenBtn} onClick={handleRegenerate} disabled={busy || sendBlocked} title="Create a new link">↻</button>
             </span>
           ) : (
-            <button className={styles.waChipPrepare} onClick={handleSendClick} disabled={busy} title="Creates the payment link — click again to send once it's ready">
+            <button className={styles.waChipPrepare} onClick={handleSendClick} disabled={busy || sendBlocked} title="Creates the payment link — click again to send once it's ready">
               {busy ? '…' : '🔗 הכן קישור'}
             </button>
           )}
@@ -406,13 +413,13 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
                   <input
                     type="text"
                     className={`${styles.phoneInput} ${nameError ? styles.phoneInputError : ''}`}
-                    placeholder="שם פרטי ושם משפחה"
+                    placeholder="שם המשלם: פרטי ומשפחה (הורה, לתלמיד/ה צעיר/ה)"
                     value={nameInput}
                     onChange={e => { setNameInput(e.target.value); setNameError(false) }}
                     onKeyDown={e => e.key === 'Enter' && handleSaveDetails()}
                     dir="rtl"
                   />
-                  {nameError && <div className={styles.phoneErrorMsg}>נדרש שם פרטי ושם משפחה</div>}
+                  {nameError && <div className={styles.phoneErrorMsg}>נדרש שם פרטי ושם משפחה של המשלם</div>}
                 </div>
               )}
               <button className={styles.btnSavePhone} onClick={handleSaveDetails}>שמור</button>
@@ -433,12 +440,11 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
                   resolution={reviewResolution(item, reviewResolutions, month, row)}
                   stored={storedReviewResolution(item, reviewResolutions, month, row)}
                   onSave={async resolution => {
+                    // Answers under older spellings are cleared, so the one
+                    // just saved (or the cleared state) is what shows.
+                    const older = storedReviewNames(item, reviewResolutions, month, row).filter(n => n !== row.student)
                     await onReviewResolutionChange?.(reviewKey(month, row.student, item.id), resolution)
-                    // An answer found under an older spelling is cleared there too.
-                    const storedName = storedReviewName(item, reviewResolutions, month, row)
-                    if (resolution == null && storedName && storedName !== row.student) {
-                      await onReviewResolutionChange?.(reviewKey(month, storedName, item.id), null)
-                    }
+                    for (const name of older) await onReviewResolutionChange?.(reviewKey(month, name, item.id), null)
                   }}
                 />
               ))}

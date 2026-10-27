@@ -225,3 +225,4 @@
   resize: vertical;
   font-family: var(--font-rb);
 }
+.wideInput > .input { width: 100%; }

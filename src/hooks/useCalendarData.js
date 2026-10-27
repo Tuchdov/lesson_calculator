@@ -6,13 +6,14 @@ import { calculatePayments, monthWindow } from '../lib/calendarPayments.js'
  * Fetch calendar events and calculate lesson payments for a selected month.
  * @param {Function} getAccessToken Supplies a valid Google access token.
  * @param {object|null} config Calendar and pricing configuration.
- * @returns {{rows: Array|null, summary: object|null, loading: boolean, error: string|null, calculate: Function, reset: Function}} Calculation state and actions; reset clears it and discards any run in flight.
+ * @returns {{rows: Array|null, summary: object|null, loading: boolean, error: string|null, calculate: Function, reset: Function, calculatedWith: object|null}} Calculation state and actions; reset clears it and discards any run in flight; calculatedWith is the config the rows came from.
  */
 export function useCalendarData(getAccessToken, config) {
   const [rows, setRows] = useState(null)
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [calculatedWith, setCalculatedWith] = useState(null)
   // Bumped by every calculate() and reset(); a run that finishes after a newer
   // one started (or after a reset on account switch) is discarded.
   const runRef = useRef(0)
@@ -42,6 +43,7 @@ export function useCalendarData(getAccessToken, config) {
       const result = calculatePayments(events, config, monthStr)
       setRows(result.rows)
       setSummary(result.summary)
+      setCalculatedWith(config)
     } catch (err) {
       if (run === runRef.current) setError(err.message ?? String(err))
     } finally {
@@ -54,8 +56,9 @@ export function useCalendarData(getAccessToken, config) {
     setLoading(false)
     setRows(null)
     setSummary(null)
+    setCalculatedWith(null)
     setError(null)
   }, [])
 
-  return { rows, summary, loading, error, calculate, reset }
+  return { rows, summary, loading, error, calculate, reset, calculatedWith }
 }

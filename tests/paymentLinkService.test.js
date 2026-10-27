@@ -319,6 +319,7 @@ for (const [label, overrides, message] of [
   ['fractional lesson count', { numberOfLessons: 1.5 }, 'Invalid number of lessons.'],
   ['profile with spaces', { paymentProfile: 'two words' }, 'Invalid payment profile.'],
   ['non-string profile', { paymentProfile: 42 }, 'Invalid payment profile.'],
+  ['non-string student name', { lessonStudent: 7 }, 'Invalid student name.'],
   ['non-string invoice text', { invoiceDescription: 42 }, 'Invalid invoice description.'],
   ['over-long invoice text', { invoiceDescription: 'א'.repeat(201) }, 'Invoice description is too long.'],
 ]) {
@@ -361,4 +362,21 @@ Deno.test('createPaymentLink: missing webhookUrl is a 500 before any Make reques
     ServiceError,
   )
   assertEquals(err.status, 500)
+})
+
+// Value: protects=the payer's name goes to Grow while the product line and invoice text name the child; fails_when=lessonStudent is ignored or replaces customer_name; why_new=lessonStudent is new; seam=none
+Deno.test('createPaymentLink: sends the payer as customer_name and the child as student_name', async () => {
+  const { captured, fetchImpl } = captureMakeBody()
+  await createPaymentLink(baseArgs({ fetchImpl, studentName: 'עינת שמש', lessonStudent: 'ענבר', invoiceDescription: 'ייעוץ - {student} - {month}' }))
+  assertEquals(captured.body.customer_name, 'עינת שמש')
+  assertEquals(captured.body.student_name, 'ענבר')
+  assertEquals(captured.body.invoice_description, 'ייעוץ - ענבר - אוגוסט')
+})
+
+// Value: protects=older clients without lessonStudent keep the payer in the product line; fails_when=student_name is blank when lessonStudent is missing; why_new=new field; seam=none
+Deno.test('createPaymentLink: without lessonStudent, student_name falls back to the payer', async () => {
+  const { captured, fetchImpl } = captureMakeBody()
+  await createPaymentLink(baseArgs({ fetchImpl }))
+  assertEquals(captured.body.student_name, 'רחל כהן')
+  assertEquals(captured.body.description.includes('רחל כהן'), true)
 })

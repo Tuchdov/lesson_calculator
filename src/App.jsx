@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useAuth } from './hooks/useAuth.js'
 import { useUserSettings } from './hooks/useUserSettings.js'
 import { useCalendarData } from './hooks/useCalendarData.js'
@@ -25,6 +25,10 @@ export default function App() {
   const [paymentLinks, setPaymentLinks] = useState({})
   const [reviewResolutions, setReviewResolutions] = useState({})
   const [month, setMonth] = useState(currentMonth)
+  // Payment-link progress per student; kept here (not in CalculatorPage) so a
+  // run that is still in flight when you change pages stays visible.
+  const [preparing, setPreparing] = useState(false)
+  const [prepareStatus, setPrepareStatus] = useState({})
 
   // Guards navigation away from a page with unsaved changes (currently only
   // Custom Prices reports dirty state, e.g. a pending import not yet saved).
@@ -56,8 +60,8 @@ export default function App() {
     setAmountOverrides(next)
   }
 
-  const handlePaymentLinkChange = async (month, student, link, amount) => {
-    const next = await savePaymentLink(userEmail, month, student, link, amount)
+  const handlePaymentLinkChange = async (month, student, link, amount, inputs) => {
+    const next = await savePaymentLink(userEmail, month, student, link, amount, inputs)
     setPaymentLinks(next)
   }
 
@@ -119,11 +123,16 @@ export default function App() {
   // A re-auth signs the same account back in and keeps the table; a different
   // account must never see the previous one's students.
   const lastEmailRef = useRef(null)
+  const resetForAccount = useCallback(() => {
+    resetCalculation()
+    setPrepareStatus({})
+    setPreparing(false)
+  }, [resetCalculation])
   useEffect(() => {
     if (!userEmail) return
-    if (lastEmailRef.current && lastEmailRef.current !== userEmail) resetCalculation()
+    if (lastEmailRef.current && lastEmailRef.current !== userEmail) resetForAccount()
     lastEmailRef.current = userEmail
-  }, [userEmail, resetCalculation])
+  }, [userEmail, resetForAccount])
 
   if (!accessToken) {
     return <AuthScreen onSignIn={signIn} error={authError} />
@@ -158,6 +167,10 @@ export default function App() {
             onAmountOverrideChange={handleAmountOverrideChange}
             paymentLinks={paymentLinks}
             onPaymentLinkChange={handlePaymentLinkChange}
+            preparing={preparing}
+            onPreparingChange={setPreparing}
+            prepareStatus={prepareStatus}
+            onPrepareStatusChange={setPrepareStatus}
             reviewResolutions={reviewResolutions}
             onReviewResolutionChange={handleReviewResolutionChange}
           />

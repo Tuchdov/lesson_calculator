@@ -252,13 +252,20 @@ both handling and a test requirement.
     filled in, or `""` when they use the default. When set, `description` carries the
     same text. **Make-side:** map it into the invoice/document item if the scenario
     issues one.
+  - `customer_name` is the payer (a young student's parent: Custom Prices "Payer name",
+    shown on Grow's payment page and invoice); `student_name` is whose lessons they are
+    (the calendar name, used in the product line, catalog number and the invoice text's
+    `{student}`). Without `student_name` (an older client) the payer is used for both.
+  - Each stored link records what it was minted with (payer, phone, student, non-default
+    profile, invoice text). A change to any of them, like an amount change, means a new
+    link; links stored before this only carry the defaults.
   - Validation (400 before Make is called): `number_of_lessons` must be a non-negative
     integer; `payment_profile` must match `/^[\p{L}\p{N}_-]{1,40}$/u` (blank → `standard`);
     the rendered invoice text is capped at 200 characters.
   - Live scenario ("Integration Webhooks", 2026-10-27): the Router sends any profile other
     than `extended` (case-insensitive) to the standard route, so an unknown profile falls
     back rather than failing. Both Grow modules use `invoice_description` as the product
-    name and fall back to the default line when it is empty.
+    name and fall back to the default line (`פיתוח קול - <student_name> - תשלום <previous month> <YY>`) when it is empty.
   - A link already prepared for the month is reused while the amount is unchanged, so
     after changing a student's profile or invoice text use ↻ to mint a fresh one.
 - **Getting the real response required two Make-side fixes**, not just filling in fields:

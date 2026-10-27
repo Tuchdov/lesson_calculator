@@ -1,5 +1,5 @@
-import { resolvePriceTable } from './calendarPayments.js'
-import { invoiceRecord, invoiceRecordName } from './payments.js'
+import { resolvePriceTable, normalizeStudentName } from './calendarPayments.js'
+import { invoiceRecord, invoiceRecordNames } from './payments.js'
 
 // Shared between EditableTable (per-row rendering) and CalculatorPage
 // (prepare-all needs each row's amount without opening every row). Kept out
@@ -48,18 +48,20 @@ export function proRataPrice(minutes, prices) {
   return Math.round((Math.max(minutes ?? 0, 0) / 60) * Number(prices['60']) * 100) / 100
 }
 
-// A stored answer wins; otherwise a make-up phrase from Settings resolves the
-// item automatically. Anything else is unresolved.
+// Only the teacher's saved answer (under any spelling), never the automatic
+// make-up one.
 export function storedReviewResolution(item, resolutions, month, row) {
   return invoiceRecord(resolutions, month, row, `:${item.id}`)
 }
 
-// The student name a stored answer lives under (the row's own key or an
-// older spelling), so clearing it removes that exact entry.
-export function storedReviewName(item, resolutions, month, row) {
-  return invoiceRecordName(resolutions, month, row, `:${item.id}`)
+// Every student name a stored answer lives under (the row's own key or older
+// spellings), so clearing it removes all of them.
+export function storedReviewNames(item, resolutions, month, row) {
+  return invoiceRecordNames(resolutions, month, row, `:${item.id}`)
 }
 
+// A stored answer wins; otherwise a make-up phrase from Settings resolves the
+// item automatically. Anything else is unresolved.
 export function reviewResolution(item, resolutions, month, row) {
   return storedReviewResolution(item, resolutions, month, row) ?? (item.auto ? { mode: item.auto } : null)
 }
@@ -114,4 +116,18 @@ const MAKEUP_HINT = 'השלמה'
 export function defaultReviewMode(item, prices) {
   if (!item.makeup && !(item.summary ?? '').includes(MAKEUP_HINT)) return 'prorata'
   return baseLessonPrice(item.minutes ?? 0, prices) > 0 ? 'base' : 'free'
+}
+
+// The student as the calendar names them: the saved key without its notes
+// ("ענבר 11.5 (אמא עינת)" -> "ענבר"). Used where a person reads the name:
+// the Grow product line and the invoice text's {student}.
+export function lessonStudentName(row) {
+  return normalizeStudentName(row.student)
+}
+
+// Who pays and receives the invoice: the saved payer name (a child's parent),
+// else the student's own name. A name without first and last part makes the
+// table ask for the payer (hasFullName).
+export function payerName(details, row) {
+  return details?.full_name || lessonStudentName(row)
 }

@@ -316,18 +316,22 @@
 .btnCancelPhone:hover { color: var(--md-text); }
 .btnCancelPhone:focus-visible { outline: 2px solid var(--md-border); outline-offset: 2px; }
 
-.reviewChip, .reviewChipDone {
+.reviewChip, .reviewChipDone, .conflictChip {
   display: block;
   width: fit-content;
   margin-top: 4px;
   border: none;
   border-radius: var(--radius-pill);
-  padding: 2px 8px;
-  font-size: 11px;
+  padding: 4px 12px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   font-family: var(--font-gs);
 }
+/* A status label, not a control: no pointer or hover. */
+.conflictChip { background: var(--md-amber-tonal); color: var(--md-amber); cursor: default; }
+.waChipStatic { cursor: default; }
+.waChipStatic:hover { background: var(--md-amber-tonal); }
 .reviewChip { background: var(--md-amber-tonal); color: var(--md-amber); }
 .reviewChipDone { background: var(--md-blue-tonal); color: var(--md-blue); }
 .reviewChip:hover { background: color-mix(in srgb, var(--md-amber-tonal) 70%, var(--md-amber) 10%); }

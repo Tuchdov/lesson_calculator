@@ -111,8 +111,9 @@
 
 .staleNote {
   background: var(--md-amber-tonal);
-  color: var(--md-amber);
-  border-radius: var(--radius);
-  padding: 10px 14px;
+  color: var(--md-text);
+  border: 1px solid color-mix(in srgb, var(--md-amber) 35%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
   font-size: 14px;
 }

@@ -8,11 +8,12 @@ import {
   buildGrowDescription,
   loadPaymentLinks,
   savePaymentLink,
-  getStoredLink,
   isLinkUsable,
+  linkInputs,
   loadAmountOverrides,
   saveAmountOverride,
-  getStoredOverride,
+  invoiceRecord,
+  invoiceRecordNames,
   loadReviewResolutions,
   saveReviewResolution,
 } from '../src/lib/payments.js'
@@ -134,15 +135,15 @@ Deno.test('loadPaymentLinks: returns empty object when key absent', async () => 
 
 Deno.test('savePaymentLink + loadPaymentLinks: round-trips one entry', async () => {
   const stub = makeStub()
-  await savePaymentLink('user@example.com', '2026-08', 'רחל כהן', 'https://pay.grow.link/abc', 487.5, stub)
+  await savePaymentLink('user@example.com', '2026-08', 'רחל כהן', 'https://pay.grow.link/abc', 487.5, undefined, stub)
   const links = await loadPaymentLinks('user@example.com', stub)
   assertEquals(links, { '2026-08:רחל כהן': { link: 'https://pay.grow.link/abc', amount: 487.5 } })
 })
 
 Deno.test('savePaymentLink: writing a second link preserves the first (crash-safe batch writes)', async () => {
   const stub = makeStub()
-  await savePaymentLink('user@example.com', '2026-08', 'Alice', 'https://pay.grow.link/a', 300, stub)
-  await savePaymentLink('user@example.com', '2026-08', 'Bob', 'https://pay.grow.link/b', 450, stub)
+  await savePaymentLink('user@example.com', '2026-08', 'Alice', 'https://pay.grow.link/a', 300, undefined, stub)
+  await savePaymentLink('user@example.com', '2026-08', 'Bob', 'https://pay.grow.link/b', 450, undefined, stub)
   const links = await loadPaymentLinks('user@example.com', stub)
   assertEquals(Object.keys(links).length, 2)
   assertEquals(links['2026-08:Alice'].link, 'https://pay.grow.link/a')
@@ -151,8 +152,8 @@ Deno.test('savePaymentLink: writing a second link preserves the first (crash-saf
 
 Deno.test('savePaymentLink: same student, different months, do not collide', async () => {
   const stub = makeStub()
-  await savePaymentLink('user@example.com', '2026-07', 'Alice', 'https://pay.grow.link/july', 300, stub)
-  await savePaymentLink('user@example.com', '2026-08', 'Alice', 'https://pay.grow.link/aug', 450, stub)
+  await savePaymentLink('user@example.com', '2026-07', 'Alice', 'https://pay.grow.link/july', 300, undefined, stub)
+  await savePaymentLink('user@example.com', '2026-08', 'Alice', 'https://pay.grow.link/aug', 450, undefined, stub)
   const links = await loadPaymentLinks('user@example.com', stub)
   assertEquals(links['2026-07:Alice'].amount, 300)
   assertEquals(links['2026-08:Alice'].amount, 450)
@@ -169,7 +170,7 @@ Deno.test('savePaymentLink: concurrent writes to different students do not clobb
   const stub = makeStub()
   const students = Array.from({ length: 10 }, (_, i) => `Student${i}`)
   await Promise.all(students.map((student, i) =>
-    savePaymentLink('user@example.com', '2026-08', student, `https://pay.grow.link/${i}`, 100 + i, stub)
+    savePaymentLink('user@example.com', '2026-08', student, `https://pay.grow.link/${i}`, 100 + i, undefined, stub)
   ))
   const links = await loadPaymentLinks('user@example.com', stub)
   assertEquals(Object.keys(links).length, students.length)
@@ -199,25 +200,46 @@ Deno.test('loadPaymentLinks: returns empty object when stored JSON is corrupt', 
   assertEquals(links, {})
 })
 
-Deno.test('getStoredLink: returns the entry for a month:student key, or null', () => {
+Deno.test('invoiceRecord: returns the entry for a month:student key, or null', () => {
   const links = { '2026-08:Alice': { link: 'https://x', amount: 300 } }
-  assertEquals(getStoredLink(links, '2026-08', 'Alice'), { link: 'https://x', amount: 300 })
-  assertEquals(getStoredLink(links, '2026-08', 'Bob'), null)
-  assertEquals(getStoredLink(null, '2026-08', 'Bob'), null)
+  assertEquals(invoiceRecord(links, '2026-08', { student: 'Alice' }), { link: 'https://x', amount: 300 })
+  assertEquals(invoiceRecord(links, '2026-08', { student: 'Bob' }), null)
+  assertEquals(invoiceRecord(null, '2026-08', { student: 'Bob' }), null)
 })
 
 Deno.test('isLinkUsable: true when a link exists and the amount is unchanged', () => {
   const links = { '2026-08:Alice': { link: 'https://x', amount: 300 } }
-  assertEquals(isLinkUsable(links, '2026-08', 'Alice', 300), true)
+  assertEquals(isLinkUsable(links, '2026-08', { student: 'Alice' }, 300), true)
 })
 
 Deno.test('isLinkUsable: false when the amount changed since the link was minted', () => {
   const links = { '2026-08:Alice': { link: 'https://x', amount: 300 } }
-  assertEquals(isLinkUsable(links, '2026-08', 'Alice', 350), false)
+  assertEquals(isLinkUsable(links, '2026-08', { student: 'Alice' }, 350), false)
 })
 
 Deno.test('isLinkUsable: false when no link is stored for that invoice', () => {
-  assertEquals(isLinkUsable({}, '2026-08', 'Alice', 300), false)
+  assertEquals(isLinkUsable({}, '2026-08', { student: 'Alice' }, 300), false)
+})
+
+// Value: protects=a link minted under an older spelling is reused instead of minting a second live link; fails_when=isLinkUsable looks up row.student only; why_new=isLinkUsable now takes a row; seam=none
+Deno.test('isLinkUsable: finds a link saved under another spelling of the student', () => {
+  const links = { '2026-08:ענבר אמא': { link: 'https://x', amount: 230 } }
+  assertEquals(isLinkUsable(links, '2026-08', { student: 'ענבר 11.5 (אמא עינת)', aliases: ['ענבר'] }, 230), true)
+})
+
+// Value: protects=a conflicted row never reads or clears another student's record; fails_when=aliases are consulted before name_conflicts; why_new=the earlier conflict test only covered the older-parse scan; seam=none
+Deno.test('invoiceRecordNames: a row with name conflicts owns only its own key', () => {
+  const overrides = { '2026-10:ענבר 3.2 (אמא רות)': 999, '2026-10:ענבר 11.5 (אמא עינת)': 230 }
+  const row = { student: 'ענבר 11.5 (אמא עינת)', aliases: ['ענבר', 'ענבר 3.2 (אמא רות)'], name_conflicts: ['phone'] }
+  assertEquals(invoiceRecordNames(overrides, '2026-10', row), ['ענבר 11.5 (אמא עינת)'])
+  assertEquals(invoiceRecord({ '2026-10:ענבר 3.2 (אמא רות)': 999 }, '2026-10', row), null)
+})
+
+// Value: protects=a reset clears the record under every spelling, so an older value can't reappear; fails_when=only the first matching name is returned; why_new=resets used a single found name; seam=none
+Deno.test('invoiceRecordNames: lists every spelling a record is saved under, own key first', () => {
+  const overrides = { '2026-10:ענבר אמא': 999, '2026-10:ענבר 11.5 (אמא עינת)': 400, '2026-11:ענבר': 1 }
+  const row = { student: 'ענבר 11.5 (אמא עינת)', aliases: ['ענבר'] }
+  assertEquals(invoiceRecordNames(overrides, '2026-10', row), ['ענבר 11.5 (אמא עינת)', 'ענבר אמא'])
 })
 
 // ── amount override store ────────────────────────────────────────────────────
@@ -247,8 +269,8 @@ Deno.test('saveAmountOverride: an override does not carry into a different month
   const stub = makeStub()
   await saveAmountOverride('user@example.com', '2026-03', 'Alice', 350, stub)
   const overrides = await loadAmountOverrides('user@example.com', stub)
-  assertEquals(getStoredOverride(overrides, '2026-03', 'Alice'), 350)
-  assertEquals(getStoredOverride(overrides, '2026-04', 'Alice'), null)
+  assertEquals(invoiceRecord(overrides, '2026-03', { student: 'Alice' }), 350)
+  assertEquals(invoiceRecord(overrides, '2026-04', { student: 'Alice' }), null)
 })
 
 Deno.test('loadAmountOverrides: returns empty object when stored JSON is corrupt', async () => {
@@ -259,8 +281,8 @@ Deno.test('loadAmountOverrides: returns empty object when stored JSON is corrupt
   assertEquals(overrides, {})
 })
 
-Deno.test('getStoredOverride: returns null when overrides object itself is null', () => {
-  assertEquals(getStoredOverride(null, '2026-08', 'Alice'), null)
+Deno.test('invoiceRecord: returns null when the overrides object itself is null', () => {
+  assertEquals(invoiceRecord(null, '2026-08', { student: 'Alice' }), null)
 })
 
 // ── custom invoice description ──────────────────────────────────────────────
@@ -283,4 +305,36 @@ Deno.test('saveReviewResolution: round-trips and null clears', async () => {
 // Value: protects=a student name with "$" sequences is inserted literally into the invoice text; fails_when=replaceAll goes back to a string replacement ("$'" splices the template); why_new=templates were tested with plain names only; seam=none
 Deno.test("buildGrowDescription: a name containing $-patterns is inserted literally", () => {
   assertEquals(buildGrowDescription("Dan $' $& Co", '2026-08', 'Lessons - {student} - {month}'), "Lessons - Dan $' $& Co - אוגוסט")
+})
+
+// ── link fingerprints ───────────────────────────────────────────────────────
+
+// Value: protects=a link minted with another payer, phone, profile or invoice text is not reused; fails_when=isLinkUsable compares the amount only; why_new=links now record their inputs; seam=none
+Deno.test('isLinkUsable: a stored link goes stale when what it was minted with changes', () => {
+  const base = { payerName: 'עינת שמש', phone: '050-1111111', lessonStudent: 'ענבר' }
+  const minted = linkInputs(base)
+  const links = { '2026-10:ענבר': { link: 'https://x', amount: 230, inputs: minted } }
+  const row = { student: 'ענבר' }
+  assertEquals(isLinkUsable(links, '2026-10', row, 230, linkInputs(base)), true)
+  assertEquals(isLinkUsable(links, '2026-10', row, 230, linkInputs({ ...base, paymentProfile: 'extended' })), false)
+  assertEquals(isLinkUsable(links, '2026-10', row, 230, linkInputs({ ...base, invoiceDescription: 'ייעוץ - {student}' })), false)
+  assertEquals(isLinkUsable(links, '2026-10', row, 230, linkInputs({ ...base, payerName: 'רות כהן' })), false)
+  assertEquals(isLinkUsable(links, '2026-10', row, 230, linkInputs({ ...base, phone: '0501111111' })), true)
+})
+
+// Value: protects=links saved before fingerprints stay usable for default students, not for students who now have a profile or invoice text; fails_when=legacy entries are always (or never) reused; why_new=fingerprints are new; seam=none
+Deno.test('isLinkUsable: a link saved before fingerprints is reused only while the defaults apply', () => {
+  const links = { '2026-10:ענבר': { link: 'https://x', amount: 230 } }
+  const row = { student: 'ענבר' }
+  const base = { payerName: 'עינת שמש', phone: '050-1111111', lessonStudent: 'ענבר' }
+  assertEquals(isLinkUsable(links, '2026-10', row, 230, linkInputs({ ...base, paymentProfile: 'standard' })), true)
+  assertEquals(isLinkUsable(links, '2026-10', row, 230, linkInputs({ ...base, paymentProfile: 'extended' })), false)
+})
+
+// Value: protects=a saved fingerprint round-trips through the store; fails_when=savePaymentLink drops inputs; why_new=new field; seam=none
+Deno.test('savePaymentLink: stores the inputs a link was minted with', async () => {
+  const stub = makeStub()
+  await savePaymentLink('user@example.com', '2026-10', 'ענבר', 'https://x', 230, '{"payer":"עינת שמש"}', stub)
+  const links = await loadPaymentLinks('user@example.com', stub)
+  assertEquals(links['2026-10:ענבר'], { link: 'https://x', amount: 230, inputs: '{"payer":"עינת שמש"}' })
 })
