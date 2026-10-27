@@ -265,6 +265,34 @@ describe('useAuth', () => {
     expect(result.current).toMatchObject({ accessToken: null, userEmail: null })
   })
 
+  it('clears the session on sign-out when the Google SDK is unavailable', () => {
+    storeSession()
+    sessionStorage.setItem('unrelated', 'keep')
+    vi.stubGlobal('google', undefined)
+    const { result } = renderHook(() => useAuth())
+
+    act(() => { result.current.signOut() })
+
+    expect(result.current).toMatchObject({ accessToken: null, userEmail: null })
+    expect(sessionStorage.getItem('gis_access_token')).toBeNull()
+    expect(sessionStorage.getItem('gis_expires_at')).toBeNull()
+    expect(sessionStorage.getItem('gis_user_email')).toBeNull()
+    expect(sessionStorage.getItem('unrelated')).toBe('keep')
+  })
+
+  it('clears the session even if token revocation throws', () => {
+    storeSession()
+    revoke.mockImplementation(() => { throw new Error('SDK unavailable') })
+    const { result } = renderHook(() => useAuth())
+
+    act(() => { result.current.signOut() })
+
+    expect(result.current).toMatchObject({ accessToken: null, userEmail: null })
+    expect(sessionStorage.getItem('gis_access_token')).toBeNull()
+    expect(sessionStorage.getItem('gis_expires_at')).toBeNull()
+    expect(sessionStorage.getItem('gis_user_email')).toBeNull()
+  })
+
   it('does not restore the email if a profile request finishes after sign-out', async () => {
     const profile = deferred()
     fetch.mockReturnValueOnce(profile.promise)

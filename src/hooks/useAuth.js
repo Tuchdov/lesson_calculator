@@ -147,7 +147,12 @@ export function useAuth() {
     inFlightRef.current = null
     cancelInFlightRef.current = null
     const token = sessionStorage.getItem(SESSION_KEYS.TOKEN)
-    if (token) window.google.accounts.oauth2.revoke(token, () => {})
+    // Revocation is best effort; local sign-out must work even if GIS failed.
+    try {
+      if (token) window.google?.accounts?.oauth2?.revoke?.(token, () => {})
+    } catch {
+      // Continue clearing the local session if the SDK throws.
+    }
     sessionStorage.removeItem(SESSION_KEYS.TOKEN)
     sessionStorage.removeItem(SESSION_KEYS.EXPIRES_AT)
     sessionStorage.removeItem(SESSION_KEYS.EMAIL)
