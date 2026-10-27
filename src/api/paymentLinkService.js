@@ -1,5 +1,5 @@
 import { isValidAmount, normalizePhoneForGrow, buildGrowDescription } from '../lib/payments.js'
-import { validateIsraeliPhone } from '../lib/whatsapp.js'
+import { validateIsraeliPhone, monthNameFromKey } from '../lib/whatsapp.js'
 
 const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo'
 
@@ -52,6 +52,8 @@ async function verifyCaller(accessToken, { allowedEmail, clientId, fetchImpl }) 
 
 // Confirmed against the live Make scenario (T1): the webhook expects
 // {customer_name, amount, phone, description} and, on success, returns
+// (lessons, month_name and year are extra fields for the Title and
+// Product Name mappings in Make — e.g. "3 שיעורים ספטמבר")
 // {status: 1, err: {}, data: {paymentLinkProcessId, paymentLinkProcessToken,
 // url}}. Grow's amount is shekels, sent as-is — no agorot conversion.
 async function callMakeWebhook({ webhookUrl, apiKey, payload, fetchImpl }) {
@@ -92,6 +94,7 @@ export async function createPaymentLink({
   phone,
   amount,
   month,
+  lessons,
   allowedEmail,
   clientId,
   webhookUrl,
@@ -120,6 +123,9 @@ export async function createPaymentLink({
       amount,
       phone: normalizePhoneForGrow(phone),
       description: buildGrowDescription(studentName, month),
+      lessons: Number.isInteger(lessons) && lessons > 0 ? lessons : null,
+      month_name: monthNameFromKey(month),
+      year: (month ?? '').split('-')[0],
     },
     fetchImpl,
   })

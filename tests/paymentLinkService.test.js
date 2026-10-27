@@ -262,6 +262,19 @@ Deno.test('createPaymentLink: sends phone normalized for Grow and a Hebrew descr
   assertEquals(capturedBody.description.includes('רחל כהן'), true)
 })
 
+Deno.test('createPaymentLink: sends lesson count, Hebrew month name and year for the Make mappings', async () => {
+  let capturedBody
+  const fetchImpl = async (url, opts) => {
+    if (String(url).includes('tokeninfo')) return tokeninfoOk()
+    capturedBody = JSON.parse(opts.body)
+    return makeOk()
+  }
+  await createPaymentLink(baseArgs({ fetchImpl, lessons: 3 }))
+  assertEquals(capturedBody.lessons, 3)
+  assertEquals(capturedBody.month_name, 'אוגוסט')
+  assertEquals(capturedBody.year, '2026')
+})
+
 Deno.test('createPaymentLink: includes x-make-apikey header only when an apiKey is configured', async () => {
   let capturedHeaders
   const fetchImpl = async (url, opts) => {
