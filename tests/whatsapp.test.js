@@ -6,7 +6,6 @@ import {
   buildWhatsAppUrl,
   renderMessageTemplate,
   applyPaymentLink,
-  DEFAULT_MESSAGE_TEMPLATE,
   HEBREW_MONTHS,
 } from '../src/lib/whatsapp.js'
 
