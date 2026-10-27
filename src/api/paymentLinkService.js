@@ -1,11 +1,7 @@
-import { isValidAmount, normalizePhoneForGrow, buildGrowDescription } from '../lib/payments.js'
+import { isValidAmount, normalizePhoneForGrow, buildGrowDescription, DEFAULT_PAYMENT_PROFILE, isValidPaymentProfile } from '../lib/payments.js'
 import { validateIsraeliPhone } from '../lib/whatsapp.js'
 
 const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo'
-export const DEFAULT_PAYMENT_PROFILE = 'standard'
-// Profile names are what the Make scenario's router matches on, so they stay
-// short single tokens (Hebrew allowed).
-const PAYMENT_PROFILE_PATTERN = /^[\p{L}\p{N}_-]{1,40}$/u
 const MAX_INVOICE_DESCRIPTION = 200
 
 // Carries an HTTP status and a retryable flag through to the thin Vercel
@@ -56,7 +52,9 @@ async function verifyCaller(accessToken, { allowedEmail, clientId, fetchImpl }) 
 }
 
 // Confirmed against the live Make scenario (T1): the webhook expects
-// {customer_name, amount, phone, description} and, on success, returns
+// {customer_name, amount, phone, description, invoice_description,
+// payment_profile, number_of_lessons?} (see createPaymentLink) and, on
+// success, returns
 // {status: 1, err: {}, data: {paymentLinkProcessId, paymentLinkProcessToken,
 // url}}. Grow's amount is shekels, sent as-is — no agorot conversion.
 async function callMakeWebhook({ webhookUrl, apiKey, payload, fetchImpl }) {
@@ -129,10 +127,11 @@ export async function createPaymentLink({
     throw new ServiceError(400, 'Invalid number of lessons.')
   }
 
-  const profile = typeof paymentProfile === 'string' && paymentProfile.trim()
-    ? paymentProfile.trim()
-    : DEFAULT_PAYMENT_PROFILE
-  if (!PAYMENT_PROFILE_PATTERN.test(profile)) {
+  if (paymentProfile != null && typeof paymentProfile !== 'string') {
+    throw new ServiceError(400, 'Invalid payment profile.')
+  }
+  const profile = paymentProfile?.trim() || DEFAULT_PAYMENT_PROFILE
+  if (!isValidPaymentProfile(profile)) {
     throw new ServiceError(400, 'Invalid payment profile.')
   }
 

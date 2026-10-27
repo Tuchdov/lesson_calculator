@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { EditableTable } from './EditableTable.jsx'
 import { resolveRowPrices, computeRowAmount, detailsFor, totalLessons } from '../lib/rowPricing.js'
 import { safeTotalsCsvBytes } from '../lib/csvExport.js'
-import { getStoredOverride, isValidAmount, isLinkUsable, hasFullName } from '../lib/payments.js'
+import { invoiceRecord, isValidAmount, amountChanged, hasFullName } from '../lib/payments.js'
+import { normalizeStudentName, resolveSavedStudent } from '../lib/calendarPayments.js'
 import { requestPaymentLink } from '../lib/paymentLinkClient.js'
 import styles from './CalculatorPage.module.css'
 
@@ -35,24 +36,34 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
   const rowBilling = (row) => {
     const prices = resolveRowPrices(row.student, row.student_type === 'regular', config, customPrices?.[row.student])
     const { amount, unresolved } = computeRowAmount(row, prices, reviewResolutions, summary?.month)
-    const override = getStoredOverride(amountOverrides, summary?.month, row.student)
+    const override = invoiceRecord(amountOverrides, summary?.month, row)
     return override != null ? { amount: override, unresolved: 0 } : { amount, unresolved }
   }
 
   const billing = rows?.map(row => ({ row, ...rowBilling(row) })) ?? []
   const liveTotal = Math.round(billing.reduce((sum, b) => sum + b.amount, 0) * 100) / 100
   const needsReview = billing.filter(b => b.unresolved > 0).length
+  // Names are matched to saved students at Calculate time; a saved name added
+  // or removed since then can change which student a row belongs to.
+  const namesStale = rows?.some(r =>
+    resolveSavedStudent(normalizeStudentName(r.student), customPrices, customerDetails).key !== r.student
+  ) ?? false
+
+  const linkUsable = (row, amount) => {
+    const entry = invoiceRecord(paymentLinks, summary?.month, row)
+    return !!entry && !amountChanged(entry.amount, amount)
+  }
 
   const handlePrepareAll = async () => {
     if (!rows?.length || !summary || preparing) return
     const eligible = billing
-      .filter(({ unresolved }) => unresolved === 0)
+      .filter(({ unresolved, row }) => unresolved === 0 && !row.name_conflicts?.length)
       .map(({ row, amount }) => {
         const details = detailsFor(customerDetails, row)
         return { row, details, phone: details.phone, name: details.full_name || row.student, amount }
       })
       .filter(({ phone, name, amount, row }) =>
-        phone && hasFullName(name) && isValidAmount(amount) && !isLinkUsable(paymentLinks, summary.month, row.student, amount)
+        phone && hasFullName(name) && isValidAmount(amount) && !linkUsable(row, amount)
       )
     if (!eligible.length) return
 
@@ -76,8 +87,8 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
         })
         await onPaymentLinkChange?.(summary.month, row.student, link, amount)
         setPrepareStatus(prev => ({ ...prev, [row.student]: null }))
-      } catch {
-        setPrepareStatus(prev => ({ ...prev, [row.student]: 'error' }))
+      } catch (err) {
+        setPrepareStatus(prev => ({ ...prev, [row.student]: { error: err.message || 'Failed to create the link. Try again.' } }))
       }
     })
 
@@ -86,7 +97,9 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
 
   const handleDownload = () => {
     if (!rows?.length) return
-    const bytes = safeTotalsCsvBytes(rows)
+    // The CSV carries the amounts the table shows (review answers and manual
+    // adjustments included), not the bare lesson totals from calculation.
+    const bytes = safeTotalsCsvBytes(billing.map(({ row, amount }) => ({ ...row, amount_due: amount })))
     const blob = new Blob([bytes], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -133,6 +146,12 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
               {needsReview} {needsReview === 1 ? 'student needs' : 'students need'} review before sending
             </span>
           )}
+        </div>
+      )}
+
+      {namesStale && (
+        <div className={styles.staleNote} role="status">
+          Saved students changed since this calculation. Press Calculate again to match names to them.
         </div>
       )}
 

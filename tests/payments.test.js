@@ -279,3 +279,8 @@ Deno.test('saveReviewResolution: round-trips and null clears', async () => {
   await saveReviewResolution('t@example.com', '2026-10:A:evt1', null, storage)
   assertEquals(await loadReviewResolutions('t@example.com', storage), {})
 })
+
+// Value: protects=a student name with "$" sequences is inserted literally into the invoice text; fails_when=replaceAll goes back to a string replacement ("$'" splices the template); why_new=templates were tested with plain names only; seam=none
+Deno.test("buildGrowDescription: a name containing $-patterns is inserted literally", () => {
+  assertEquals(buildGrowDescription("Dan $' $& Co", '2026-08', 'Lessons - {student} - {month}'), "Lessons - Dan $' $& Co - אוגוסט")
+})

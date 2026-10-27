@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { fetchCalendarEvents } from '../api/calendarApi.js'
 import { calculatePayments, monthWindow } from '../lib/calendarPayments.js'
 
@@ -7,12 +7,16 @@ export function useCalendarData(getAccessToken, config) {
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  // Bumped by every calculate() and reset(); a run that finishes after a newer
+  // one started (or after a reset on account switch) is discarded.
+  const runRef = useRef(0)
 
   const calculate = useCallback(async (monthStr) => {
     // getAccessToken is a function reference, always truthy once wired up —
     // only the !config half of this guard can actually fire in practice.
     // Left over from the original !accessToken (nullable string) check.
     if (!getAccessToken || !config) return
+    const run = ++runRef.current
     setLoading(true)
     setError(null)
     try {
@@ -26,17 +30,20 @@ export function useCalendarData(getAccessToken, config) {
         windowStart,
         end,
       )
+      if (run !== runRef.current) return
       const result = calculatePayments(events, config, monthStr)
       setRows(result.rows)
       setSummary(result.summary)
     } catch (err) {
-      setError(err.message ?? String(err))
+      if (run === runRef.current) setError(err.message ?? String(err))
     } finally {
-      setLoading(false)
+      if (run === runRef.current) setLoading(false)
     }
   }, [getAccessToken, config])
 
   const reset = useCallback(() => {
+    runRef.current++
+    setLoading(false)
     setRows(null)
     setSummary(null)
     setError(null)

@@ -294,10 +294,31 @@ Deno.test('createPaymentLink: sends number_of_lessons, payment_profile and a ren
   assertEquals(captured.body.description, 'ייעוץ קולי - רחל כהן - אוגוסט')
 })
 
+// Value: protects=a review-only row (0 standard lessons, fixed price) still mints a link carrying number_of_lessons: 0; fails_when=validation or payload uses truthiness (!n / n ? ...); why_new=only 4 and undefined were tested; seam=none
+Deno.test('createPaymentLink: zero lessons is valid and sent as number_of_lessons 0', async () => {
+  const { captured, fetchImpl } = captureMakeBody()
+  await createPaymentLink(baseArgs({ fetchImpl, numberOfLessons: 0 }))
+  assertEquals(captured.body.number_of_lessons, 0)
+})
+
+// Value: protects=Hebrew profile names reach the Make router; blank per-student fields fall back to defaults; fails_when=pattern loses \p{L}/u, or whitespace-only text is sent as custom; why_new=only latin profile and real template tested; seam=none
+Deno.test('createPaymentLink: Hebrew profile is accepted; whitespace-only profile and invoice text use the defaults', async () => {
+  const hebrew = captureMakeBody()
+  await createPaymentLink(baseArgs({ fetchImpl: hebrew.fetchImpl, paymentProfile: 'מורחב' }))
+  assertEquals(hebrew.captured.body.payment_profile, 'מורחב')
+
+  const blank = captureMakeBody()
+  await createPaymentLink(baseArgs({ fetchImpl: blank.fetchImpl, paymentProfile: '   ', invoiceDescription: '  \n ' }))
+  assertEquals(blank.captured.body.payment_profile, 'standard')
+  assertEquals(blank.captured.body.invoice_description, '')
+  assertEquals(blank.captured.body.description, 'תשלום עבור שיעורי שירה - רחל כהן - אוגוסט')
+})
+
 for (const [label, overrides, message] of [
   ['negative lesson count', { numberOfLessons: -1 }, 'Invalid number of lessons.'],
   ['fractional lesson count', { numberOfLessons: 1.5 }, 'Invalid number of lessons.'],
   ['profile with spaces', { paymentProfile: 'two words' }, 'Invalid payment profile.'],
+  ['non-string profile', { paymentProfile: 42 }, 'Invalid payment profile.'],
   ['non-string invoice text', { invoiceDescription: 42 }, 'Invalid invoice description.'],
   ['over-long invoice text', { invoiceDescription: 'א'.repeat(201) }, 'Invoice description is too long.'],
 ]) {

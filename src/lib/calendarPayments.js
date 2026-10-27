@@ -4,8 +4,11 @@ export const DEFAULT_CANCELLED_KEYWORDS = ['בוטל', 'מבוטל']
 // Titles containing one of these mark a make-up add-on: a non-standard
 // duration is charged as the standard lesson inside it, extra minutes free.
 export const DEFAULT_MAKEUP_PHRASES = []
+const MAKEUP_AUTO_MIN = 30
+const MAKEUP_AUTO_MAX = 90
 // A parent's name trails the student's in titles and saved keys
-// ("ענבר אמא עינת", "✨ אמא נועה") — everything from the marker on is dropped.
+// ("ענבר אמא עינת", "אלה עוז ✨ אמא נועה") — everything from the marker on is
+// dropped. A marker in first position is kept so the name is never emptied.
 const PARENT_MARKERS = ['אמא', 'אבא']
 
 export function monthWindow(monthStr) {
@@ -104,6 +107,22 @@ export function resolveSavedStudent(student, customPrices = {}, customerDetails 
   const key = priced[0] ?? detailed[0] ?? student
   const aliases = [...new Set([student, ...priced, ...detailed])].filter(a => a !== key)
   return { key, aliases }
+}
+
+// Spellings merged into one row are only safe when they don't contradict each
+// other: price under one key and phone under another is one student, two
+// different phones (or names, or prices) is probably two students who share a
+// first name. Returns the conflicting fields; a non-empty result blocks sending.
+const CONFLICT_FIELDS = ['phone', 'full_name']
+export function savedNameConflicts(keys, customPrices = {}, customerDetails = {}) {
+  const conflicts = []
+  for (const field of CONFLICT_FIELDS) {
+    const values = new Set(keys.map(k => customerDetails?.[k]?.[field]).filter(v => v !== '' && v != null))
+    if (values.size > 1) conflicts.push(field)
+  }
+  const prices = new Set(keys.filter(k => customPrices?.[k]).map(k => JSON.stringify(customPrices[k])))
+  if (prices.size > 1) conflicts.push('price')
+  return conflicts
 }
 
 function cleanNameCandidate(name) {
@@ -256,6 +275,12 @@ export function calculatePayments(events, config, monthStr) {
     const startDt = new Date(startRaw)
     const inMonth = startDt >= monthStart && startDt < monthEnd
 
+    // Every lesson that happened counts as attendance for the regular tier,
+    // including ones whose length needs review below.
+    if (paidCancel) forceRegular.add(student)
+    if (!lessonDatetimes[student]) lessonDatetimes[student] = []
+    lessonDatetimes[student].push(startDt)
+
     // A duration outside the 30/45/60 tiers (e.g. "+15 min make-up") used to
     // be dropped silently, leaving a total that looked right but was too low.
     // It is surfaced for the teacher to price instead.
@@ -263,20 +288,20 @@ export function calculatePayments(events, config, monthStr) {
       if (!inMonth) continue
       ensureStats(student)
       if (!reviewItems[student]) reviewItems[student] = []
+      const minutes = eventMinutes(event)
+      const makeup = makeupPhrases.some(p => p && summary.includes(p))
       reviewItems[student].push({
         id: event.id ?? startRaw,
         summary,
         start: startRaw,
-        minutes: eventMinutes(event),
-        auto: makeupPhrases.some(p => p && summary.includes(p)) ? 'base' : null,
+        minutes,
+        makeup,
+        // "One standard lesson, extra free" only fits one lesson plus a short
+        // add-on; a longer block or a sub-30-minute event still asks.
+        auto: makeup && minutes >= MAKEUP_AUTO_MIN && minutes < MAKEUP_AUTO_MAX ? 'base' : null,
       })
       continue
     }
-
-    if (paidCancel) forceRegular.add(student)
-
-    if (!lessonDatetimes[student]) lessonDatetimes[student] = []
-    lessonDatetimes[student].push(startDt)
 
     if (!inMonth) continue
 
@@ -312,6 +337,7 @@ export function calculatePayments(events, config, monthStr) {
     rows.push({
       student,
       aliases: aliases[student] ?? [],
+      name_conflicts: savedNameConflicts([student, ...(aliases[student] ?? [])], customPrices, customerDetails),
       student_type: (regular || forceRegular.has(student)) ? 'regular' : 'non_regular',
       lessons_60: s.count_60,
       lessons_45: s.count_45,

@@ -1,4 +1,5 @@
 import { resolvePriceTable } from './calendarPayments.js'
+import { invoiceRecord, invoiceRecordName } from './payments.js'
 
 // Shared between EditableTable (per-row rendering) and CalculatorPage
 // (prepare-all needs each row's amount without opening every row). Kept out
@@ -49,8 +50,18 @@ export function proRataPrice(minutes, prices) {
 
 // A stored answer wins; otherwise a make-up phrase from Settings resolves the
 // item automatically. Anything else is unresolved.
-export function reviewResolution(item, resolutions, month, student) {
-  return resolutions?.[reviewKey(month, student, item.id)] ?? (item.auto ? { mode: item.auto } : null)
+export function storedReviewResolution(item, resolutions, month, row) {
+  return invoiceRecord(resolutions, month, row, `:${item.id}`)
+}
+
+// The student name a stored answer lives under (the row's own key or an
+// older spelling), so clearing it removes that exact entry.
+export function storedReviewName(item, resolutions, month, row) {
+  return invoiceRecordName(resolutions, month, row, `:${item.id}`)
+}
+
+export function reviewResolution(item, resolutions, month, row) {
+  return storedReviewResolution(item, resolutions, month, row) ?? (item.auto ? { mode: item.auto } : null)
 }
 
 export function reviewItemAmount(item, resolution, prices) {
@@ -68,7 +79,7 @@ export function computeRowAmount(row, prices, resolutions, month) {
   let extra = 0
   let unresolved = 0
   for (const item of row.review_items ?? []) {
-    const resolution = reviewResolution(item, resolutions, month, row.student)
+    const resolution = reviewResolution(item, resolutions, month, row)
     if (!resolution) unresolved++
     else extra += reviewItemAmount(item, resolution, prices)
   }
@@ -81,7 +92,10 @@ export function computeRowAmount(row, prices, resolutions, month) {
 // "אלה עוז" while the price lives under "אלה עוז (9.5)".
 export function detailsFor(customerDetails, row) {
   const merged = {}
-  for (const key of [...(row.aliases ?? []), row.student]) {
+  // Conflicting spellings are probably different students: never borrow
+  // another one's phone or name.
+  const keys = row.name_conflicts?.length ? [row.student] : [...(row.aliases ?? []), row.student]
+  for (const key of keys) {
     for (const [field, value] of Object.entries(customerDetails?.[key] ?? {})) {
       if (value !== '' && value != null) merged[field] = value
     }
@@ -93,10 +107,11 @@ export function totalLessons(row) {
   return row.lessons_60 + row.lessons_45 + row.lessons_30
 }
 
-// Pre-selected answer for an unresolved item. "השלמה" usually marks a
-// make-up, so the extra minutes default to free; anything else pro-rata.
+// Pre-selected answer for an unresolved item. A make-up (a Settings make-up
+// phrase, or "השלמה") defaults the extra minutes to free; anything else
+// pro-rata.
 const MAKEUP_HINT = 'השלמה'
 export function defaultReviewMode(item, prices) {
-  if (!(item.summary ?? '').includes(MAKEUP_HINT)) return 'prorata'
+  if (!item.makeup && !(item.summary ?? '').includes(MAKEUP_HINT)) return 'prorata'
   return baseLessonPrice(item.minutes ?? 0, prices) > 0 ? 'base' : 'free'
 }

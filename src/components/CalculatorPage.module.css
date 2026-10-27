@@ -108,3 +108,11 @@
   font-size: 13px;
   font-weight: 500;
 }
+
+.staleNote {
+  background: var(--md-amber-tonal);
+  color: var(--md-amber);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 14px;
+}

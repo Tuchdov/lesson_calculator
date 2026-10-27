@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { validateIsraeliPhone, buildPaymentMessage, buildWhatsAppUrl } from '../lib/whatsapp.js'
-import { invoiceKey, hasFullName, getStoredLink, amountChanged, isValidAmount } from '../lib/payments.js'
+import { hasFullName, invoiceRecord, invoiceRecordName, amountChanged, isValidAmount } from '../lib/payments.js'
 import { requestPaymentLink } from '../lib/paymentLinkClient.js'
-import { resolveRowPrices, computeRowAmount, detailsFor, totalLessons, reviewKey, reviewResolution, reviewItemAmount, baseLessonPrice, proRataPrice, defaultReviewMode } from '../lib/rowPricing.js'
+import { resolveRowPrices, computeRowAmount, detailsFor, totalLessons, reviewKey, reviewResolution, storedReviewResolution, storedReviewName, reviewItemAmount, baseLessonPrice, proRataPrice, defaultReviewMode } from '../lib/rowPricing.js'
 import styles from './EditableTable.module.css'
 
 const DURATION_COLS = ['60', '45', '30']
@@ -46,9 +46,10 @@ export function EditableTable({ rows, config, customPrices, onCustomPriceChange,
                   defaultMessage={defaultMessage}
                   expandedRow={expandedRow}
                   setExpandedRow={setExpandedRow}
-                  amountOverride={amountOverrides?.[invoiceKey(month, row.student)] ?? null}
+                  amountOverride={invoiceRecord(amountOverrides, month, row)}
+                  amountOverrideName={invoiceRecordName(amountOverrides, month, row)}
                   onAmountOverrideChange={onAmountOverrideChange}
-                  linkEntry={getStoredLink(paymentLinks, month, row.student)}
+                  linkEntry={invoiceRecord(paymentLinks, month, row)}
                   onPaymentLinkChange={onPaymentLinkChange}
                   getAccessToken={getAccessToken}
                   batchState={prepareStatus?.[row.student]}
@@ -74,7 +75,7 @@ function GroupHeader({ type }) {
   )
 }
 
-function StudentRow({ row, config, customPrices, onCustomPriceChange, details, onCustomerDetailChange, month, defaultMessage, expandedRow, setExpandedRow, amountOverride, onAmountOverrideChange, linkEntry, onPaymentLinkChange, getAccessToken, batchState, reviewResolutions, onReviewResolutionChange }) {
+function StudentRow({ row, config, customPrices, onCustomPriceChange, details, onCustomerDetailChange, month, defaultMessage, expandedRow, setExpandedRow, amountOverride, amountOverrideName, onAmountOverrideChange, linkEntry, onPaymentLinkChange, getAccessToken, batchState, reviewResolutions, onReviewResolutionChange }) {
   const { phone, full_name: fullName } = details
   const custom = customPrices?.[row.student]
   const prices = resolveRowPrices(row.student, row.student_type === 'regular', config, custom)
@@ -108,7 +109,9 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
   const needsDetails = !phone || !nameOk
   const linkUsable = !!linkEntry && !amountChanged(linkEntry.amount, roundedAmount)
   const busy = localBusy || batchState === 'loading'
-  const errorMessage = localError || (batchState === 'error' ? 'Failed to create the link. Try again.' : null)
+  const errorMessage = localError || batchState?.error || null
+  // Saved spellings that contradict each other are probably two students.
+  const nameConflict = row.name_conflicts?.length > 0
 
   const handleStartAmountEdit = () => {
     setAmountDraft(String(roundedAmount))
@@ -134,6 +137,10 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
   const handleResetAmount = async () => {
     try {
       await onAmountOverrideChange?.(month, row.student, null)
+      // An adjustment found under an older spelling is cleared there too.
+      if (amountOverrideName && amountOverrideName !== row.student) {
+        await onAmountOverrideChange?.(month, amountOverrideName, null)
+      }
       setEditingAmount(false)
       setAmountSaveError(null)
     } catch (err) {
@@ -226,7 +233,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
   }
 
   const handleSendClick = async () => {
-    if (busy || needsReview) return
+    if (busy || needsReview || nameConflict) return
     if (linkUsable) {
       const template = details.message || defaultMessage || undefined
       const msg = buildPaymentMessage(effectiveName, roundedAmount, month, template, lessonCount, linkEntry.link)
@@ -238,7 +245,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
 
   const handleRegenerate = async (e) => {
     e.stopPropagation()
-    if (busy || needsReview) return
+    if (busy || needsReview || nameConflict) return
     await mintLink()
   }
 
@@ -250,6 +257,11 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
             {row.student}
             {custom && <span className={styles.customBadge}>custom</span>}
           </span>
+          {nameConflict && (
+            <span className={styles.reviewChip} title={`Different ${row.name_conflicts.join(', ')} saved under: ${[row.student, ...(row.aliases ?? [])].join(' / ')}`}>
+              ⚠️ two students? different {row.name_conflicts.join(' / ')}
+            </span>
+          )}
           {hasReviewItems && (
             needsReview ? (
               <button className={styles.reviewChip} onClick={toggleReview} title="Lessons with a non-standard duration — choose how to charge them">
@@ -333,7 +345,11 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
           )}
         </td>
         <td className={styles.waCell}>
-          {needsReview ? (
+          {nameConflict ? (
+            <span className={styles.waChipMissing} title={`Saved as: ${[row.student, ...(row.aliases ?? [])].join(' / ')}. Give each student a distinct name on Custom Prices, then Calculate again.`}>
+              ⚠️ שני תלמידים?
+            </span>
+          ) : needsReview ? (
             <button className={`${styles.waChipMissing} ${reviewOpen ? styles.waChipActive : ''}`} onClick={toggleReview}>
               ⚠️ דרושה בדיקה
             </button>
@@ -406,9 +422,16 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
                   key={item.id}
                   item={item}
                   prices={prices}
-                  resolution={reviewResolution(item, reviewResolutions, month, row.student)}
-                  stored={reviewResolutions?.[reviewKey(month, row.student, item.id)] ?? null}
-                  onSave={resolution => onReviewResolutionChange?.(reviewKey(month, row.student, item.id), resolution)}
+                  resolution={reviewResolution(item, reviewResolutions, month, row)}
+                  stored={storedReviewResolution(item, reviewResolutions, month, row)}
+                  onSave={async resolution => {
+                    await onReviewResolutionChange?.(reviewKey(month, row.student, item.id), resolution)
+                    // An answer found under an older spelling is cleared there too.
+                    const storedName = storedReviewName(item, reviewResolutions, month, row)
+                    if (resolution == null && storedName && storedName !== row.student) {
+                      await onReviewResolutionChange?.(reviewKey(month, storedName, item.id), null)
+                    }
+                  }}
                 />
               ))}
               {amountOverride != null && (
@@ -437,6 +460,15 @@ function ReviewItem({ item, prices, resolution, stored, onSave }) {
   }
   const date = new Date(item.start).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })
 
+  const persist = async (next) => {
+    try {
+      await onSave(next)
+      setError(null)
+    } catch (err) {
+      setError(err.message ?? 'Failed to save. Try again.')
+    }
+  }
+
   const handleSave = async () => {
     let next = { mode }
     if (mode === 'fixed') {
@@ -447,12 +479,7 @@ function ReviewItem({ item, prices, resolution, stored, onSave }) {
       }
       next = { mode, amount: Math.round(v * 100) / 100 }
     }
-    try {
-      await onSave(next)
-      setError(null)
-    } catch (err) {
-      setError(err.message ?? 'Failed to save. Try again.')
-    }
+    await persist(next)
   }
 
   return (
@@ -485,7 +512,7 @@ function ReviewItem({ item, prices, resolution, stored, onSave }) {
           </label>
         ))}
         <button className={styles.btnSavePhone} onClick={handleSave}>שמור</button>
-        {stored && <button className={styles.btnCancelPhone} onClick={() => onSave(null)}>נקה</button>}
+        {stored && <button className={styles.btnCancelPhone} onClick={() => persist(null)}>נקה</button>}
         {error && <span className={styles.phoneErrorMsg}>{error}</span>}
       </div>
     </div>

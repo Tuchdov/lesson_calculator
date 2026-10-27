@@ -12,7 +12,9 @@ import {
   normalizeStudentName,
   resolvePriceTable,
   resolveSavedStudent,
+  savedNameConflicts,
 } from '../src/lib/calendarPayments.js'
+import { computeRowAmount } from '../src/lib/rowPricing.js'
 
 function makeEvent(startIso, endIso) {
   return { start: { dateTime: startIso }, end: { dateTime: endIso } }
@@ -432,6 +434,9 @@ Deno.test('normalizeStudentName: drops whole (...) notes, date-like numbers, dec
   assertEquals(normalizeStudentName('אלה עוז (9.5)'), 'אלה עוז')
   assertEquals(normalizeStudentName('אלה עוז(9.5)'), 'אלה עוז')
   assertEquals(normalizeStudentName('אלה עוז ✨ אמא נועה'), 'אלה עוז')
+  // Value: protects=an unclosed "(" note is dropped and a name with no usable words stays non-empty; fails_when=the "\)?" in the note regex becomes "\)" (keeps "(אמא") or the "|| name" fallback is removed (empty name => event silently skipped); why_new=existing cases all close their parentheses and keep at least one word; seam=none
+  assertEquals(normalizeStudentName('ענבר (אמא עינת'), 'ענבר')
+  assertEquals(normalizeStudentName('✨ 12'), '✨ 12')
 })
 
 Deno.test('inferStudentName: real title with a trailing parent note keeps only the student', () => {
@@ -450,6 +455,15 @@ Deno.test('resolveSavedStudent: prefers a priced key and lists other spellings a
   const { key, aliases } = resolveSavedStudent('אלה עוז', custom, details)
   assertEquals(key, 'אלה עוז (9.5)')
   assertEquals(aliases.sort(), ['אלה עוז', 'אלה עוז (אמה נועה)'].sort())
+})
+
+// Value: protects=when both the exact name and a fuller spelling are priced, the exact key's price is used; fails_when=the exact-match-first term is dropped from the sort, so localeCompare picks "✨ ענבר" (symbols sort first); why_new=existing tests have only one priced spelling; seam=none
+Deno.test('resolveSavedStudent: an exact priced key beats a fuller priced spelling', () => {
+  const custom = {
+    '✨ ענבר': { '60': 300, '45': 250, '30': 200 },
+    'ענבר': { '60': 230, '45': 200, '30': 180 },
+  }
+  assertEquals(resolveSavedStudent('ענבר', custom, {}), { key: 'ענבר', aliases: ['✨ ענבר'] })
 })
 
 Deno.test('resolveSavedStudent: no saved match keeps the parsed name', () => {
@@ -509,7 +523,28 @@ Deno.test('calculatePayments: counts lessons for an added keyword and cuts the n
   assertEquals(rows.map(r => r.student).sort(), ['דנה לוי', 'רותם כהן'].sort())
 })
 
+// Value: protects=custom lesson keywords reach the separator and regex branches of name parsing; fails_when=lessonKeywords is not passed to nameAroundLessonPhrase in either branch, so a keyword-first title bills a student named "כתיבה והלחנה"; why_new=the added-keyword calculatePayments test uses a title with no separator and no regex; seam=none
+Deno.test('inferStudentName: custom keyword before the name is skipped in separator and regex titles', () => {
+  const keywords = ['פיתוח קול', 'כתיבה והלחנה']
+  assertEquals(inferStudentName('כתיבה והלחנה - רותם כהן', null, [], keywords), 'רותם כהן')
+  assertEquals(inferStudentName('כתיבה והלחנה רותם כהן | 9.5', '^([^|]+)', [], keywords), 'רותם כהן')
+})
+
 // ── non-standard durations surface for review ─────────────────────────────────
+
+// Value: protects=an event with no end dateTime becomes a review item with minutes null and prices to 0, never NaN; fails_when=eventMinutes loses its end guard (NaN minutes) or proRataPrice/base stop defaulting null minutes, turning the row total and "Prepare all" amount into NaN; why_new=all review-item tests use timed events with an end; seam=none
+Deno.test('calculatePayments: an event without an end time is a review item with null minutes that prices to 0', () => {
+  const events = [{ id: 'evt1', summary: 'רותם כהן - פיתוח קול', start: { dateTime: '2026-10-05T10:00:00Z' }, end: { date: '2026-10-05' } }]
+  const { rows } = calculatePayments(events, BASE_CONFIG, '2026-10')
+  assertEquals(rows.length, 1)
+  assertEquals(rows[0].review_items[0].minutes, null)
+  const prices = BASE_CONFIG.prices.non_regular
+  for (const mode of ['prorata', 'base']) {
+    const resolutions = { [`2026-10:רותם כהן:evt1`]: { mode } }
+    assertEquals(computeRowAmount(rows[0], prices, resolutions, '2026-10'), { amount: 0, extra: 0, unresolved: 0 })
+  }
+})
+
 
 Deno.test('calculatePayments: a 75-min add-on is surfaced for review, not silently dropped', () => {
   const events = [
@@ -531,6 +566,30 @@ Deno.test('calculatePayments: a student whose only event is non-standard still g
   assertEquals(rows.length, 1)
   assertEquals(rows[0].amount_due, 0)
   assertEquals(rows[0].review_items.length, 1)
+  // Value: protects=an id-less event still gets a stable per-event review key (its start time); fails_when=id fallback dropped, so answers key on "undefined" and collide; why_new=existing tests only assert id when event.id is set; seam=none
+  assertEquals(rows[0].review_items[0].id, '2026-10-05T10:00:00Z')
+  assertEquals(rows[0].review_items[0].minutes, 15)
+})
+
+// Value: protects=with overlapping keywords the name is cut around the longest one; fails_when=keyword sort removed, so "פיתוח קול" matches first and the name becomes "מתקדם דנה"; why_new=keyword tests use non-overlapping keywords; seam=none
+Deno.test('calculatePayments: overlapping lesson keywords cut the name around the longest one', () => {
+  const events = [makeLessonEvent('פיתוח קול מתקדם דנה לוי', '2026-10-05T10:00:00Z', '2026-10-05T11:00:00Z')]
+  const config = { ...BASE_CONFIG, lesson_keywords: ['פיתוח קול', 'פיתוח קול מתקדם'] }
+  const { rows } = calculatePayments(events, config, '2026-10')
+  assertEquals(rows.map(r => r.student), ['דנה לוי'])
+})
+
+// Value: protects=a blank keyword/make-up phrase in Settings never matches every title; fails_when=the empty-string filter is dropped ('x'.includes('') is true), billing every event / auto-resolving all; why_new=no test feeds blank entries; seam=none
+Deno.test('calculatePayments: blank lesson keywords and make-up phrases are ignored', () => {
+  assertEquals(isTargetLesson('דנה - שיעור פסנתר', ['', null]), false)
+  const events = [
+    makeLessonEvent('דנה - שיעור פסנתר', '2026-10-05T10:00:00Z', '2026-10-05T11:00:00Z'),
+    makeLessonEvent('רותם כהן - פיתוח קול', '2026-10-06T10:00:00Z', '2026-10-06T11:15:00Z'),
+  ]
+  const config = { ...BASE_CONFIG, lesson_keywords: ['', 'פיתוח קול'], makeup_phrases: [''] }
+  const { rows } = calculatePayments(events, config, '2026-10')
+  assertEquals(rows.map(r => r.student), ['רותם כהן'])
+  assertEquals(rows[0].review_items[0].auto, null)
 })
 
 Deno.test('calculatePayments: a make-up phrase from Settings resolves the item automatically', () => {
@@ -543,4 +602,83 @@ Deno.test('calculatePayments: non-standard events outside the month are not surf
   const events = [makeLessonEvent('רותם כהן - פיתוח קול', '2026-09-05T10:00:00Z', '2026-09-05T10:15:00Z')]
   const { rows } = calculatePayments(events, BASE_CONFIG, '2026-10')
   assertEquals(rows.length, 0)
+})
+
+// Value: protects=all-day and nameless lesson events never become bogus rows/review items; fails_when=the parsed-name/start.dateTime skip moves after the review branch; why_new=guard moved earlier in this diff; seam=none
+Deno.test('calculatePayments: an all-day lesson event and a title with no parsable name yield no row or review item', () => {
+  const events = [
+    makeLessonEvent('דנה - פיתוח קול', '2026-02-02T10:00:00.000Z', '2026-02-02T11:00:00.000Z'),
+    // All-day: start.date only, no start.dateTime.
+    { id: 'all-day', summary: 'דנה - פיתוח קול', start: { date: '2026-02-09' }, end: { date: '2026-02-10' } },
+    // Stripping the paid-cancellation phrase leaves no name; 75 min would otherwise be a review item.
+    { id: 'nameless', summary: 'ביטול בתשלום פיתוח קול', start: { dateTime: '2026-02-16T10:00:00.000Z' }, end: { dateTime: '2026-02-16T11:15:00.000Z' } },
+  ]
+  const config = { ...BASE_CONFIG, paid_cancellation_phrases: ['ביטול בתשלום פיתוח קול'] }
+  const { rows } = calculatePayments(events, config, '2026-02')
+  assertEquals(rows.map(r => r.student), ['דנה'])
+  assertEquals(rows[0].lessons_60, 1)
+  assertEquals(rows[0].review_items, [])
+})
+
+// ── review items vs regularity, paid cancellations, make-up auto range ───────
+
+// Value: protects=a weekly student with one non-standard lesson keeps the regular rate; fails_when=review items are left out of the regularity dates (non_regular, 3x270 instead of 3x250); why_new=regularity tests use standard lengths only; seam=none
+Deno.test('calculatePayments: a non-standard-length lesson still counts toward weekly regularity', () => {
+  const events = [
+    makeLessonEvent('דנה לוי - פיתוח קול', '2026-02-02T10:00:00Z', '2026-02-02T11:00:00Z'),
+    makeLessonEvent('דנה לוי - פיתוח קול', '2026-02-09T10:00:00Z', '2026-02-09T11:00:00Z'),
+    { id: 'x', summary: 'דנה לוי - פיתוח קול השלמה', start: { dateTime: '2026-02-16T10:00:00Z' }, end: { dateTime: '2026-02-16T11:15:00Z' } },
+    makeLessonEvent('דנה לוי - פיתוח קול', '2026-02-23T10:00:00Z', '2026-02-23T11:00:00Z'),
+  ]
+  const { rows } = calculatePayments(events, BASE_CONFIG, '2026-02')
+  assertEquals(rows[0].student_type, 'regular')
+  assertEquals(rows[0].amount_due, 3 * BASE_CONFIG.prices.regular['60'])
+  assertEquals(rows[0].review_items.length, 1)
+})
+
+// Value: protects=a paid cancellation of non-standard length still bills at the regular rate; fails_when=forceRegular is set only after the review-item branch; why_new=paid-cancellation tests use 60-min events; seam=none
+Deno.test('calculatePayments: a non-standard-length paid cancellation still forces the regular tier', () => {
+  const events = [{ id: 'y', summary: 'רותם כהן - פיתוח קול ביטול בתשלום', start: { dateTime: '2026-10-05T10:00:00Z' }, end: { dateTime: '2026-10-05T11:15:00Z' } }]
+  const { rows } = calculatePayments(events, BASE_CONFIG, '2026-10')
+  assertEquals(rows[0].review_items.length, 1)
+  assertEquals(rows[0].student_type, 'regular')
+})
+
+// Value: protects=the make-up rule only auto-prices one lesson plus a short add-on; fails_when=the 30-89 min bound is removed (135-min block billed as one lesson, 20-min as 0, unreviewed); why_new=the make-up test uses 75 min only; seam=none
+Deno.test('calculatePayments: make-up phrases auto-resolve only 30-89 minute events', () => {
+  const ev = (id, start, end) => ({ id, summary: 'רותם כהן - פיתוח קול השלמה', start: { dateTime: start }, end: { dateTime: end } })
+  const events = [
+    ev('m75', '2026-10-05T10:00:00Z', '2026-10-05T11:15:00Z'),
+    ev('m135', '2026-10-12T10:00:00Z', '2026-10-12T12:15:00Z'),
+    ev('m20', '2026-10-19T10:00:00Z', '2026-10-19T10:20:00Z'),
+  ]
+  const { rows } = calculatePayments(events, { ...BASE_CONFIG, makeup_phrases: ['השלמה'] }, '2026-10')
+  const byId = Object.fromEntries(rows[0].review_items.map(i => [i.id, i]))
+  assertEquals(byId.m75.auto, 'base')
+  assertEquals(byId.m135.auto, null)
+  assertEquals(byId.m20.auto, null)
+  assertEquals([byId.m75.makeup, byId.m135.makeup, byId.m20.makeup], [true, true, true])
+})
+
+// ── same-name safety check ────────────────────────────────────────────────────
+
+// Value: protects=two different students sharing a first name are flagged, the same student split across keys is not; fails_when=conflict detection is removed or compares only one field; why_new=savedNameConflicts is new; seam=none
+Deno.test('savedNameConflicts: flags contradicting phones, names or prices, not complementary details', () => {
+  const custom = { 'ענבר 11.5 (אמא עינת)': { '60': 230, '45': 200, '30': 180 }, 'ענבר 3.2 (אמא רות)': { '60': 250, '45': 200, '30': 180 } }
+  const details = { 'ענבר 11.5 (אמא עינת)': { phone: '050-1111111' }, 'ענבר 3.2 (אמא רות)': { phone: '050-2222222', full_name: 'ענבר לוי' } }
+  assertEquals(savedNameConflicts(['ענבר 11.5 (אמא עינת)', 'ענבר 3.2 (אמא רות)'], custom, details), ['phone', 'price'])
+  // אלה עוז: price under one spelling, phone under the other -> one student
+  assertEquals(savedNameConflicts(['אלה עוז (9.5)', 'אלה עוז (אמה נועה)'], { 'אלה עוז (9.5)': { '60': 240 } }, { 'אלה עוז (אמה נועה)': { phone: '050-1234567' } }), [])
+})
+
+// Value: protects=a merged row carries its conflicts so the UI can block sending; fails_when=calculatePayments stops attaching name_conflicts; why_new=new field; seam=none
+Deno.test('calculatePayments: a row built from contradicting saved spellings carries name_conflicts', () => {
+  const events = [makeLessonEvent('ענבר - פיתוח קול', '2026-10-05T10:00:00Z', '2026-10-05T11:00:00Z')]
+  const config = {
+    ...BASE_CONFIG,
+    custom_prices: { 'ענבר 11.5 (אמא עינת)': { '60': 230, '45': 200, '30': 180 } },
+    customer_details: { 'ענבר 11.5 (אמא עינת)': { phone: '050-1111111' }, 'ענבר 3.2 (אמא רות)': { phone: '050-2222222' } },
+  }
+  const { rows } = calculatePayments(events, config, '2026-10')
+  assertEquals(rows[0].name_conflicts, ['phone'])
 })

@@ -330,6 +330,8 @@
 }
 .reviewChip { background: var(--md-amber-tonal); color: var(--md-amber); }
 .reviewChipDone { background: var(--md-blue-tonal); color: var(--md-blue); }
+.reviewChip:hover { background: color-mix(in srgb, var(--md-amber-tonal) 70%, var(--md-amber) 10%); }
+.reviewChipDone:hover { background: color-mix(in srgb, var(--md-blue-tonal) 70%, var(--md-blue) 10%); }
 .reviewChip:focus-visible, .reviewChipDone:focus-visible { outline: 2px solid var(--md-blue); outline-offset: 2px; }
 
 .reviewList {

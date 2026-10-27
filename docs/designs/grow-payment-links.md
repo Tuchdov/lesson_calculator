@@ -242,7 +242,8 @@ both handling and a test requirement.
   correctly on Grow's page, month name included.
 - **Payload additions (2026-10-27).** The webhook now also receives:
   - `number_of_lessons`: the student's 30/45/60-min lesson count for the month (a
-    double-length block counts as 2). Omitted when an older client doesn't send it.
+    double-length block counts as 2). Non-standard-length lessons priced through review
+    are in the amount but not in this count. Omitted when an older client doesn't send it.
   - `payment_profile`: `"standard"` unless the student has a profile on the Custom
     Prices page (e.g. `"extended"`). **Make-side:** add a Router after the webhook
     with one route per profile, each feeding a Grow Create Payment Link module whose
@@ -251,6 +252,13 @@ both handling and a test requirement.
     filled in, or `""` when they use the default. When set, `description` carries the
     same text. **Make-side:** map it into the invoice/document item if the scenario
     issues one.
+  - Validation (400 before Make is called): `number_of_lessons` must be a non-negative
+    integer; `payment_profile` must match `/^[\p{L}\p{N}_-]{1,40}$/u` (blank → `standard`);
+    the rendered invoice text is capped at 200 characters.
+  - Live scenario ("Integration Webhooks", 2026-10-27): the Router sends any profile other
+    than `extended` (case-insensitive) to the standard route, so an unknown profile falls
+    back rather than failing. Both Grow modules use `invoice_description` as the product
+    name and fall back to the default line when it is empty.
   - A link already prepared for the month is reused while the amount is unchanged, so
     after changing a student's profile or invoice text use ↻ to mint a fresh one.
 - **Getting the real response required two Make-side fixes**, not just filling in fields:

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { validateIsraeliPhone } from '../lib/whatsapp.js'
+import { DEFAULT_PAYMENT_PROFILE, isValidPaymentProfile } from '../lib/payments.js'
 import { DURATION_LABELS, TYPES, TYPE_LABEL } from '../lib/priceConstants.js'
 import { ImportPricesPanel } from './ImportPricesPanel.jsx'
 import styles from './CustomPricesPage.module.css'
@@ -40,6 +41,7 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
   const [extras, setExtras] = useState(() => initialExtras(settings))
   const [query, setQuery] = useState('')
   const [phoneErrors, setPhoneErrors] = useState({})
+  const [profileErrors, setProfileErrors] = useState({})
   const [newStudent, setNewStudent] = useState('')
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState(null)
@@ -126,6 +128,7 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
 
   const handleExtra = (student, field, value) => {
     setExtras(prev => ({ ...prev, [student]: { ...prev[student], [field]: value } }))
+    if (field === 'payment_profile') setProfileErrors(prev => ({ ...prev, [student]: false }))
     setSaved(false)
     setSaveError(null)
   }
@@ -145,10 +148,17 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
       const ph = (phones[student] ?? '').trim()
       if (ph && !validateIsraeliPhone(ph)) errors[student] = true
     }
-    if (Object.keys(errors).length > 0) {
+    const badProfiles = {}
+    for (const student of students) {
+      const profile = (extras[student]?.payment_profile ?? '').trim()
+      if (profile && !isValidPaymentProfile(profile)) badProfiles[student] = true
+    }
+    if (Object.keys(errors).length > 0 || Object.keys(badProfiles).length > 0) {
       setPhoneErrors(errors)
+      setProfileErrors(badProfiles)
       return
     }
+    setProfileErrors({})
 
     const cleaned = {}
     for (const [student, entry] of Object.entries(customPrices)) {
@@ -191,6 +201,7 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
         else delete current[f]
       }
       if (Object.keys(current).length) updatedCustomerDetails[student] = current
+      else delete updatedCustomerDetails[student]
     }
 
     try {
@@ -212,7 +223,7 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
   const students = Object.keys(customPrices)
   const visibleStudents = students
     .filter(s => matchesQuery(s, settings?.customer_details?.[s], query))
-  const knownProfiles = [...new Set(['standard', ...Object.values(extras).map(e => e?.payment_profile?.trim()).filter(Boolean)])]
+  const knownProfiles = [...new Set([DEFAULT_PAYMENT_PROFILE, ...Object.values(extras).map(e => e?.payment_profile?.trim()).filter(Boolean)])]
 
   return (
     <div className={styles.page}>
@@ -297,15 +308,18 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
             </div>
             <div className={styles.phoneRow}>
               <span className={styles.phoneLabel}>💳 Payment profile</span>
-              <input
-                className={`${styles.input} ${styles.phoneInput}`}
-                list="payment-profiles"
-                placeholder="standard"
-                title="Sent to Make as payment_profile — the scenario's router picks which payment options this student gets"
-                value={extra.payment_profile ?? ''}
-                onChange={e => handleExtra(student, 'payment_profile', e.target.value)}
-                dir="auto"
-              />
+              <div className={styles.phoneInputWrap}>
+                <input
+                  className={`${styles.input} ${styles.phoneInput} ${profileErrors[student] ? styles.phoneInputError : ''}`}
+                  list="payment-profiles"
+                  placeholder={DEFAULT_PAYMENT_PROFILE}
+                  title="Sent to Make as payment_profile — the scenario's router picks which payment options this student gets"
+                  value={extra.payment_profile ?? ''}
+                  onChange={e => handleExtra(student, 'payment_profile', e.target.value)}
+                  dir="auto"
+                />
+                {profileErrors[student] && <span className={styles.phoneError}>One word: letters, digits, - or _ (e.g. extended)</span>}
+              </div>
             </div>
             <div className={styles.phoneRow}>
               <span className={styles.phoneLabel}>🧾 Invoice text</span>
