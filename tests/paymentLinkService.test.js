@@ -262,6 +262,53 @@ Deno.test('createPaymentLink: sends phone normalized for Grow and a Hebrew descr
   assertEquals(capturedBody.description.includes('רחל כהן'), true)
 })
 
+function captureMakeBody() {
+  const captured = {}
+  const fetchImpl = async (url, opts) => {
+    if (String(url).includes('tokeninfo')) return tokeninfoOk()
+    captured.body = JSON.parse(opts.body)
+    return makeOk()
+  }
+  return { captured, fetchImpl }
+}
+
+Deno.test('createPaymentLink: defaults — standard profile, no custom invoice text, no lesson count', async () => {
+  const { captured, fetchImpl } = captureMakeBody()
+  await createPaymentLink(baseArgs({ fetchImpl }))
+  assertEquals(captured.body.payment_profile, 'standard')
+  assertEquals(captured.body.invoice_description, '')
+  assertEquals('number_of_lessons' in captured.body, false)
+})
+
+Deno.test('createPaymentLink: sends number_of_lessons, payment_profile and a rendered custom invoice description', async () => {
+  const { captured, fetchImpl } = captureMakeBody()
+  await createPaymentLink(baseArgs({
+    fetchImpl,
+    numberOfLessons: 4,
+    paymentProfile: ' extended ',
+    invoiceDescription: 'ייעוץ קולי - {student} - {month}',
+  }))
+  assertEquals(captured.body.number_of_lessons, 4)
+  assertEquals(captured.body.payment_profile, 'extended')
+  assertEquals(captured.body.invoice_description, 'ייעוץ קולי - רחל כהן - אוגוסט')
+  assertEquals(captured.body.description, 'ייעוץ קולי - רחל כהן - אוגוסט')
+})
+
+for (const [label, overrides, message] of [
+  ['negative lesson count', { numberOfLessons: -1 }, 'Invalid number of lessons.'],
+  ['fractional lesson count', { numberOfLessons: 1.5 }, 'Invalid number of lessons.'],
+  ['profile with spaces', { paymentProfile: 'two words' }, 'Invalid payment profile.'],
+  ['non-string invoice text', { invoiceDescription: 42 }, 'Invalid invoice description.'],
+  ['over-long invoice text', { invoiceDescription: 'א'.repeat(201) }, 'Invoice description is too long.'],
+]) {
+  Deno.test(`createPaymentLink: rejects ${label} with a 400 before calling Make`, async () => {
+    const fetchImpl = queueFetch([tokeninfoOk()])
+    const err = await assertRejects(() => createPaymentLink(baseArgs({ fetchImpl, ...overrides })), ServiceError)
+    assertEquals(err.status, 400)
+    assertEquals(err.message, message)
+  })
+}
+
 Deno.test('createPaymentLink: includes x-make-apikey header only when an apiKey is configured', async () => {
   let capturedHeaders
   const fetchImpl = async (url, opts) => {

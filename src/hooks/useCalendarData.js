@@ -36,5 +36,11 @@ export function useCalendarData(getAccessToken, config) {
     }
   }, [getAccessToken, config])
 
-  return { rows, summary, loading, error, calculate }
+  const reset = useCallback(() => {
+    setRows(null)
+    setSummary(null)
+    setError(null)
+  }, [])
+
+  return { rows, summary, loading, error, calculate, reset }
 }

@@ -240,6 +240,19 @@ both handling and a test requirement.
   `phone` must be Grow's raw format (`normalizePhoneForGrow`, e.g. `0501234567`), and
   `description` is the Hebrew string from `buildGrowDescription` — confirmed to render
   correctly on Grow's page, month name included.
+- **Payload additions (2026-10-27).** The webhook now also receives:
+  - `number_of_lessons`: the student's 30/45/60-min lesson count for the month (a
+    double-length block counts as 2). Omitted when an older client doesn't send it.
+  - `payment_profile`: `"standard"` unless the student has a profile on the Custom
+    Prices page (e.g. `"extended"`). **Make-side:** add a Router after the webhook
+    with one route per profile, each feeding a Grow Create Payment Link module whose
+    payment options match that profile, then the Webhook response.
+  - `invoice_description`: the student's custom invoice text with `{student}`/`{month}`
+    filled in, or `""` when they use the default. When set, `description` carries the
+    same text. **Make-side:** map it into the invoice/document item if the scenario
+    issues one.
+  - A link already prepared for the month is reused while the amount is unchanged, so
+    after changing a student's profile or invoice text use ↻ to mint a fresh one.
 - **Getting the real response required two Make-side fixes**, not just filling in fields:
   the scenario had to be turned ON (an inactive scenario returns
   `"There is no scenario listening for this webhook"`, 410), and the trigger needed a

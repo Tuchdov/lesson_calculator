@@ -202,3 +202,26 @@
   font-size: 11px;
   color: var(--md-red);
 }
+
+.searchInput {
+  width: 100%;
+  max-width: 320px;
+}
+.wideInput {
+  flex: 1;
+  min-width: 0;
+}
+.messageDetails {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--md-border);
+}
+.messageDetails summary {
+  cursor: pointer;
+  padding-top: 0;
+}
+.messageInput {
+  width: 100%;
+  margin-top: 8px;
+  resize: vertical;
+  font-family: var(--font-rb);
+}

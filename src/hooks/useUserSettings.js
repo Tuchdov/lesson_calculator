@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
-import { loadUserSettings, saveUserSettings } from '../lib/userSettings.js'
+import { loadUserSettings, saveUserSettings, DEFAULT_SETTINGS } from '../lib/userSettings.js'
 
 export function useUserSettings(userEmail) {
-  const [settings, setSettings] = useState({ custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '', paid_cancellation_phrases: null, cancelled_keywords: null })
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS)
   const [isReady, setIsReady] = useState(false)
 
   useEffect(() => {

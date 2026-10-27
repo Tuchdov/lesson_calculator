@@ -11,6 +11,7 @@ import {
   lessonDurationMinutes,
   normalizeStudentName,
   resolvePriceTable,
+  resolveSavedStudent,
 } from '../src/lib/calendarPayments.js'
 
 function makeEvent(startIso, endIso) {
@@ -420,4 +421,126 @@ Deno.test('calculatePayments: 25 lessons in a month (near-daily) are all counted
   assertEquals(rows[0].lessons_60, 25)
   assertEquals(rows[0].student_type, 'regular')
   assertEquals(rows[0].amount_due, 25 * BASE_CONFIG.prices.regular['60'])
+})
+
+// ── saved-key matching (real student spellings) ───────────────────────────────
+
+Deno.test('normalizeStudentName: drops whole (...) notes, date-like numbers, decoration and parent notes', () => {
+  assertEquals(normalizeStudentName('ענבר 11.5 (אמא עינת)'), 'ענבר')
+  assertEquals(normalizeStudentName('ענבר (11.5) אמא עינת'), 'ענבר')
+  assertEquals(normalizeStudentName('אלה עוז (אמה נועה)'), 'אלה עוז')
+  assertEquals(normalizeStudentName('אלה עוז (9.5)'), 'אלה עוז')
+  assertEquals(normalizeStudentName('אלה עוז(9.5)'), 'אלה עוז')
+  assertEquals(normalizeStudentName('אלה עוז ✨ אמא נועה'), 'אלה עוז')
+})
+
+Deno.test('inferStudentName: real title with a trailing parent note keeps only the student', () => {
+  assertEquals(inferStudentName('אלה עוז (9.5) - פיתוח קול ✨ אמא נועה', '^([^-|:]+)'), 'אלה עוז')
+  assertEquals(inferStudentName('ענבר (11.5) אמא עינת - פיתוח קול', '^([^-|:]+)'), 'ענבר')
+})
+
+Deno.test('resolveSavedStudent: maps the parsed name onto the fuller saved key', () => {
+  const custom = { 'ענבר 11.5 (אמא עינת)': { '60': 230, '45': 200, '30': 180 } }
+  assertEquals(resolveSavedStudent('ענבר', custom, {}).key, 'ענבר 11.5 (אמא עינת)')
+})
+
+Deno.test('resolveSavedStudent: prefers a priced key and lists other spellings as aliases', () => {
+  const custom = { 'אלה עוז (9.5)': { '60': 240, '45': 200, '30': 180 } }
+  const details = { 'אלה עוז (אמה נועה)': { phone: '050-1234567' }, 'אלה עוז': { full_name: 'אלה עוז' } }
+  const { key, aliases } = resolveSavedStudent('אלה עוז', custom, details)
+  assertEquals(key, 'אלה עוז (9.5)')
+  assertEquals(aliases.sort(), ['אלה עוז', 'אלה עוז (אמה נועה)'].sort())
+})
+
+Deno.test('resolveSavedStudent: no saved match keeps the parsed name', () => {
+  assertEquals(resolveSavedStudent('דנה לוי', { 'דנה כהן': {} }, {}), { key: 'דנה לוי', aliases: [] })
+})
+
+Deno.test('calculatePayments: custom price saved under a fuller name applies (ענבר at 230, not 200)', () => {
+  const events = [
+    makeLessonEvent('ענבר (11.5) אמא עינת - פיתוח קול', '2026-10-05T10:00:00Z', '2026-10-05T10:45:00Z'),
+  ]
+  const config = {
+    ...BASE_CONFIG,
+    student_name_regex: '^([^-|:]+)',
+    custom_prices: { 'ענבר 11.5 (אמא עינת)': { regular: { '45': 230 }, non_regular: { '45': 230 } } },
+  }
+  const { rows } = calculatePayments(events, config, '2026-10')
+  assertEquals(rows.length, 1)
+  assertEquals(rows[0].student, 'ענבר 11.5 (אמא עינת)')
+  assertEquals(rows[0].amount_due, 230)
+})
+
+Deno.test('calculatePayments: two saved spellings of one student produce a single row', () => {
+  const events = [
+    makeLessonEvent('אלה עוז (9.5) - פיתוח קול ✨ אמא נועה', '2026-10-05T10:00:00Z', '2026-10-05T11:00:00Z'),
+    makeLessonEvent('אלה עוז (אמה נועה) פיתוח קול', '2026-10-12T10:00:00Z', '2026-10-12T11:00:00Z'),
+  ]
+  const config = {
+    ...BASE_CONFIG,
+    student_name_regex: '^([^-|:]+)',
+    custom_prices: { 'אלה עוז (9.5)': { '60': 240, '45': 200, '30': 180 } },
+    customer_details: { 'אלה עוז (אמה נועה)': { phone: '050-1234567' } },
+  }
+  const { rows } = calculatePayments(events, config, '2026-10')
+  assertEquals(rows.length, 1)
+  assertEquals(rows[0].student, 'אלה עוז (9.5)')
+  assertEquals(rows[0].lessons_60, 2)
+  assertEquals(rows[0].amount_due, 480)
+  assertEquals(rows[0].aliases.includes('אלה עוז (אמה נועה)'), true)
+})
+
+// ── configurable lesson keywords ──────────────────────────────────────────────
+
+Deno.test('isTargetLesson: honours configured keywords', () => {
+  const keywords = ['פיתוח קול', 'כתיבה והלחנה']
+  assertEquals(isTargetLesson('נועה - כתיבה והלחנה', keywords), true)
+  assertEquals(isTargetLesson('נועה - כתיבה והלחנה'), false)
+  assertEquals(isTargetLesson('נועה - פיתוח קול', []), false)
+})
+
+Deno.test('calculatePayments: counts lessons for an added keyword and cuts the name around it', () => {
+  const events = [
+    makeLessonEvent('כתיבה והלחנה רותם כהן', '2026-10-05T10:00:00Z', '2026-10-05T11:00:00Z'),
+    makeLessonEvent('דנה לוי פיתוח קול', '2026-10-06T10:00:00Z', '2026-10-06T11:00:00Z'),
+  ]
+  const config = { ...BASE_CONFIG, lesson_keywords: ['פיתוח קול', 'כתיבה והלחנה'] }
+  const { rows } = calculatePayments(events, config, '2026-10')
+  assertEquals(rows.map(r => r.student).sort(), ['דנה לוי', 'רותם כהן'].sort())
+})
+
+// ── non-standard durations surface for review ─────────────────────────────────
+
+Deno.test('calculatePayments: a 75-min add-on is surfaced for review, not silently dropped', () => {
+  const events = [
+    { id: 'evt1', summary: 'יובל חייט פיתוח קול - תוספת 15 דק השלמה', start: { dateTime: '2026-10-05T10:00:00Z' }, end: { dateTime: '2026-10-05T11:15:00Z' } },
+    makeLessonEvent('יובל חייט פיתוח קול', '2026-10-12T10:00:00Z', '2026-10-12T11:00:00Z'),
+  ]
+  const { rows } = calculatePayments(events, BASE_CONFIG, '2026-10')
+  assertEquals(rows.length, 1)
+  assertEquals(rows[0].lessons_60, 1)
+  assertEquals(rows[0].review_items.length, 1)
+  assertEquals(rows[0].review_items[0].id, 'evt1')
+  assertEquals(rows[0].review_items[0].minutes, 75)
+  assertEquals(rows[0].review_items[0].auto, null)
+})
+
+Deno.test('calculatePayments: a student whose only event is non-standard still gets a row', () => {
+  const events = [makeLessonEvent('רותם כהן - פיתוח קול', '2026-10-05T10:00:00Z', '2026-10-05T10:15:00Z')]
+  const { rows } = calculatePayments(events, BASE_CONFIG, '2026-10')
+  assertEquals(rows.length, 1)
+  assertEquals(rows[0].amount_due, 0)
+  assertEquals(rows[0].review_items.length, 1)
+})
+
+Deno.test('calculatePayments: a make-up phrase from Settings resolves the item automatically', () => {
+  const events = [makeLessonEvent('רותם כהן - פיתוח קול השלמה', '2026-10-05T10:00:00Z', '2026-10-05T11:15:00Z')]
+  const { rows } = calculatePayments(events, { ...BASE_CONFIG, makeup_phrases: ['השלמה'] }, '2026-10')
+  assertEquals(rows[0].review_items[0].auto, 'base')
+})
+
+Deno.test('calculatePayments: non-standard events outside the month are not surfaced', () => {
+  const events = [makeLessonEvent('רותם כהן - פיתוח קול', '2026-09-05T10:00:00Z', '2026-09-05T10:15:00Z')]
+  const { rows } = calculatePayments(events, BASE_CONFIG, '2026-10')
+  assertEquals(rows.length, 0)
 })

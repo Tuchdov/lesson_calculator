@@ -2,14 +2,14 @@ import { useState, useEffect } from 'react'
 import { validateIsraeliPhone, buildPaymentMessage, buildWhatsAppUrl } from '../lib/whatsapp.js'
 import { invoiceKey, hasFullName, getStoredLink, amountChanged, isValidAmount } from '../lib/payments.js'
 import { requestPaymentLink } from '../lib/paymentLinkClient.js'
-import { resolveRowPrices, computeLessonAmount } from '../lib/rowPricing.js'
+import { resolveRowPrices, computeRowAmount, detailsFor, totalLessons, reviewKey, reviewResolution, reviewItemAmount, baseLessonPrice, proRataPrice, defaultReviewMode } from '../lib/rowPricing.js'
 import styles from './EditableTable.module.css'
 
 const DURATION_COLS = ['60', '45', '30']
 const TYPE_LABEL = { regular: 'Regular', non_regular: 'Non-regular' }
 const TYPE_CHIP = { regular: styles.chipGreen, non_regular: styles.chipAmber }
 
-export function EditableTable({ rows, config, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, month, defaultMessage, amountOverrides, onAmountOverrideChange, paymentLinks, onPaymentLinkChange, getAccessToken, prepareStatus }) {
+export function EditableTable({ rows, config, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, month, defaultMessage, amountOverrides, onAmountOverrideChange, paymentLinks, onPaymentLinkChange, getAccessToken, prepareStatus, reviewResolutions, onReviewResolutionChange }) {
   const grouped = groupByType(rows)
   const [expandedRow, setExpandedRow] = useState(null)
 
@@ -40,8 +40,7 @@ export function EditableTable({ rows, config, customPrices, onCustomPriceChange,
                   config={config}
                   customPrices={customPrices}
                   onCustomPriceChange={onCustomPriceChange}
-                  phone={customerDetails?.[row.student]?.phone}
-                  fullName={customerDetails?.[row.student]?.full_name}
+                  details={detailsFor(customerDetails, row)}
                   onCustomerDetailChange={onCustomerDetailChange}
                   month={month}
                   defaultMessage={defaultMessage}
@@ -53,6 +52,8 @@ export function EditableTable({ rows, config, customPrices, onCustomPriceChange,
                   onPaymentLinkChange={onPaymentLinkChange}
                   getAccessToken={getAccessToken}
                   batchState={prepareStatus?.[row.student]}
+                  reviewResolutions={reviewResolutions}
+                  onReviewResolutionChange={onReviewResolutionChange}
                 />
               )),
             ]
@@ -73,7 +74,8 @@ function GroupHeader({ type }) {
   )
 }
 
-function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, fullName, onCustomerDetailChange, month, defaultMessage, expandedRow, setExpandedRow, amountOverride, onAmountOverrideChange, linkEntry, onPaymentLinkChange, getAccessToken, batchState }) {
+function StudentRow({ row, config, customPrices, onCustomPriceChange, details, onCustomerDetailChange, month, defaultMessage, expandedRow, setExpandedRow, amountOverride, onAmountOverrideChange, linkEntry, onPaymentLinkChange, getAccessToken, batchState, reviewResolutions, onReviewResolutionChange }) {
+  const { phone, full_name: fullName } = details
   const custom = customPrices?.[row.student]
   const prices = resolveRowPrices(row.student, row.student_type === 'regular', config, custom)
 
@@ -94,9 +96,12 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
     setEditing(false)
   }, [custom])
 
-  const computedAmount = computeLessonAmount(row, prices)
+  const { amount: computedAmount, extra: reviewExtra, unresolved: reviewUnresolved } = computeRowAmount(row, prices, reviewResolutions, month)
   const roundedAmount = amountOverride ?? computedAmount
-  const totalLessons = row.lessons_60 + row.lessons_45 + row.lessons_30
+  const lessonCount = totalLessons(row)
+  // An amount override is the teacher's final number, so it settles review.
+  const needsReview = amountOverride == null && reviewUnresolved > 0
+  const hasReviewItems = row.review_items?.length > 0
 
   const effectiveName = fullName || row.student
   const nameOk = hasFullName(effectiveName)
@@ -153,6 +158,8 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
   }
 
   const isExpanded = expandedRow === row.student
+  const reviewOpen = expandedRow === `review:${row.student}`
+  const toggleReview = () => setExpandedRow(reviewOpen ? null : `review:${row.student}`)
 
   const handleToggleExpand = () => {
     if (isExpanded) {
@@ -206,6 +213,9 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
         phone,
         amount: roundedAmount,
         month,
+        numberOfLessons: lessonCount,
+        paymentProfile: details.payment_profile,
+        invoiceDescription: details.invoice_description,
       })
       await onPaymentLinkChange?.(month, row.student, link, roundedAmount)
     } catch (err) {
@@ -216,9 +226,10 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
   }
 
   const handleSendClick = async () => {
-    if (busy) return
+    if (busy || needsReview) return
     if (linkUsable) {
-      const msg = buildPaymentMessage(effectiveName, roundedAmount, month, defaultMessage || undefined, totalLessons, linkEntry.link)
+      const template = details.message || defaultMessage || undefined
+      const msg = buildPaymentMessage(effectiveName, roundedAmount, month, template, lessonCount, linkEntry.link)
       window.open(buildWhatsAppUrl(phone, msg), '_blank', 'noopener')
       return
     }
@@ -227,7 +238,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
 
   const handleRegenerate = async (e) => {
     e.stopPropagation()
-    if (busy) return
+    if (busy || needsReview) return
     await mintLink()
   }
 
@@ -239,6 +250,17 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
             {row.student}
             {custom && <span className={styles.customBadge}>custom</span>}
           </span>
+          {hasReviewItems && (
+            needsReview ? (
+              <button className={styles.reviewChip} onClick={toggleReview} title="Lessons with a non-standard duration — choose how to charge them">
+                ⚠️ {reviewUnresolved} not counted
+              </button>
+            ) : (
+              <button className={styles.reviewChipDone} onClick={toggleReview} title="Review how non-standard lessons are charged">
+                +₪{reviewExtra} extra
+              </button>
+            )
+          )}
         </td>
         <td>
           <span className={`${styles.chip} ${TYPE_CHIP[row.student_type]}`}>
@@ -311,7 +333,11 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
           )}
         </td>
         <td className={styles.waCell}>
-          {needsDetails ? (
+          {needsReview ? (
+            <button className={`${styles.waChipMissing} ${reviewOpen ? styles.waChipActive : ''}`} onClick={toggleReview}>
+              ⚠️ דרושה בדיקה
+            </button>
+          ) : needsDetails ? (
             <button className={`${styles.waChipMissing} ${isExpanded ? styles.waChipActive : ''}`} onClick={handleToggleExpand}>
               {!phone ? '📱 הוסף טלפון' : '⚠️ השלם שם מלא'}
             </button>
@@ -371,13 +397,105 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
           </td>
         </tr>
       )}
+      {reviewOpen && (
+        <tr className={styles.expandRow}>
+          <td colSpan={7} className={styles.expandCell}>
+            <div className={styles.reviewList}>
+              {row.review_items.map(item => (
+                <ReviewItem
+                  key={item.id}
+                  item={item}
+                  prices={prices}
+                  resolution={reviewResolution(item, reviewResolutions, month, row.student)}
+                  stored={reviewResolutions?.[reviewKey(month, row.student, item.id)] ?? null}
+                  onSave={resolution => onReviewResolutionChange?.(reviewKey(month, row.student, item.id), resolution)}
+                />
+              ))}
+              {amountOverride != null && (
+                <div className={styles.reviewHint}>The amount is manually adjusted, so these choices don't change it.</div>
+              )}
+            </div>
+          </td>
+        </tr>
+      )}
     </>
+  )
+}
+
+const REVIEW_MODE_LABEL = { prorata: 'Pro-rata', base: 'Standard lesson only', fixed: 'Fixed amount', free: "Don't charge" }
+
+function ReviewItem({ item, prices, resolution, stored, onSave }) {
+  const [mode, setMode] = useState(() => resolution?.mode ?? defaultReviewMode(item, prices))
+  const [fixedAmount, setFixedAmount] = useState(() => (resolution?.mode === 'fixed' ? String(resolution.amount) : ''))
+  const [error, setError] = useState(null)
+
+  const base = baseLessonPrice(item.minutes ?? 0, prices)
+  const optionAmount = {
+    prorata: proRataPrice(item.minutes, prices),
+    base,
+    free: 0,
+  }
+  const date = new Date(item.start).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })
+
+  const handleSave = async () => {
+    let next = { mode }
+    if (mode === 'fixed') {
+      const v = parseFloat(fixedAmount)
+      if (isNaN(v) || v < 0) {
+        setError('Enter an amount')
+        return
+      }
+      next = { mode, amount: Math.round(v * 100) / 100 }
+    }
+    try {
+      await onSave(next)
+      setError(null)
+    } catch (err) {
+      setError(err.message ?? 'Failed to save. Try again.')
+    }
+  }
+
+  return (
+    <div className={styles.reviewItem}>
+      <div className={styles.reviewTitle}>
+        <span dir="rtl">{item.summary}</span>
+        <span className={styles.reviewMeta}>{date} · {item.minutes ?? '?'} min</span>
+        {resolution && (
+          <span className={styles.reviewMeta}>
+            → ₪{reviewItemAmount(item, resolution, prices)} ({REVIEW_MODE_LABEL[resolution.mode]}{!stored ? ', make-up phrase' : ''})
+          </span>
+        )}
+      </div>
+      <div className={styles.reviewOptions}>
+        {['prorata', 'base', 'fixed', 'free'].filter(m => m !== 'base' || base > 0).map(m => (
+          <label key={m} className={styles.reviewOption}>
+            <input type="radio" name={`review-${item.id}`} checked={mode === m} onChange={() => { setMode(m); setError(null) }} />
+            {REVIEW_MODE_LABEL[m]}
+            {m === 'fixed'
+              ? (
+                <input
+                  className={styles.amountInput}
+                  value={fixedAmount}
+                  placeholder="₪"
+                  onFocus={() => setMode('fixed')}
+                  onChange={e => { setFixedAmount(e.target.value); setError(null) }}
+                />
+              )
+              : <span className={styles.reviewMeta}>₪{optionAmount[m]}</span>}
+          </label>
+        ))}
+        <button className={styles.btnSavePhone} onClick={handleSave}>שמור</button>
+        {stored && <button className={styles.btnCancelPhone} onClick={() => onSave(null)}>נקה</button>}
+        {error && <span className={styles.phoneErrorMsg}>{error}</span>}
+      </div>
+    </div>
   )
 }
 
 function groupByType(rows = []) {
   const g = { regular: [], non_regular: [] }
   for (const r of rows) g[r.student_type]?.push(r)
+  for (const type of Object.keys(g)) g[type].sort((a, b) => a.student.localeCompare(b.student, 'he'))
   return g
 }
 

@@ -315,3 +315,60 @@
 }
 .btnCancelPhone:hover { color: var(--md-text); }
 .btnCancelPhone:focus-visible { outline: 2px solid var(--md-border); outline-offset: 2px; }
+
+.reviewChip, .reviewChipDone {
+  display: block;
+  width: fit-content;
+  margin-top: 4px;
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: var(--font-gs);
+}
+.reviewChip { background: var(--md-amber-tonal); color: var(--md-amber); }
+.reviewChipDone { background: var(--md-blue-tonal); color: var(--md-blue); }
+.reviewChip:focus-visible, .reviewChipDone:focus-visible { outline: 2px solid var(--md-blue); outline-offset: 2px; }
+
+.reviewList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 10px 16px;
+}
+.reviewItem {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.reviewTitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  font-weight: 500;
+}
+.reviewMeta {
+  color: var(--md-text-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.reviewOptions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+}
+.reviewOption {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.reviewHint {
+  color: var(--md-text-muted);
+  font-size: 12px;
+}

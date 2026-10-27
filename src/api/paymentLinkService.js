@@ -2,6 +2,11 @@ import { isValidAmount, normalizePhoneForGrow, buildGrowDescription } from '../l
 import { validateIsraeliPhone } from '../lib/whatsapp.js'
 
 const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo'
+export const DEFAULT_PAYMENT_PROFILE = 'standard'
+// Profile names are what the Make scenario's router matches on, so they stay
+// short single tokens (Hebrew allowed).
+const PAYMENT_PROFILE_PATTERN = /^[\p{L}\p{N}_-]{1,40}$/u
+const MAX_INVOICE_DESCRIPTION = 200
 
 // Carries an HTTP status and a retryable flag through to the thin Vercel
 // adapter, so the UI can tell "sign in again" apart from "try again".
@@ -83,15 +88,27 @@ async function callMakeWebhook({ webhookUrl, apiKey, payload, fetchImpl }) {
   return link
 }
 
+function validNumberOfLessons(value) {
+  return value === undefined || (Number.isInteger(value) && value >= 0)
+}
+
 // month is "YYYY-MM", used only to build the Hebrew description shown on
 // Grow's payment page — callers must pass summary.month, never a live month
 // input (see CalculatorPage.jsx / design decision 12).
+//
+// paymentProfile picks which branch of the Make scenario runs (e.g. a student
+// allowed extra payment methods); invoiceDescription is a per-student
+// {student}/{month} template replacing the default description. Both are
+// optional so a cached older tab keeps working.
 export async function createPaymentLink({
   accessToken,
   studentName,
   phone,
   amount,
   month,
+  numberOfLessons,
+  paymentProfile,
+  invoiceDescription,
   allowedEmail,
   clientId,
   webhookUrl,
@@ -108,6 +125,27 @@ export async function createPaymentLink({
     throw new ServiceError(400, 'Invalid phone number.')
   }
 
+  if (!validNumberOfLessons(numberOfLessons)) {
+    throw new ServiceError(400, 'Invalid number of lessons.')
+  }
+
+  const profile = typeof paymentProfile === 'string' && paymentProfile.trim()
+    ? paymentProfile.trim()
+    : DEFAULT_PAYMENT_PROFILE
+  if (!PAYMENT_PROFILE_PATTERN.test(profile)) {
+    throw new ServiceError(400, 'Invalid payment profile.')
+  }
+
+  if (invoiceDescription != null && typeof invoiceDescription !== 'string') {
+    throw new ServiceError(400, 'Invalid invoice description.')
+  }
+  const customDescription = invoiceDescription?.trim()
+    ? buildGrowDescription(studentName, month, invoiceDescription)
+    : ''
+  if (customDescription.length > MAX_INVOICE_DESCRIPTION) {
+    throw new ServiceError(400, 'Invoice description is too long.')
+  }
+
   if (!webhookUrl) {
     throw new ServiceError(500, 'Payment service is not configured.')
   }
@@ -119,7 +157,12 @@ export async function createPaymentLink({
       customer_name: studentName,
       amount,
       phone: normalizePhoneForGrow(phone),
-      description: buildGrowDescription(studentName, month),
+      description: customDescription || buildGrowDescription(studentName, month),
+      // Empty when the student uses the default wording, so the scenario can
+      // tell a custom invoice apart.
+      invoice_description: customDescription,
+      payment_profile: profile,
+      ...(numberOfLessons !== undefined ? { number_of_lessons: numberOfLessons } : {}),
     },
     fetchImpl,
   })

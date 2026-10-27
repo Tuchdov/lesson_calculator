@@ -13,6 +13,8 @@ import {
   loadAmountOverrides,
   saveAmountOverride,
   getStoredOverride,
+  loadReviewResolutions,
+  saveReviewResolution,
 } from '../src/lib/payments.js'
 import { sha256Hex } from '../src/lib/userSettings.js'
 
@@ -259,4 +261,21 @@ Deno.test('loadAmountOverrides: returns empty object when stored JSON is corrupt
 
 Deno.test('getStoredOverride: returns null when overrides object itself is null', () => {
   assertEquals(getStoredOverride(null, '2026-08', 'Alice'), null)
+})
+
+// ── custom invoice description ──────────────────────────────────────────────
+
+Deno.test('buildGrowDescription: a template replaces the default wording on one line', () => {
+  assertEquals(buildGrowDescription('רחל כהן', '2026-08', 'ייעוץ\n{student} {month}'), 'ייעוץ רחל כהן אוגוסט')
+  assertEquals(buildGrowDescription('רחל כהן', '2026-08', ''), 'תשלום עבור שיעורי שירה - רחל כהן - אוגוסט')
+})
+
+// ── review resolution store ─────────────────────────────────────────────────
+
+Deno.test('saveReviewResolution: round-trips and null clears', async () => {
+  const storage = makeStub()
+  await saveReviewResolution('t@example.com', '2026-10:A:evt1', { mode: 'fixed', amount: 50 }, storage)
+  assertEquals(await loadReviewResolutions('t@example.com', storage), { '2026-10:A:evt1': { mode: 'fixed', amount: 50 } })
+  await saveReviewResolution('t@example.com', '2026-10:A:evt1', null, storage)
+  assertEquals(await loadReviewResolutions('t@example.com', storage), {})
 })

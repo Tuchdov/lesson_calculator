@@ -1,18 +1,12 @@
-import { useState, useEffect } from 'react'
-import { useCalendarData } from '../hooks/useCalendarData.js'
+import { useState } from 'react'
 import { EditableTable } from './EditableTable.jsx'
-import { resolveRowPrices, computeLessonAmount } from '../lib/rowPricing.js'
+import { resolveRowPrices, computeRowAmount, detailsFor, totalLessons } from '../lib/rowPricing.js'
 import { safeTotalsCsvBytes } from '../lib/csvExport.js'
 import { getStoredOverride, isValidAmount, isLinkUsable, hasFullName } from '../lib/payments.js'
 import { requestPaymentLink } from '../lib/paymentLinkClient.js'
 import styles from './CalculatorPage.module.css'
 
 const PREPARE_CONCURRENCY = 6
-
-function currentMonth() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
 
 // Runs `worker` over `items` with at most `limit` in flight at once. Each
 // item settles independently the moment it's done — a caller updating state
@@ -29,36 +23,34 @@ async function runWithConcurrency(items, limit, worker) {
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, next))
 }
 
-export function CalculatorPage({ getAccessToken, config, customPrices, onCustomPriceChange, onStudentsChange, customerDetails, onCustomerDetailChange, defaultMessage, amountOverrides, onAmountOverrideChange, paymentLinks, onPaymentLinkChange }) {
-  const [month, setMonth] = useState(currentMonth)
-  const { rows, summary, loading, error, calculate } = useCalendarData(getAccessToken, {
-    ...config,
-    custom_prices: customPrices,
-  })
+export function CalculatorPage({ getAccessToken, config, calendar, month, onMonthChange, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, defaultMessage, amountOverrides, onAmountOverrideChange, paymentLinks, onPaymentLinkChange, reviewResolutions, onReviewResolutionChange }) {
+  const { rows, summary, loading, error, calculate } = calendar
   const [preparing, setPreparing] = useState(false)
   const [prepareStatus, setPrepareStatus] = useState({})
 
-  useEffect(() => {
-    if (rows) onStudentsChange?.(rows.map(r => r.student))
-  }, [rows, onStudentsChange])
-
   const handleRun = () => calculate(month)
 
-  const rowAmount = (row) => {
+  // A manual amount override is the teacher's final number for the invoice,
+  // so it also settles any review items on that row.
+  const rowBilling = (row) => {
     const prices = resolveRowPrices(row.student, row.student_type === 'regular', config, customPrices?.[row.student])
-    const computed = computeLessonAmount(row, prices)
-    return getStoredOverride(amountOverrides, summary?.month, row.student) ?? computed
+    const { amount, unresolved } = computeRowAmount(row, prices, reviewResolutions, summary?.month)
+    const override = getStoredOverride(amountOverrides, summary?.month, row.student)
+    return override != null ? { amount: override, unresolved: 0 } : { amount, unresolved }
   }
+
+  const billing = rows?.map(row => ({ row, ...rowBilling(row) })) ?? []
+  const liveTotal = Math.round(billing.reduce((sum, b) => sum + b.amount, 0) * 100) / 100
+  const needsReview = billing.filter(b => b.unresolved > 0).length
 
   const handlePrepareAll = async () => {
     if (!rows?.length || !summary || preparing) return
-    const eligible = rows
-      .map(row => ({
-        row,
-        phone: customerDetails?.[row.student]?.phone,
-        name: customerDetails?.[row.student]?.full_name || row.student,
-        amount: rowAmount(row),
-      }))
+    const eligible = billing
+      .filter(({ unresolved }) => unresolved === 0)
+      .map(({ row, amount }) => {
+        const details = detailsFor(customerDetails, row)
+        return { row, details, phone: details.phone, name: details.full_name || row.student, amount }
+      })
       .filter(({ phone, name, amount, row }) =>
         phone && hasFullName(name) && isValidAmount(amount) && !isLinkUsable(paymentLinks, summary.month, row.student, amount)
       )
@@ -71,9 +63,17 @@ export function CalculatorPage({ getAccessToken, config, customPrices, onCustomP
       return next
     })
 
-    await runWithConcurrency(eligible, PREPARE_CONCURRENCY, async ({ row, phone, name, amount }) => {
+    await runWithConcurrency(eligible, PREPARE_CONCURRENCY, async ({ row, details, phone, name, amount }) => {
       try {
-        const link = await requestPaymentLink(getAccessToken, { studentName: name, phone, amount, month: summary.month })
+        const link = await requestPaymentLink(getAccessToken, {
+          studentName: name,
+          phone,
+          amount,
+          month: summary.month,
+          numberOfLessons: totalLessons(row),
+          paymentProfile: details.payment_profile,
+          invoiceDescription: details.invoice_description,
+        })
         await onPaymentLinkChange?.(summary.month, row.student, link, amount)
         setPrepareStatus(prev => ({ ...prev, [row.student]: null }))
       } catch {
@@ -104,7 +104,7 @@ export function CalculatorPage({ getAccessToken, config, customPrices, onCustomP
           type="month"
           className={styles.monthInput}
           value={month}
-          onChange={e => setMonth(e.target.value)}
+          onChange={e => onMonthChange(e.target.value)}
         />
         <button className={styles.btnPrimary} onClick={handleRun} disabled={loading}>
           {loading ? 'Loading…' : 'Calculate'}
@@ -127,7 +127,12 @@ export function CalculatorPage({ getAccessToken, config, customPrices, onCustomP
         <div className={styles.summaryBar}>
           <span>{summary.month}</span>
           <span>{summary.students} students</span>
-          <span className={styles.total}>Total: ₪{summary.total_amount_due}</span>
+          <span className={styles.total}>Total: ₪{liveTotal}</span>
+          {needsReview > 0 && (
+            <span className={styles.reviewNote}>
+              {needsReview} {needsReview === 1 ? 'student needs' : 'students need'} review before sending
+            </span>
+          )}
         </div>
       )}
 
@@ -147,6 +152,8 @@ export function CalculatorPage({ getAccessToken, config, customPrices, onCustomP
           onPaymentLinkChange={onPaymentLinkChange}
           getAccessToken={getAccessToken}
           prepareStatus={prepareStatus}
+          reviewResolutions={reviewResolutions}
+          onReviewResolutionChange={onReviewResolutionChange}
         />
       )}
 

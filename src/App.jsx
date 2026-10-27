@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useAuth } from './hooks/useAuth.js'
 import { useUserSettings } from './hooks/useUserSettings.js'
-import { loadAmountOverrides, saveAmountOverride, loadPaymentLinks, savePaymentLink } from './lib/payments.js'
+import { useCalendarData } from './hooks/useCalendarData.js'
+import { loadAmountOverrides, saveAmountOverride, loadPaymentLinks, savePaymentLink, loadReviewResolutions, saveReviewResolution } from './lib/payments.js'
 import { AuthScreen } from './components/AuthScreen.jsx'
 import { Sidebar } from './components/Sidebar.jsx'
 import { CalculatorPage } from './components/CalculatorPage.jsx'
@@ -9,15 +10,21 @@ import { CustomPricesPage } from './components/CustomPricesPage.jsx'
 import { SettingsPage } from './components/SettingsPage.jsx'
 import styles from './App.module.css'
 
+function currentMonth() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
 export default function App() {
   const { accessToken, userEmail, signIn, signOut, error: authError, getValidAccessToken } = useAuth()
   const { settings, saveSettings, isReady } = useUserSettings(userEmail)
   const [page, setPage] = useState('calculator')
   const [config, setConfig] = useState(null)
-  const [knownStudents, setKnownStudents] = useState([])
   const [dirty, setDirty] = useState(false)
   const [amountOverrides, setAmountOverrides] = useState({})
   const [paymentLinks, setPaymentLinks] = useState({})
+  const [reviewResolutions, setReviewResolutions] = useState({})
+  const [month, setMonth] = useState(currentMonth)
 
   // Guards navigation away from a page with unsaved changes (currently only
   // Custom Prices reports dirty state, e.g. a pending import not yet saved).
@@ -41,6 +48,7 @@ export default function App() {
     if (!userEmail) return
     loadAmountOverrides(userEmail).then(setAmountOverrides).catch(err => console.error('Failed to load amount overrides:', err))
     loadPaymentLinks(userEmail).then(setPaymentLinks).catch(err => console.error('Failed to load payment links:', err))
+    loadReviewResolutions(userEmail).then(setReviewResolutions).catch(err => console.error('Failed to load review answers:', err))
   }, [userEmail])
 
   const handleAmountOverrideChange = async (month, student, amount) => {
@@ -51,6 +59,11 @@ export default function App() {
   const handlePaymentLinkChange = async (month, student, link, amount) => {
     const next = await savePaymentLink(userEmail, month, student, link, amount)
     setPaymentLinks(next)
+  }
+
+  const handleReviewResolutionChange = async (itemKey, resolution) => {
+    const next = await saveReviewResolution(userEmail, itemKey, resolution)
+    setReviewResolutions(next)
   }
 
   const handleCustomPriceChange = async (student, prices) => {
@@ -77,14 +90,40 @@ export default function App() {
     const hasCustomDefaults = settings.default_prices?.regular && settings.default_prices?.non_regular
     const hasCustomPhrases = settings.paid_cancellation_phrases != null
     const hasCustomKeywords = settings.cancelled_keywords != null
-    if (!hasCustomDefaults && !hasCustomPhrases && !hasCustomKeywords) return config
+    const hasLessonKeywords = settings.lesson_keywords != null
+    const hasMakeupPhrases = settings.makeup_phrases != null
+    if (!hasCustomDefaults && !hasCustomPhrases && !hasCustomKeywords && !hasLessonKeywords && !hasMakeupPhrases) return config
     return {
       ...config,
       ...(hasCustomDefaults ? { prices: settings.default_prices } : {}),
       ...(hasCustomPhrases ? { paid_cancellation_phrases: settings.paid_cancellation_phrases } : {}),
       ...(hasCustomKeywords ? { cancelled_keywords: settings.cancelled_keywords } : {}),
+      ...(hasLessonKeywords ? { lesson_keywords: settings.lesson_keywords } : {}),
+      ...(hasMakeupPhrases ? { makeup_phrases: settings.makeup_phrases } : {}),
     }
-  }, [config, settings.default_prices, settings.paid_cancellation_phrases, settings.cancelled_keywords])
+  }, [config, settings.default_prices, settings.paid_cancellation_phrases, settings.cancelled_keywords, settings.lesson_keywords, settings.makeup_phrases])
+
+  // The calculation lives here, not in CalculatorPage, so it survives both
+  // navigating to Settings / Custom Prices and a forced re-authentication
+  // (App stays mounted behind the AuthScreen gate). Amounts are re-derived
+  // from live prices on render, so edits made elsewhere still show up.
+  const calcConfig = useMemo(() => effectiveConfig && {
+    ...effectiveConfig,
+    custom_prices: settings.custom_prices,
+    customer_details: settings.customer_details,
+  }, [effectiveConfig, settings.custom_prices, settings.customer_details])
+  const calendar = useCalendarData(getValidAccessToken, calcConfig)
+  const { reset: resetCalculation } = calendar
+  const knownStudents = useMemo(() => calendar.rows?.map(r => r.student) ?? [], [calendar.rows])
+
+  // A re-auth signs the same account back in and keeps the table; a different
+  // account must never see the previous one's students.
+  const lastEmailRef = useRef(null)
+  useEffect(() => {
+    if (!userEmail) return
+    if (lastEmailRef.current && lastEmailRef.current !== userEmail) resetCalculation()
+    lastEmailRef.current = userEmail
+  }, [userEmail, resetCalculation])
 
   if (!accessToken) {
     return <AuthScreen onSignIn={signIn} error={authError} />
@@ -107,9 +146,11 @@ export default function App() {
           <CalculatorPage
             getAccessToken={getValidAccessToken}
             config={effectiveConfig}
+            calendar={calendar}
+            month={month}
+            onMonthChange={setMonth}
             customPrices={settings.custom_prices}
             onCustomPriceChange={handleCustomPriceChange}
-            onStudentsChange={setKnownStudents}
             customerDetails={settings.customer_details}
             onCustomerDetailChange={handleCustomerDetailChange}
             defaultMessage={settings.default_message}
@@ -117,6 +158,8 @@ export default function App() {
             onAmountOverrideChange={handleAmountOverrideChange}
             paymentLinks={paymentLinks}
             onPaymentLinkChange={handlePaymentLinkChange}
+            reviewResolutions={reviewResolutions}
+            onReviewResolutionChange={handleReviewResolutionChange}
           />
         )}
         {page === 'custom-prices' && (

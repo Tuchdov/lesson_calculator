@@ -58,34 +58,6 @@ path.
 **Depends on / blocked by:** Nothing — can be done anytime after the
 token-refresh fix (branch `Add-csv`) lands.
 
-## Preserve calculation state across a forced re-authentication
-
-**What:** When a background silent token refresh fails and the app falls
-back to `AuthScreen`, the user currently loses whatever calculation was on
-screen (`rows`/`summary` in `useCalendarData`, owned inside `CalculatorPage`,
-which unmounts when `App.jsx`'s `!accessToken` gate flips). Lift that state
-above the auth gate (e.g. into `App.jsx` or a context), or replace the full
-unmount with a lighter "session expired, click to continue" overlay that
-doesn't destroy the underlying page.
-
-**Why:** A user reviewing a completed calculation who then clicks Calculate
-again (e.g. to switch months) and hits an unlucky re-auth loses the table
-they were looking at and has to redo it — not data loss (custom price edits
-persist immediately elsewhere), but a real, avoidable UX rough edge.
-
-**Pros:** Removes the only user-visible rough edge left after the
-token-refresh fix (`plan-eng-review`, 2026-08-11, Outside Voice Issue 11).
-
-**Cons:** Touches state ownership/component architecture beyond the
-auth-refresh fix itself — real scope, not a one-line change.
-
-**Context:** Surfaced during the outside-voice pass of the token-refresh
-plan review. Deliberately deferred out of that PR to keep it scoped to the
-auth bug fix.
-
-**Depends on / blocked by:** The token-refresh fix (branch `Add-csv`)
-landing first.
-
 ## Track payment status from Grow's server-to-server callback
 
 **What:** Show a paid/unpaid indicator per student in the calculator table, fed
@@ -122,6 +94,24 @@ from `DESIGN.md`'s "no Node.js backend server" constraint than the proxy
 function itself.
 
 **Depends on / blocked by:** The Grow payment-link integration landing first.
+
+## Carry unpaid months into the next payment request
+
+**What:** If a student did not pay last month, the new payment request should cover the
+whole outstanding amount (last month's unpaid balance plus the current month), instead of
+only the current month's lessons.
+
+**Why:** Each month is calculated and messaged on its own, so an unpaid month is easy to
+lose track of and the teacher has to chase and add it up by hand.
+
+**Open questions:** Whether the message shows the months as separate line items or one
+combined total, and how far back to carry.
+
+**Context:** Requested by the user on 2026-10-10. Not started on 2026-10-27 because the
+app has no record of who paid.
+
+**Depends on / blocked by:** "Track payment status from Grow's server-to-server callback"
+above.
 
 ## Make payment-link creation idempotent
 

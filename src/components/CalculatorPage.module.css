@@ -99,3 +99,12 @@
   padding: 48px;
   font-size: 15px;
 }
+
+.reviewNote {
+  background: var(--md-amber-tonal);
+  color: var(--md-amber);
+  border-radius: var(--radius-pill);
+  padding: 2px 10px;
+  font-size: 13px;
+  font-weight: 500;
+}

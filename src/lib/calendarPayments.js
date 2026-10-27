@@ -1,6 +1,12 @@
-const REQUIRED_LESSON_PHRASE = 'פיתוח קול'
+export const DEFAULT_LESSON_KEYWORDS = ['פיתוח קול']
 export const DEFAULT_PAID_CANCELLATION_PHRASES = ['ביטול בתשלום']
 export const DEFAULT_CANCELLED_KEYWORDS = ['בוטל', 'מבוטל']
+// Titles containing one of these mark a make-up add-on: a non-standard
+// duration is charged as the standard lesson inside it, extra minutes free.
+export const DEFAULT_MAKEUP_PHRASES = []
+// A parent's name trails the student's in titles and saved keys
+// ("ענבר אמא עינת", "✨ אמא נועה") — everything from the marker on is dropped.
+const PARENT_MARKERS = ['אמא', 'אבא']
 
 export function monthWindow(monthStr) {
   const [year, month] = monthStr.split('-').map(Number)
@@ -39,8 +45,24 @@ export function doubleLessonDurationMinutes(event) {
   return null
 }
 
-export function isTargetLesson(summary) {
-  return Boolean(summary) && summary.includes(REQUIRED_LESSON_PHRASE)
+// Raw minutes of a timed event, or null for all-day / malformed events.
+export function eventMinutes(event) {
+  const startRaw = event?.start?.dateTime
+  const endRaw = event?.end?.dateTime
+  if (!startRaw || !endRaw) return null
+  return Math.round((new Date(endRaw) - new Date(startRaw)) / 60000)
+}
+
+// Longest keyword first, so "פיתוח קול מתקדם" wins over "פיתוח קול" when
+// both are configured and the name is cut around the right one.
+function matchedLessonKeyword(summary, keywords) {
+  if (!summary) return null
+  const sorted = keywords.filter(k => typeof k === 'string' && k).sort((a, b) => b.length - a.length)
+  return sorted.find(k => summary.includes(k)) ?? null
+}
+
+export function isTargetLesson(summary, keywords = DEFAULT_LESSON_KEYWORDS) {
+  return matchedLessonKeyword(summary, keywords) !== null
 }
 
 export function isCancelledLesson(summary, keywords = DEFAULT_CANCELLED_KEYWORDS) {
@@ -53,9 +75,35 @@ export function isPaidCancellation(summary, phrases = DEFAULT_PAID_CANCELLATION_
   return Boolean(summary) && phrases.some(phrase => summary.includes(phrase))
 }
 
+// Keeps the first two words of the student's own name. Whole "(...)" groups
+// are notes ("(9.5)", "(אמא עינת)"), words with digits are dates, words with
+// no letters are decoration (✨), and a parent marker ends the name.
 export function normalizeStudentName(name) {
-  const words = name.split(' ').filter(w => !w.startsWith('('))
-  return words.slice(0, 2).join(' ') || name
+  const words = name
+    .replace(/\([^)]*\)?/g, ' ')
+    .replace(/\)/g, ' ')
+    .split(/\s+/)
+    .filter(w => w && /\p{L}/u.test(w) && !/\d/.test(w))
+  const parentAt = words.findIndex((w, i) => i > 0 && PARENT_MARKERS.includes(w))
+  const own = parentAt === -1 ? words : words.slice(0, parentAt)
+  return own.slice(0, 2).join(' ') || name
+}
+
+// Saved data can be keyed by a fuller spelling than the calendar yields, e.g.
+// a CSV import stored "ענבר 11.5 (אמא עינת)" while titles give "ענבר". A saved
+// key matches when it normalizes to the parsed name (exact, not fuzzy). The
+// canonical key prefers one with a custom price, so pricing never misses;
+// `aliases` lists every matching key so details split across spellings
+// (phone under one, price under another) can still be merged.
+export function resolveSavedStudent(student, customPrices = {}, customerDetails = {}) {
+  const matches = (record) => Object.keys(record ?? {})
+    .filter(k => k === student || normalizeStudentName(k) === student)
+    .sort((a, b) => (b === student) - (a === student) || a.localeCompare(b, 'he'))
+  const priced = matches(customPrices)
+  const detailed = matches(customerDetails)
+  const key = priced[0] ?? detailed[0] ?? student
+  const aliases = [...new Set([student, ...priced, ...detailed])].filter(a => a !== key)
+  return { key, aliases }
 }
 
 function cleanNameCandidate(name) {
@@ -66,14 +114,15 @@ function cleanNameCandidate(name) {
     .trim()
 }
 
-function nameAroundLessonPhrase(text) {
-  if (!text.includes(REQUIRED_LESSON_PHRASE)) return normalizeStudentName(text)
+function nameAroundLessonPhrase(text, lessonKeywords) {
+  const keyword = matchedLessonKeyword(text, lessonKeywords)
+  if (!keyword) return normalizeStudentName(text)
 
-  const phraseIndex = text.indexOf(REQUIRED_LESSON_PHRASE)
+  const phraseIndex = text.indexOf(keyword)
   const prefix = cleanNameCandidate(text.slice(0, phraseIndex))
   if (prefix) return normalizeStudentName(prefix)
 
-  const suffix = cleanNameCandidate(text.slice(phraseIndex + REQUIRED_LESSON_PHRASE.length))
+  const suffix = cleanNameCandidate(text.slice(phraseIndex + keyword.length))
   return suffix ? normalizeStudentName(suffix) : null
 }
 
@@ -87,7 +136,7 @@ function withoutIgnoredPhrases(summary, ignoredPhrases) {
   return cleanNameCandidate(cleaned)
 }
 
-export function inferStudentName(summary, regex = null, ignoredPhrases = []) {
+export function inferStudentName(summary, regex = null, ignoredPhrases = [], lessonKeywords = DEFAULT_LESSON_KEYWORDS) {
   if (!summary) return null
   const cleanedSummary = withoutIgnoredPhrases(summary, ignoredPhrases)
   if (!cleanedSummary) return null
@@ -96,7 +145,7 @@ export function inferStudentName(summary, regex = null, ignoredPhrases = []) {
     const match = cleanedSummary.match(new RegExp(regex))
     if (match) {
       const name = cleanNameCandidate(match[1] ?? '')
-      const candidate = name && nameAroundLessonPhrase(name)
+      const candidate = name && nameAroundLessonPhrase(name, lessonKeywords)
       if (candidate) return candidate
     }
   }
@@ -105,12 +154,12 @@ export function inferStudentName(summary, regex = null, ignoredPhrases = []) {
     if (!cleanedSummary.includes(sep)) continue
     for (const part of cleanedSummary.split(sep)) {
       const cleanedPart = cleanNameCandidate(part)
-      const candidate = cleanedPart && nameAroundLessonPhrase(cleanedPart)
+      const candidate = cleanedPart && nameAroundLessonPhrase(cleanedPart, lessonKeywords)
       if (candidate) return candidate
     }
   }
 
-  const candidate = nameAroundLessonPhrase(cleanedSummary)
+  const candidate = nameAroundLessonPhrase(cleanedSummary, lessonKeywords)
   if (candidate) return candidate
 
   return normalizeStudentName(cleanedSummary)
@@ -159,20 +208,38 @@ function fillDurations(prices, defaults) {
 
 export function calculatePayments(events, config, monthStr) {
   const { start: monthStart, end: monthEnd } = monthWindow(monthStr)
+  const lessonKeywords = config.lesson_keywords ?? DEFAULT_LESSON_KEYWORDS
   const cancelledKeywords = config.cancelled_keywords ?? DEFAULT_CANCELLED_KEYWORDS
   const paidCancellationPhrases = config.paid_cancellation_phrases ?? DEFAULT_PAID_CANCELLATION_PHRASES
+  const makeupPhrases = config.makeup_phrases ?? DEFAULT_MAKEUP_PHRASES
   const nameRegex = config.student_name_regex ?? null
   const regularPrices = config.prices.regular
   const nonRegularPrices = config.prices.non_regular
   const customPrices = config.custom_prices ?? {}
+  const customerDetails = config.customer_details ?? {}
 
   const lessonDatetimes = {}
   const stats = {}
+  const reviewItems = {}
+  const aliases = {}
   const forceRegular = new Set()
+  const savedKeyCache = new Map()
+
+  const canonicalStudent = (parsed) => {
+    if (!savedKeyCache.has(parsed)) {
+      const resolved = resolveSavedStudent(parsed, customPrices, customerDetails)
+      savedKeyCache.set(parsed, resolved)
+      aliases[resolved.key] = [...new Set([...(aliases[resolved.key] ?? []), ...resolved.aliases])]
+    }
+    return savedKeyCache.get(parsed).key
+  }
+  const ensureStats = (student) => {
+    if (!stats[student]) stats[student] = { count_60: 0, count_45: 0, count_30: 0 }
+  }
 
   for (const event of events) {
     const summary = event.summary ?? ''
-    if (!isTargetLesson(summary)) continue
+    if (!isTargetLesson(summary, lessonKeywords)) continue
 
     const paidCancel = isPaidCancellation(summary, paidCancellationPhrases)
     if (!paidCancel && isCancelledLesson(summary, cancelledKeywords)) continue
@@ -180,21 +247,40 @@ export function calculatePayments(events, config, monthStr) {
     // Paid-cancellation labels describe the event; they are not student names.
     // Remove them before applying the configured name parser so titles may put
     // the label either before or after the actual student name.
-    const student = inferStudentName(summary, nameRegex, paidCancellationPhrases)
+    const parsed = inferStudentName(summary, nameRegex, paidCancellationPhrases, lessonKeywords)
+    const startRaw = event?.start?.dateTime
+    if (!parsed || !startRaw) continue
+    const student = canonicalStudent(parsed)
     const duration = lessonDurationMinutes(event)
     const doubleDuration = duration ? null : doubleLessonDurationMinutes(event)
-    const startRaw = event?.start?.dateTime
-    if (!student || (!duration && !doubleDuration) || !startRaw) continue
+    const startDt = new Date(startRaw)
+    const inMonth = startDt >= monthStart && startDt < monthEnd
+
+    // A duration outside the 30/45/60 tiers (e.g. "+15 min make-up") used to
+    // be dropped silently, leaving a total that looked right but was too low.
+    // It is surfaced for the teacher to price instead.
+    if (!duration && !doubleDuration) {
+      if (!inMonth) continue
+      ensureStats(student)
+      if (!reviewItems[student]) reviewItems[student] = []
+      reviewItems[student].push({
+        id: event.id ?? startRaw,
+        summary,
+        start: startRaw,
+        minutes: eventMinutes(event),
+        auto: makeupPhrases.some(p => p && summary.includes(p)) ? 'base' : null,
+      })
+      continue
+    }
 
     if (paidCancel) forceRegular.add(student)
 
-    const startDt = new Date(startRaw)
     if (!lessonDatetimes[student]) lessonDatetimes[student] = []
     lessonDatetimes[student].push(startDt)
 
-    if (startDt < monthStart || startDt >= monthEnd) continue
+    if (!inMonth) continue
 
-    if (!stats[student]) stats[student] = { count_60: 0, count_45: 0, count_30: 0 }
+    ensureStats(student)
     if (duration === 60) stats[student].count_60++
     else if (duration === 45) stats[student].count_45++
     else if (duration === 30) stats[student].count_30++
@@ -216,6 +302,8 @@ export function calculatePayments(events, config, monthStr) {
       customPrices,
     )
 
+    // Excludes review items: their price depends on the teacher's answer,
+    // which rowPricing.js applies on top of this.
     const amount = s.count_60 * Number(priceTable['60'])
       + s.count_45 * Number(priceTable['45'])
       + s.count_30 * Number(priceTable['30'])
@@ -223,11 +311,13 @@ export function calculatePayments(events, config, monthStr) {
 
     rows.push({
       student,
+      aliases: aliases[student] ?? [],
       student_type: (regular || forceRegular.has(student)) ? 'regular' : 'non_regular',
       lessons_60: s.count_60,
       lessons_45: s.count_45,
       lessons_30: s.count_30,
       amount_due: Math.round(amount * 100) / 100,
+      review_items: reviewItems[student] ?? [],
     })
   }
 

@@ -12,11 +12,33 @@ function initialPhones(settings) {
   return p
 }
 
+// Per-student overrides of the Make/WhatsApp defaults; blank means "use the
+// default", so students without them behave exactly as before.
+const EXTRA_FIELDS = ['payment_profile', 'invoice_description', 'message']
+
+function initialExtras(settings) {
+  const e = {}
+  for (const [student, det] of Object.entries(settings?.customer_details ?? {})) {
+    const fields = {}
+    for (const f of EXTRA_FIELDS) if (det?.[f]) fields[f] = det[f]
+    if (Object.keys(fields).length) e[student] = fields
+  }
+  return e
+}
+
+function matchesQuery(student, details, query) {
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  return [student, details?.full_name].some(v => (v ?? '').toLowerCase().includes(q))
+}
+
 export function CustomPricesPage({ settings, onSave, availableStudents = [], onDirtyChange = () => {} }) {
   const [customPrices, setCustomPrices] = useState(
     () => deepClone(settings?.custom_prices ?? {})
   )
   const [phones, setPhones] = useState(() => initialPhones(settings))
+  const [extras, setExtras] = useState(() => initialExtras(settings))
+  const [query, setQuery] = useState('')
   const [phoneErrors, setPhoneErrors] = useState({})
   const [newStudent, setNewStudent] = useState('')
   const [saved, setSaved] = useState(false)
@@ -32,13 +54,15 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
   const lastSavedRef = useRef({
     customPrices: deepClone(settings?.custom_prices ?? {}),
     phones: initialPhones(settings),
+    extras: initialExtras(settings),
   })
 
   useEffect(() => {
     const dirty = JSON.stringify(customPrices) !== JSON.stringify(lastSavedRef.current.customPrices)
       || JSON.stringify(phones) !== JSON.stringify(lastSavedRef.current.phones)
+      || JSON.stringify(extras) !== JSON.stringify(lastSavedRef.current.extras)
     onDirtyChange(dirty)
-  }, [customPrices, phones, onDirtyChange])
+  }, [customPrices, phones, extras, onDirtyChange])
 
   const handleAdd = () => {
     const name = newStudent.trim()
@@ -72,6 +96,11 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
       delete next[student]
       return next
     })
+    setExtras(prev => {
+      const next = { ...prev }
+      delete next[student]
+      return next
+    })
     setSaved(false)
     setSaveError(null)
   }
@@ -91,6 +120,12 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
   const handlePhone = (student, value) => {
     setPhones(prev => ({ ...prev, [student]: value }))
     setPhoneErrors(prev => ({ ...prev, [student]: false }))
+    setSaved(false)
+    setSaveError(null)
+  }
+
+  const handleExtra = (student, field, value) => {
+    setExtras(prev => ({ ...prev, [student]: { ...prev[student], [field]: value } }))
     setSaved(false)
     setSaveError(null)
   }
@@ -149,11 +184,18 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
           phone: ph,
         }
       }
+      const current = { ...(updatedCustomerDetails[student] ?? {}) }
+      for (const f of EXTRA_FIELDS) {
+        const v = f === 'message' ? (extras[student]?.[f] ?? '') : (extras[student]?.[f] ?? '').trim()
+        if (v.trim()) current[f] = v
+        else delete current[f]
+      }
+      if (Object.keys(current).length) updatedCustomerDetails[student] = current
     }
 
     try {
       await onSave({ ...settings, custom_prices: cleaned, customer_details: updatedCustomerDetails })
-      lastSavedRef.current = { customPrices: deepClone(customPrices), phones: deepClone(phones) }
+      lastSavedRef.current = { customPrices: deepClone(customPrices), phones: deepClone(phones), extras: deepClone(extras) }
       onDirtyChange(false)
       setSaved(true)
       setSaveError(null)
@@ -168,6 +210,9 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
   }
 
   const students = Object.keys(customPrices)
+  const visibleStudents = students
+    .filter(s => matchesQuery(s, settings?.customer_details?.[s], query))
+  const knownProfiles = [...new Set(['standard', ...Object.values(extras).map(e => e?.payment_profile?.trim()).filter(Boolean)])]
 
   return (
     <div className={styles.page}>
@@ -203,15 +248,33 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
         />
       )}
 
+      {students.length > 0 && (
+        <input
+          type="search"
+          className={`${styles.input} ${styles.searchInput}`}
+          placeholder="Search students…"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          dir="auto"
+        />
+      )}
+      <datalist id="payment-profiles">
+        {knownProfiles.map(p => <option key={p} value={p} />)}
+      </datalist>
+
       {students.length === 0 && (
         <div className={styles.empty}>No custom prices set. Add a student above.</div>
       )}
+      {students.length > 0 && visibleStudents.length === 0 && (
+        <div className={styles.empty}>No students match “{query.trim()}”.</div>
+      )}
 
-      {students.map(student => {
+      {visibleStudents.map(student => {
         const entry = customPrices[student]
         const isTiered = 'regular' in entry || 'non_regular' in entry
         const phoneVal = phones[student] ?? ''
         const phoneErr = phoneErrors[student]
+        const extra = extras[student] ?? {}
         return (
           <div key={student} className={styles.card}>
             <div className={styles.cardHeader}>
@@ -232,6 +295,40 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
                 {phoneErr && <span className={styles.phoneError}>Invalid format — e.g. 050-1234567</span>}
               </div>
             </div>
+            <div className={styles.phoneRow}>
+              <span className={styles.phoneLabel}>💳 Payment profile</span>
+              <input
+                className={`${styles.input} ${styles.phoneInput}`}
+                list="payment-profiles"
+                placeholder="standard"
+                title="Sent to Make as payment_profile — the scenario's router picks which payment options this student gets"
+                value={extra.payment_profile ?? ''}
+                onChange={e => handleExtra(student, 'payment_profile', e.target.value)}
+                dir="auto"
+              />
+            </div>
+            <div className={styles.phoneRow}>
+              <span className={styles.phoneLabel}>🧾 Invoice text</span>
+              <input
+                className={`${styles.input} ${styles.wideInput}`}
+                placeholder="תשלום עבור שיעורי שירה - {student} - {month}"
+                title="Replaces the default payment/invoice description. {student} and {month} are filled in."
+                value={extra.invoice_description ?? ''}
+                onChange={e => handleExtra(student, 'invoice_description', e.target.value)}
+                dir="rtl"
+              />
+            </div>
+            <details className={styles.messageDetails}>
+              <summary className={styles.phoneLabel}>💬 WhatsApp message {extra.message ? '(custom)' : '(default)'}</summary>
+              <textarea
+                className={`${styles.input} ${styles.messageInput}`}
+                rows={4}
+                dir="rtl"
+                placeholder="Empty — uses the default message from Settings. Tokens: {student} {amount} {month} {lessons} {link}"
+                value={extra.message ?? ''}
+                onChange={e => handleExtra(student, 'message', e.target.value)}
+              />
+            </details>
             {isTiered
               ? TYPES.map(type => (
                 <div key={type} className={styles.tier}>

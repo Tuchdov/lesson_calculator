@@ -1,5 +1,14 @@
 import { assertEquals } from '@std/assert'
-import { resolveRowPrices, computeLessonAmount } from '../src/lib/rowPricing.js'
+import {
+  resolveRowPrices,
+  computeLessonAmount,
+  baseLessonPrice,
+  proRataPrice,
+  computeRowAmount,
+  reviewKey,
+  detailsFor,
+  defaultReviewMode,
+} from '../src/lib/rowPricing.js'
 
 const CONFIG = { prices: { regular: { '60': 260, '45': 210, '30': 190 }, non_regular: { '60': 280, '45': 230, '30': 210 } } }
 
@@ -52,4 +61,74 @@ Deno.test('computeLessonAmount: zero lessons yields zero', () => {
   const row = { lessons_60: 0, lessons_45: 0, lessons_30: 0 }
   const prices = { '60': 260, '45': 210, '30': 190 }
   assertEquals(computeLessonAmount(row, prices), 0)
+})
+
+// ── review items ────────────────────────────────────────────────────────────
+
+const PRICES = { '60': 240, '45': 200, '30': 180 }
+
+Deno.test('baseLessonPrice: the longest standard lesson inside the event, 0 below 30 min', () => {
+  assertEquals(baseLessonPrice(75, PRICES), 240)
+  assertEquals(baseLessonPrice(50, PRICES), 200)
+  assertEquals(baseLessonPrice(15, PRICES), 0)
+})
+
+Deno.test('proRataPrice: minutes over 60 of the 60-min price', () => {
+  assertEquals(proRataPrice(15, PRICES), 60)
+  assertEquals(proRataPrice(75, PRICES), 300)
+})
+
+function reviewRow(items) {
+  return { student: 'יובל חייט', lessons_60: 1, lessons_45: 0, lessons_30: 0, review_items: items }
+}
+
+Deno.test('computeRowAmount: unresolved items add nothing and are counted', () => {
+  const row = reviewRow([{ id: 'a', minutes: 15, summary: 'x', auto: null }])
+  assertEquals(computeRowAmount(row, PRICES, {}, '2026-10'), { amount: 240, extra: 0, unresolved: 1 })
+})
+
+Deno.test('computeRowAmount: applies stored answers per mode', () => {
+  const items = [
+    { id: 'a', minutes: 15, summary: 'x', auto: null },
+    { id: 'b', minutes: 75, summary: 'y', auto: null },
+    { id: 'c', minutes: 20, summary: 'z', auto: null },
+    { id: 'd', minutes: 10, summary: 'w', auto: null },
+  ]
+  const resolutions = {
+    [reviewKey('2026-10', 'יובל חייט', 'a')]: { mode: 'prorata' },
+    [reviewKey('2026-10', 'יובל חייט', 'b')]: { mode: 'base' },
+    [reviewKey('2026-10', 'יובל חייט', 'c')]: { mode: 'fixed', amount: 50 },
+    [reviewKey('2026-10', 'יובל חייט', 'd')]: { mode: 'free' },
+  }
+  assertEquals(computeRowAmount(reviewRow(items), PRICES, resolutions, '2026-10'), { amount: 240 + 60 + 240 + 50, extra: 350, unresolved: 0 })
+})
+
+Deno.test('computeRowAmount: a make-up phrase auto-resolves; a stored answer still wins', () => {
+  const row = reviewRow([{ id: 'a', minutes: 75, summary: 'x', auto: 'base' }])
+  assertEquals(computeRowAmount(row, PRICES, {}, '2026-10').amount, 480)
+  const stored = { [reviewKey('2026-10', 'יובל חייט', 'a')]: { mode: 'free' } }
+  assertEquals(computeRowAmount(row, PRICES, stored, '2026-10').amount, 240)
+})
+
+Deno.test('computeRowAmount: answers do not leak into another month', () => {
+  const row = reviewRow([{ id: 'a', minutes: 15, summary: 'x', auto: null }])
+  const stored = { [reviewKey('2026-09', 'יובל חייט', 'a')]: { mode: 'prorata' } }
+  assertEquals(computeRowAmount(row, PRICES, stored, '2026-10').unresolved, 1)
+})
+
+Deno.test('defaultReviewMode: "השלמה" defaults the extra minutes to free, else pro-rata', () => {
+  assertEquals(defaultReviewMode({ summary: 'פיתוח קול - תוספת 15 דק השלמה', minutes: 75 }, PRICES), 'base')
+  assertEquals(defaultReviewMode({ summary: 'השלמה', minutes: 15 }, PRICES), 'free')
+  assertEquals(defaultReviewMode({ summary: 'תוספת', minutes: 15 }, PRICES), 'prorata')
+})
+
+// ── detailsFor ──────────────────────────────────────────────────────────────
+
+Deno.test('detailsFor: merges details split across spellings, the row key winning', () => {
+  const details = {
+    'אלה עוז (9.5)': { full_name: 'אלה עוז', phone: '' },
+    'אלה עוז (אמה נועה)': { phone: '050-1234567', full_name: 'ignored' },
+  }
+  const row = { student: 'אלה עוז (9.5)', aliases: ['אלה עוז (אמה נועה)'] }
+  assertEquals(detailsFor(details, row), { phone: '050-1234567', full_name: 'אלה עוז' })
 })

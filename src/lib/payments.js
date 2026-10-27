@@ -3,6 +3,7 @@ import { monthNameFromKey } from './whatsapp.js'
 
 const LINKS_KEY_PREFIX = 'vocalCalc:paymentLinks:'
 const OVERRIDES_KEY_PREFIX = 'vocalCalc:amountOverrides:'
+const REVIEW_KEY_PREFIX = 'vocalCalc:reviewResolutions:'
 
 // One invoice = one student for one month. Both the link store and the
 // amount-override store are keyed this way so neither carries a value into
@@ -46,8 +47,16 @@ export function amountChanged(storedAmount, currentAmount) {
 // --- Grow payment description ---------------------------------------------
 
 // A short Hebrew description naming the month, shown on Grow's payment page.
-export function buildGrowDescription(studentName, monthStr) {
-  return `תשלום עבור שיעורי שירה - ${studentName} - ${monthNameFromKey(monthStr)}`
+// A per-student template (e.g. "ייעוץ קולי - {student} - {month}") replaces
+// the default wording; it is collapsed to one line for Grow's field.
+export function buildGrowDescription(studentName, monthStr, template) {
+  const monthName = monthNameFromKey(monthStr)
+  if (!template) return `תשלום עבור שיעורי שירה - ${studentName} - ${monthName}`
+  return template
+    .replaceAll('{student}', studentName ?? '')
+    .replaceAll('{month}', monthName ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 // --- Shared hashed-record storage ------------------------------------------
@@ -135,4 +144,22 @@ export async function saveAmountOverride(email, month, student, amount, storage 
 
 export function getStoredOverride(overrides, month, student) {
   return overrides?.[invoiceKey(month, student)] ?? null
+}
+
+// --- Review resolution store ------------------------------------------------
+// vocalCalc:reviewResolutions:<hash>, keyed by {month}:{student}:{eventId}
+// (rowPricing.js reviewKey). Value is { mode: 'prorata' | 'base' | 'fixed' |
+// 'free', amount? }; null clears it.
+
+export async function loadReviewResolutions(email, storage = globalThis.localStorage) {
+  const key = REVIEW_KEY_PREFIX + await sha256Hex(email)
+  return readRecord(key, storage)
+}
+
+export async function saveReviewResolution(email, itemKey, resolution, storage = globalThis.localStorage) {
+  const key = REVIEW_KEY_PREFIX + await sha256Hex(email)
+  return withRecord(key, storage, (all) => {
+    if (resolution == null) delete all[itemKey]
+    else all[itemKey] = resolution
+  })
 }
