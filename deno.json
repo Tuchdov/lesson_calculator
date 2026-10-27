@@ -1,7 +1,11 @@
 {
   "nodeModulesDir": "auto",
   "test": {
-    "exclude": ["node_modules/", "tests/hooks/"]
+    "exclude": [
+      "node_modules/",
+      "tests/hooks/",
+      "tests/db/"
+    ]
   },
   "imports": {
     "@std/assert": "jsr:@std/assert@^1"

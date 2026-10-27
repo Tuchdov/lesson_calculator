@@ -7,13 +7,17 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "test": "npm run test:unit && npm run test:hooks",
+    "test": "npm run test:unit && npm run test:db && npm run test:hooks",
     "test:unit": "deno test",
     "test:hooks": "vitest run",
     "test:hooks:watch": "vitest",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:db": "node --test tests/db/*.test.js",
+    "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.js",
+    "db:configure": "node --env-file-if-exists=.env.local scripts/configureBilling.js"
   },
   "dependencies": {
+    "@libsql/client": "^0.18.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"

@@ -31,6 +31,8 @@ specs/
 *.sw?
 .vercel
 .env*
+!.env.example
+.billing-data/
 
 # Local AI-tool session artifacts (not project source)
 .claude/
