@@ -179,15 +179,17 @@ export function linkInputs({ payerName, phone, lessonStudent, paymentProfile, in
 // A stored link is reusable only if it was minted for the amount currently
 // due (decision 5) and with the same payer, phone, profile and invoice text.
 // Looked up under every spelling of the row's student (invoiceRecord). A link
-// saved before fingerprints existed only carries the defaults, so it stays
-// usable unless the student now has a custom profile or invoice text.
+// saved before fingerprints existed stays usable only while the student still
+// uses the defaults and pays for themselves.
 export function isLinkUsable(links, month, row, currentAmount, currentInputs) {
   const entry = invoiceRecord(links, month, row)
   if (!entry || amountChanged(entry.amount, currentAmount)) return false
   if (!currentInputs) return true
   if (entry.inputs) return entry.inputs === currentInputs
-  const { profile, invoice } = JSON.parse(currentInputs)
-  return !profile && !invoice
+  // A link from before fingerprints was minted with the defaults and the
+  // student as the payer, so it stays only while that is still true.
+  const { profile, invoice, payer, student } = JSON.parse(currentInputs)
+  return !profile && !invoice && (!payer || payer === student)
 }
 
 // --- Amount override store -------------------------------------------------

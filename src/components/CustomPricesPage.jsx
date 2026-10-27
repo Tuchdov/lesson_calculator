@@ -18,6 +18,7 @@ function initialPhones(settings) {
 // default", so students without them behave exactly as before. full_name is
 // the payer (a child's parent) shown on the payment page and invoice.
 const EXTRA_FIELDS = ['full_name', 'payment_profile', 'invoice_description', 'message']
+const ALL_MONTHS = Array.from({ length: 12 }, (_, i) => `2026-${String(i + 1).padStart(2, '0')}`)
 const EMPTY_TIERS = { regular: { '60': '', '45': '', '30': '' }, non_regular: { '60': '', '45': '', '30': '' } }
 
 function initialExtras(settings) {
@@ -57,10 +58,11 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState(null)
   const [importOpen, setImportOpen] = useState(false)
-  // Students removed this session: everything saved under that spelling
-  // (phone included) is deleted on save, so removing the wrong spelling of a
-  // student actually clears a name conflict.
-  const [removed, setRemoved] = useState([])
+  // Students removed this session, with what their card held: everything
+  // saved under that spelling (phone included) is deleted on save, so removing
+  // the wrong spelling of a student actually clears a name conflict. Until
+  // then the card shows as a strip that Undo restores.
+  const [removed, setRemoved] = useState({})
 
   // Snapshot of the raw, on-screen state as of the last successful save (or
   // initial load) — compared against the live state to report "dirty" to the
@@ -87,7 +89,7 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
     // A card without prices: typing a price makes it a custom price, and the
     // other fields work either way.
     setExtras(prev => ({ ...prev, [name]: prev[name] ?? {} }))
-    setRemoved(prev => prev.filter(s => s !== name))
+    setRemoved(prev => without(prev, name))
     setPhones(prev => ({ ...prev, [name]: prev[name] ?? '' }))
     setNewStudent('')
     setSaved(false)
@@ -95,27 +97,26 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
   }
 
   const handleRemove = (student) => {
-    setCustomPrices(prev => {
-      const next = { ...prev }
-      delete next[student]
-      return next
-    })
-    setPhones(prev => {
-      const next = { ...prev }
-      delete next[student]
-      return next
-    })
-    setPhoneErrors(prev => {
-      const next = { ...prev }
-      delete next[student]
-      return next
-    })
-    setExtras(prev => {
-      const next = { ...prev }
-      delete next[student]
-      return next
-    })
-    setRemoved(prev => [...new Set([...prev, student])])
+    const snapshot = { customPrices: customPrices[student], phones: phones[student], extras: extras[student] }
+    setCustomPrices(prev => without(prev, student))
+    setPhones(prev => without(prev, student))
+    setPhoneErrors(prev => without(prev, student))
+    setProfileErrors(prev => without(prev, student))
+    setInvoiceErrors(prev => without(prev, student))
+    setExtras(prev => without(prev, student))
+    setRemoved(prev => ({ ...prev, [student]: snapshot }))
+    setSaved(false)
+    setSaveError(null)
+  }
+
+  const handleUndoRemove = (student) => {
+    const snapshot = removed[student]
+    if (!snapshot) return
+    const restore = (setter, value) => { if (value !== undefined) setter(prev => ({ ...prev, [student]: value })) }
+    restore(setCustomPrices, snapshot.customPrices)
+    restore(setPhones, snapshot.phones)
+    restore(setExtras, snapshot.extras)
+    setRemoved(prev => without(prev, student))
     setSaved(false)
     setSaveError(null)
   }
@@ -166,12 +167,13 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
       const profile = (extras[student]?.payment_profile ?? '').trim()
       if (profile && !isValidPaymentProfile(profile)) badProfiles[student] = true
     }
-    // Rendered with the longest month name, as the server checks the rendered text.
+    // The server checks the rendered text, so try every month and keep the longest.
     const badInvoices = {}
     for (const student of students) {
       const template = (extras[student]?.invoice_description ?? '').trim()
       // {student} in invoice text is the student's calendar name.
-      if (template && buildGrowDescription(normalizeStudentName(student), '2026-09', template).length > MAX_INVOICE_DESCRIPTION) badInvoices[student] = true
+      const longest = template && Math.max(...ALL_MONTHS.map(m => buildGrowDescription(normalizeStudentName(student), m, template).length))
+      if (template && longest > MAX_INVOICE_DESCRIPTION) badInvoices[student] = true
     }
     const invalid = [...new Set([...Object.keys(errors), ...Object.keys(badProfiles), ...Object.keys(badInvoices)])]
     if (invalid.length > 0) {
@@ -214,7 +216,7 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
     }
 
     const updatedCustomerDetails = { ...(settings?.customer_details ?? {}) }
-    for (const student of removed) {
+    for (const student of Object.keys(removed)) {
       if (!students.includes(student)) delete updatedCustomerDetails[student]
     }
     for (const student of students) {
@@ -240,7 +242,7 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
     try {
       await onSave({ ...settings, custom_prices: cleaned, customer_details: updatedCustomerDetails })
       lastSavedRef.current = { customPrices: deepClone(customPrices), phones: deepClone(phones), extras: deepClone(extras) }
-      setRemoved([])
+      setRemoved({})
       onDirtyChange(false)
       setSaved(true)
       setSaveError(null)
@@ -259,6 +261,18 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
   const students = [...new Set([...Object.keys(customPrices), ...Object.keys(phones), ...Object.keys(extras)])]
   const visibleStudents = students
     .filter(s => matchesQuery(s, extras[s]?.full_name, query))
+  const removedStrips = Object.keys(removed).filter(s => !students.includes(s) && matchesQuery(s, removed[s].extras?.full_name, query))
+
+  // Spellings the calculation merges into one row (same normalized name, see
+  // resolveSavedStudent). A card with no price of its own edits the priced
+  // spelling's, so typing a price there never adds a second, conflicting one.
+  const pricedTwin = (student) => {
+    if (hasAnyPricedValue(customPrices[student])) return null
+    const name = normalizeStudentName(student)
+    return students
+      .filter(s => s !== student && normalizeStudentName(s) === name && hasAnyPricedValue(customPrices[s]))
+      .sort((a, b) => (b === name) - (a === name) || a.localeCompare(b, 'he'))[0] ?? null
+  }
   const knownProfiles = [...new Set([DEFAULT_PAYMENT_PROFILE, ...Object.values(extras).map(e => e?.payment_profile?.trim()).filter(Boolean)])]
 
   return (
@@ -312,13 +326,24 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
       {students.length === 0 && (
         <div className={styles.empty}>No saved students yet. Add a student above.</div>
       )}
-      {students.length > 0 && visibleStudents.length === 0 && (
+      {students.length > 0 && visibleStudents.length === 0 && removedStrips.length === 0 && (
         <div className={styles.empty}>No students match “{query.trim()}”.</div>
       )}
 
+      {removedStrips.map(student => (
+        <div key={student} className={styles.removedStrip} role="status">
+          <span><span className={styles.removedName}>{student}</span> will be removed when you press Save all.</span>
+          <button className={styles.btnSecondary} onClick={() => handleUndoRemove(student)}>Undo</button>
+        </div>
+      ))}
+
       {visibleStudents.map(student => {
+        // Stable per name (not per list position) so a filtered list keeps label targets.
+        const fieldId = field => `cp-${field}-${encodeURIComponent(student)}`
+        const twin = pricedTwin(student)
+        const priceOwner = twin ?? student
         // Students without a custom price get empty tiers (defaults apply).
-        const entry = customPrices[student] ?? EMPTY_TIERS
+        const entry = customPrices[priceOwner] ?? EMPTY_TIERS
         const isTiered = 'regular' in entry || 'non_regular' in entry
         const phoneVal = phones[student] ?? ''
         const phoneErr = phoneErrors[student]
@@ -329,10 +354,18 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
               <span className={styles.studentName}>{student}</span>
               <button className={styles.removeBtn} onClick={() => handleRemove(student)}>Remove</button>
             </div>
+            {twin && (
+              <div className={styles.twinNote}>
+                ↪ Same student as “{twin}”: prices typed here are saved there.
+              </div>
+            )}
             <div className={styles.phoneRow}>
-              <span className={styles.phoneLabel}>📱 Phone</span>
+              <label className={styles.phoneLabel} htmlFor={fieldId('phone')}>📱 Phone</label>
               <div className={styles.phoneInputWrap}>
                 <input
+                  id={fieldId('phone')}
+                  aria-invalid={phoneErr ? true : undefined}
+                  aria-describedby={phoneErr ? fieldId('phone-error') : undefined}
                   type="tel"
                   className={`${styles.input} ${styles.phoneInput} ${phoneErr ? styles.phoneInputError : ''}`}
                   placeholder="050-1234567"
@@ -340,24 +373,28 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
                   onChange={e => handlePhone(student, e.target.value)}
                   dir="ltr"
                 />
-                {phoneErr && <span className={styles.phoneError}>Invalid format — e.g. 050-1234567</span>}
+                {phoneErr && <span id={fieldId('phone-error')} className={styles.phoneError}>Invalid format — e.g. 050-1234567</span>}
               </div>
             </div>
             <div className={styles.phoneRow}>
-              <span className={styles.phoneLabel}>👤 Payer name</span>
+              <label className={styles.phoneLabel} htmlFor={fieldId('payer')}>👤 Payer name</label>
               <input
+                id={fieldId('payer')}
                 className={`${styles.input} ${styles.wideInput}`}
                 placeholder="Who pays (a parent for young students), first and last name"
                 title="Shown on the payment page and invoice, and greeted in WhatsApp. Leave empty when the student pays."
                 value={extra.full_name ?? ''}
                 onChange={e => handleExtra(student, 'full_name', e.target.value)}
-                dir="rtl"
+                dir="auto"
               />
             </div>
             <div className={styles.phoneRow}>
-              <span className={styles.phoneLabel}>💳 Payment profile</span>
+              <label className={styles.phoneLabel} htmlFor={fieldId('profile')}>💳 Payment profile</label>
               <div className={styles.phoneInputWrap}>
                 <input
+                  id={fieldId('profile')}
+                  aria-invalid={profileErrors[student] ? true : undefined}
+                  aria-describedby={profileErrors[student] ? fieldId('profile-error') : undefined}
                   className={`${styles.input} ${styles.phoneInput} ${profileErrors[student] ? styles.phoneInputError : ''}`}
                   list="payment-profiles"
                   placeholder={DEFAULT_PAYMENT_PROFILE}
@@ -366,21 +403,24 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
                   onChange={e => handleExtra(student, 'payment_profile', e.target.value)}
                   dir="auto"
                 />
-                {profileErrors[student] && <span className={styles.phoneError}>One word: letters, digits, - or _ (e.g. extended)</span>}
+                {profileErrors[student] && <span id={fieldId('profile-error')} className={styles.phoneError}>One word: letters, digits, - or _ (e.g. extended)</span>}
               </div>
             </div>
             <div className={styles.phoneRow}>
-              <span className={styles.phoneLabel}>🧾 Invoice text</span>
+              <label className={styles.phoneLabel} htmlFor={fieldId('invoice')}>🧾 Invoice text</label>
               <div className={`${styles.phoneInputWrap} ${styles.wideInput}`}>
                 <input
+                  id={fieldId('invoice')}
+                  aria-invalid={invoiceErrors[student] ? true : undefined}
+                  aria-describedby={invoiceErrors[student] ? fieldId('invoice-error') : undefined}
                   className={`${styles.input} ${invoiceErrors[student] ? styles.phoneInputError : ''}`}
                   placeholder="תשלום עבור שיעורי שירה - {student} - {month}"
-                  title="Replaces the default payment/invoice description. {student} and {month} are filled in."
+                  title="Replaces the default payment/invoice description. {student} (the student) and {month} are filled in."
                   value={extra.invoice_description ?? ''}
                   onChange={e => handleExtra(student, 'invoice_description', e.target.value)}
                   dir="rtl"
                 />
-                {invoiceErrors[student] && <span className={styles.phoneError}>Too long: at most {MAX_INVOICE_DESCRIPTION} characters once the name and month are filled in</span>}
+                {invoiceErrors[student] && <span id={fieldId('invoice-error')} className={styles.phoneError}>Too long: at most {MAX_INVOICE_DESCRIPTION} characters once the name and month are filled in</span>}
               </div>
             </div>
             <details className={styles.messageDetails}>
@@ -389,7 +429,7 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
                 className={`${styles.input} ${styles.messageInput}`}
                 rows={4}
                 dir="rtl"
-                placeholder="Empty — uses the default message from Settings. Tokens: {student} {amount} {month} {lessons} {link}"
+                placeholder="Empty — uses the default message from Settings. Tokens: {payer} {student} {amount} {month} {lessons} {link}"
                 value={extra.message ?? ''}
                 onChange={e => handleExtra(student, 'message', e.target.value)}
               />
@@ -407,7 +447,7 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
                           className={styles.input}
                           placeholder="—"
                           value={entry[type]?.[d] ?? ''}
-                          onChange={e => handlePrice(student, type, d, e.target.value)}
+                          onChange={e => handlePrice(priceOwner, type, d, e.target.value)}
                         />
                       </label>
                     ))}
@@ -424,7 +464,7 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
                         className={styles.input}
                         placeholder="—"
                         value={entry[d] ?? ''}
-                        onChange={e => handlePrice(student, null, d, e.target.value)}
+                        onChange={e => handlePrice(priceOwner, null, d, e.target.value)}
                       />
                     </label>
                   ))}
@@ -444,6 +484,12 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
       )}
     </div>
   )
+}
+
+function without(obj, key) {
+  const next = { ...obj }
+  delete next[key]
+  return next
 }
 
 function deepClone(obj) {

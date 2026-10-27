@@ -7,6 +7,8 @@ import {
   renderMessageTemplate,
   applyPaymentLink,
   HEBREW_MONTHS,
+  DEFAULT_MESSAGE_TEMPLATE,
+  upgradeMessageTemplate,
 } from '../src/lib/whatsapp.js'
 
 // ── validateIsraeliPhone ──────────────────────────────────────────────────────
@@ -173,6 +175,23 @@ Deno.test('buildPaymentMessage: passes lessons count through to the template', (
 Deno.test('buildPaymentMessage: DEFAULT_MESSAGE_TEMPLATE includes the lesson count', () => {
   const msg = buildPaymentMessage('Alice', 250, '2026-06', undefined, 7)
   assertMatch(msg, /7/)
+})
+
+// ── {payer} vs {student} ─────────────────────────────────────────────────────
+
+// Value: protects={payer} greets whoever pays while {student} always names the student, and without a separate payer both are the student; fails_when=the tokens swap or {payer} is left literal; why_new={payer} is new; seam=none
+Deno.test('buildPaymentMessage: {payer} is who pays, {student} the student', () => {
+  assertEquals(buildPaymentMessage('ענבר', 230, '2026-10', 'שלום {payer}, השיעורים של {student}', 4, undefined, 'עינת שמש'), 'שלום עינת שמש, השיעורים של ענבר')
+  assertEquals(buildPaymentMessage('ענבר', 230, '2026-10', 'שלום {payer}, {student}'), 'שלום ענבר, ענבר')
+  assertMatch(buildPaymentMessage('ענבר', 230, '2026-10', undefined, 4, undefined, 'עינת שמש'), /^ שלום עינת שמש :\)/)
+})
+
+// Value: protects=a default message saved before {payer} existed keeps greeting the payer; fails_when=the saved legacy default is used as-is, so parents are greeted by the child's name; why_new=upgradeMessageTemplate is new; seam=none
+Deno.test('upgradeMessageTemplate: a saved copy of the old default greets the payer', () => {
+  const legacy = DEFAULT_MESSAGE_TEMPLATE.replace('{payer}', '{student}')
+  assertEquals(upgradeMessageTemplate(legacy), DEFAULT_MESSAGE_TEMPLATE)
+  assertEquals(upgradeMessageTemplate('Hi {student}'), 'Hi {student}')
+  assertMatch(buildPaymentMessage('ענבר', 230, '2026-10', legacy, 4, undefined, 'עינת שמש'), /^ שלום עינת שמש :\)/)
 })
 
 // ── HEBREW_MONTHS ─────────────────────────────────────────────────────────

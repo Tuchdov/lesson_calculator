@@ -8,6 +8,7 @@ import styles from './EditableTable.module.css'
 const DURATION_COLS = ['60', '45', '30']
 const TYPE_LABEL = { regular: 'Regular', non_regular: 'Non-regular' }
 const TYPE_CHIP = { regular: styles.chipGreen, non_regular: styles.chipAmber }
+const STALE_HINT = 'Press Calculate again first'
 const CONFLICT_LABEL = { phone: 'phone', full_name: 'full name', price: 'prices' }
 const CONFLICT_HINT = 'These saved spellings disagree, so this is probably two students. Give their calendar events distinct names (e.g. add a surname), or remove the wrong spelling on Custom Prices, then press Calculate again.'
 
@@ -128,13 +129,19 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
   const errorMessage = batchState?.error || null
   // Saved spellings that contradict each other are probably two students.
   const nameConflict = row.name_conflicts?.length > 0
+  // A stale table (sendBlocked) still names the students it was calculated
+  // with, so an edit here would save under a spelling that may have been
+  // removed or remapped since. Edits wait for Calculate, like sending.
+  const editLocked = !!sendBlocked
 
   const handleStartAmountEdit = () => {
+    if (editLocked) return
     setAmountDraft(String(roundedAmount))
     setEditingAmount(true)
   }
 
   const handleSaveAmount = async () => {
+    if (editLocked) return
     const v = parseFloat(amountDraft)
     if (isNaN(v)) {
       setEditingAmount(false)
@@ -151,6 +158,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
   }
 
   const handleResetAmount = async () => {
+    if (editLocked) return
     try {
       // Clear the adjustment under every spelling it was saved under, so an
       // older one can't reappear after the reset.
@@ -165,6 +173,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
   }
 
   const handleSave = () => {
+    if (editLocked) return
     const parsed = {}
     for (const d of DURATION_COLS) {
       const v = parseFloat(draft?.[d])
@@ -201,6 +210,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
   }
 
   const handleSaveDetails = async () => {
+    if (editLocked) return
     if (!phone) {
       if (!validateIsraeliPhone(phoneInput)) {
         setPhoneError(true)
@@ -251,7 +261,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
     if (busy || needsReview || nameConflict || sendBlocked) return
     if (linkUsable) {
       const template = details.message || defaultMessage || undefined
-      const msg = buildPaymentMessage(effectiveName, roundedAmount, month, template, lessonCount, linkEntry.link)
+      const msg = buildPaymentMessage(lessonStudent, roundedAmount, month, template, lessonCount, linkEntry.link, effectiveName)
       window.open(buildWhatsAppUrl(phone, msg), '_blank', 'noopener')
       return
     }
@@ -307,9 +317,9 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
                     />
                   : <span
                       className={styles.priceEditable}
-                      title="Double-click to change this student's ₪/lesson rate"
+                      title={editLocked ? STALE_HINT : "Double-click to change this student's ₪/lesson rate"}
                       onDoubleClick={() => {
-                        if (editingAmount) return
+                        if (editingAmount || editLocked) return
                         setDraft({ '60': prices['60'], '45': prices['45'], '30': prices['30'] })
                         setEditing(true)
                       }}
@@ -346,7 +356,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
           ) : (
             <span
               className={styles.amountEditable}
-              title="Double-click to set a one-off amount due for this invoice"
+              title={editLocked ? STALE_HINT : 'Double-click to set a one-off amount due for this invoice'}
               onDoubleClick={() => {
                 if (editing) return
                 handleStartAmountEdit()
@@ -369,20 +379,20 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
               ⚠️ דרושה בדיקה
             </button>
           ) : needsDetails ? (
-            <button className={`${styles.waChipMissing} ${isExpanded ? styles.waChipActive : ''}`} onClick={handleToggleExpand}>
-              {!phone ? '📱 הוסף טלפון' : '⚠️ שם המשלם'}
+            <button className={`${styles.waChipMissing} ${isExpanded ? styles.waChipActive : ''}`} onClick={handleToggleExpand} disabled={editLocked && !isExpanded} title={editLocked ? STALE_HINT : undefined}>
+              {!phone ? '📱 הוסף טלפון' : '⚠️ הוסף שם משלם'}
             </button>
           ) : errorMessage ? (
-            <button className={styles.waChipError} onClick={handleSendClick} title={errorMessage} disabled={busy || sendBlocked}>
+            <button className={styles.waChipError} onClick={handleSendClick} title={sendBlocked ? STALE_HINT : errorMessage} disabled={busy || sendBlocked}>
               {busy ? '…' : '⚠️ נסה שוב'}
             </button>
           ) : linkUsable ? (
             <span className={styles.waReadyGroup}>
-              <button className={styles.waChipReady} onClick={handleSendClick} disabled={busy || sendBlocked}>📱 שלח</button>
-              <button className={styles.regenBtn} onClick={handleRegenerate} disabled={busy || sendBlocked} title="Create a new link">↻</button>
+              <button className={styles.waChipReady} onClick={handleSendClick} disabled={busy || sendBlocked} title={sendBlocked ? STALE_HINT : undefined}>📱 שלח</button>
+              <button className={styles.regenBtn} onClick={handleRegenerate} disabled={busy || sendBlocked} title={sendBlocked ? STALE_HINT : 'Create a new link'}>↻</button>
             </span>
           ) : (
-            <button className={styles.waChipPrepare} onClick={handleSendClick} disabled={busy || sendBlocked} title="Creates the payment link — click again to send once it's ready">
+            <button className={styles.waChipPrepare} onClick={handleSendClick} disabled={busy || sendBlocked} title={sendBlocked ? STALE_HINT : "Creates the payment link — click again to send once it's ready"}>
               {busy ? '…' : '🔗 הכן קישור'}
             </button>
           )}
@@ -392,7 +402,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
         <tr className={styles.expandRow}>
           <td colSpan={7} className={styles.expandCell}>
             <div className={styles.expandInner}>
-              <span className={styles.expandLabel}>📱 {row.student}:</span>
+              <span className={styles.expandLabel}>{phone ? `שם המשלם עבור ${row.student}:` : `📱 ${row.student}:`}</span>
               {!phone && (
                 <div className={styles.expandInputWrap}>
                   <input
@@ -413,7 +423,9 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
                   <input
                     type="text"
                     className={`${styles.phoneInput} ${nameError ? styles.phoneInputError : ''}`}
-                    placeholder="שם המשלם: פרטי ומשפחה (הורה, לתלמיד/ה צעיר/ה)"
+                    placeholder="שם פרטי ומשפחה"
+                    title="Who pays: the student, or a parent for a young student"
+                    aria-label={`שם המשלם עבור ${row.student}`}
                     value={nameInput}
                     onChange={e => { setNameInput(e.target.value); setNameError(false) }}
                     onKeyDown={e => e.key === 'Enter' && handleSaveDetails()}
@@ -422,7 +434,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
                   {nameError && <div className={styles.phoneErrorMsg}>נדרש שם פרטי ושם משפחה של המשלם</div>}
                 </div>
               )}
-              <button className={styles.btnSavePhone} onClick={handleSaveDetails}>שמור</button>
+              <button className={styles.btnSavePhone} onClick={handleSaveDetails} disabled={editLocked} title={editLocked ? STALE_HINT : undefined}>שמור</button>
               <button className={styles.btnCancelPhone} onClick={handleToggleExpand}>ביטול</button>
             </div>
           </td>

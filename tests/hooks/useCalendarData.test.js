@@ -133,4 +133,73 @@ describe('useCalendarData', () => {
     expect(result.current.rows[0].amount_due).toBe(300)
     expect(result.current.summary.total_amount_due).toBe(300)
   })
+  // Value: protects=a run still in flight when the account switches (reset) never fills the table with the previous account's students; fails_when=the runRef check after the fetch is removed or reset() stops bumping it; why_new=reset/runRef were untested; seam=none
+  it('discards a run that finishes after reset() and reports nothing from it', async () => {
+    const pending = deferred()
+    const failing = deferred()
+    fetchCalendarEvents.mockReturnValueOnce(pending.promise).mockReturnValueOnce(failing.promise)
+    const { result } = renderHook(() => useCalendarData(vi.fn(), config))
+
+    let first
+    act(() => { first = result.current.calculate('2026-03') })
+    expect(result.current.loading).toBe(true)
+    act(() => { result.current.reset() })
+    expect(result.current).toMatchObject({ rows: null, summary: null, loading: false, error: null, calculatedWith: null })
+    await act(async () => {
+      pending.resolve(events)
+      await first
+    })
+    expect(result.current).toMatchObject({ rows: null, summary: null, loading: false, error: null, calculatedWith: null })
+
+    let second
+    act(() => { second = result.current.calculate('2026-03') })
+    act(() => { result.current.reset() })
+    await act(async () => {
+      failing.reject(new Error('Token revoked'))
+      await second
+    })
+    expect(result.current).toMatchObject({ rows: null, loading: false, error: null })
+  })
+
+  // Value: protects=an older, slower Calculate (e.g. the previous month) cannot overwrite or un-load the newer one's rows, and calculatedWith records the config the shown rows came from; fails_when=stale runs are applied, or a stale run's finally clears loading for the newer run; why_new=only single-run paths were tested; seam=none
+  it('keeps the newest calculation when an older one finishes later', async () => {
+    const older = deferred()
+    const newer = deferred()
+    fetchCalendarEvents.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise)
+    const { result } = renderHook(() => useCalendarData(vi.fn(), config))
+
+    let first
+    let second
+    act(() => { first = result.current.calculate('2026-02') })
+    act(() => { second = result.current.calculate('2026-03') })
+    await act(async () => {
+      older.reject(new Error('Slow failure'))
+      await first
+    })
+    expect(result.current.loading).toBe(true)
+    expect(result.current.error).toBeNull()
+
+    await act(async () => {
+      newer.resolve(events)
+      await second
+    })
+    expect(result.current.loading).toBe(false)
+    expect(result.current.summary.month).toBe('2026-03')
+    expect(result.current.rows[0].amount_due).toBe(250)
+    expect(result.current.calculatedWith).toBe(config)
+
+    const late = deferred()
+    fetchCalendarEvents.mockReturnValueOnce(late.promise).mockResolvedValueOnce([])
+    let third
+    let fourth
+    act(() => { third = result.current.calculate('2026-01') })
+    await act(async () => { fourth = result.current.calculate('2026-04'); await fourth })
+    await act(async () => {
+      late.resolve(events)
+      await third
+    })
+    expect(result.current.summary).toEqual({ month: '2026-04', students: 0, total_amount_due: 0 })
+    expect(result.current.rows).toEqual([])
+    expect(result.current.loading).toBe(false)
+  })
 })

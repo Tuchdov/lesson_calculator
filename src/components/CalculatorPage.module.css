@@ -64,7 +64,8 @@
   transition: background 0.15s;
 }
 
-.btnSecondary:hover { background: var(--md-blue-tonal); }
+.btnSecondary:hover:not(:disabled) { background: var(--md-blue-tonal); }
+.btnSecondary:disabled { opacity: 0.5; cursor: default; }
 
 .error {
   background: var(--md-red-tonal);

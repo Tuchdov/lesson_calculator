@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useAuth } from './hooks/useAuth.js'
 import { useUserSettings } from './hooks/useUserSettings.js'
 import { useCalendarData } from './hooks/useCalendarData.js'
+import { normalizeStudentName } from './lib/calendarPayments.js'
 import { loadAmountOverrides, saveAmountOverride, loadPaymentLinks, savePaymentLink, loadReviewResolutions, saveReviewResolution } from './lib/payments.js'
 import { AuthScreen } from './components/AuthScreen.jsx'
 import { Sidebar } from './components/Sidebar.jsx'
@@ -29,6 +30,8 @@ export default function App() {
   // run that is still in flight when you change pages stays visible.
   const [preparing, setPreparing] = useState(false)
   const [prepareStatus, setPrepareStatus] = useState({})
+  // The account the in-memory state belongs to (see resetForAccount).
+  const lastEmailRef = useRef(null)
 
   // Guards navigation away from a page with unsaved changes (currently only
   // Custom Prices reports dirty state, e.g. a pending import not yet saved).
@@ -60,9 +63,19 @@ export default function App() {
     setAmountOverrides(next)
   }
 
+  // A Prepare-all run that finishes after a switch to another account must not
+  // write the previous account's links or progress into this one's state.
+  const sameAccount = (email) => lastEmailRef.current === email
   const handlePaymentLinkChange = async (month, student, link, amount, inputs) => {
-    const next = await savePaymentLink(userEmail, month, student, link, amount, inputs)
-    setPaymentLinks(next)
+    const email = userEmail
+    const next = await savePaymentLink(email, month, student, link, amount, inputs)
+    if (sameAccount(email)) setPaymentLinks(next)
+  }
+  const handlePrepareStatusChange = (update) => {
+    if (sameAccount(userEmail)) setPrepareStatus(update)
+  }
+  const handlePreparingChange = (value) => {
+    if (sameAccount(userEmail)) setPreparing(value)
   }
 
   const handleReviewResolutionChange = async (itemKey, resolution) => {
@@ -118,11 +131,12 @@ export default function App() {
   }, [effectiveConfig, settings.custom_prices, settings.customer_details])
   const calendar = useCalendarData(getValidAccessToken, calcConfig)
   const { reset: resetCalculation } = calendar
-  const knownStudents = useMemo(() => calendar.rows?.map(r => r.student) ?? [], [calendar.rows])
+  // Every spelling a row answers to, so an imported price under the plain
+  // calendar name (no notes or ages) isn't reported as unmatched.
+  const knownStudents = useMemo(() => [...new Set((calendar.rows ?? []).flatMap(r => [r.student, normalizeStudentName(r.student), ...(r.aliases ?? [])]))], [calendar.rows])
 
   // A re-auth signs the same account back in and keeps the table; a different
   // account must never see the previous one's students.
-  const lastEmailRef = useRef(null)
   const resetForAccount = useCallback(() => {
     resetCalculation()
     setPrepareStatus({})
@@ -168,9 +182,9 @@ export default function App() {
             paymentLinks={paymentLinks}
             onPaymentLinkChange={handlePaymentLinkChange}
             preparing={preparing}
-            onPreparingChange={setPreparing}
+            onPreparingChange={handlePreparingChange}
             prepareStatus={prepareStatus}
-            onPrepareStatusChange={setPrepareStatus}
+            onPrepareStatusChange={handlePrepareStatusChange}
             reviewResolutions={reviewResolutions}
             onReviewResolutionChange={handleReviewResolutionChange}
           />

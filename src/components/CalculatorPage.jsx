@@ -1,19 +1,25 @@
 import { EditableTable } from './EditableTable.jsx'
 import { resolveRowPrices, computeRowAmount, detailsFor, totalLessons, payerName, lessonStudentName } from '../lib/rowPricing.js'
 import { safeTotalsCsvBytes } from '../lib/csvExport.js'
-import { invoiceRecord, isValidAmount, isLinkUsable, hasFullName, linkInputs } from '../lib/payments.js'
-import { rowNeedsRecalc } from '../lib/calendarPayments.js'
+import { invoiceRecord, invoiceKey, isValidAmount, isLinkUsable, hasFullName, linkInputs } from '../lib/payments.js'
+import { rowNeedsRecalc, DEFAULT_LESSON_KEYWORDS, DEFAULT_CANCELLED_KEYWORDS, DEFAULT_PAID_CANCELLATION_PHRASES, DEFAULT_MAKEUP_PHRASES } from '../lib/calendarPayments.js'
 import { requestPaymentLink } from '../lib/paymentLinkClient.js'
 import styles from './CalculatorPage.module.css'
 
 const PREPARE_CONCURRENCY = 6
 // Settings applied at Calculate time; changing one later makes the table stale.
-const STALE_KEYS = ['lesson_keywords', 'cancelled_keywords', 'paid_cancellation_phrases', 'makeup_phrases', 'student_name_regex', 'calendar_id']
+// Compared as calculatePayments applies them, so saving a list that still
+// equals its default (null before, the default array after) is no change.
+const STALE_DEFAULTS = {
+  lesson_keywords: DEFAULT_LESSON_KEYWORDS,
+  cancelled_keywords: DEFAULT_CANCELLED_KEYWORDS,
+  paid_cancellation_phrases: DEFAULT_PAID_CANCELLATION_PHRASES,
+  makeup_phrases: DEFAULT_MAKEUP_PHRASES,
+  student_name_regex: null,
+  calendar_id: 'primary',
+}
+const effectiveSetting = (c, k) => JSON.stringify(c?.[k] ?? STALE_DEFAULTS[k])
 
-// Runs `worker` over `items` with at most `limit` in flight at once. Each
-// item settles independently the moment it's done — a caller updating state
-// per item (rather than waiting for the whole batch) is how a crash mid-run
-// still leaves everything that finished intact.
 // Marks rows whose amount isn't final yet, so a low total doesn't look settled.
 function csvStatus(row, unresolved, adjusted) {
   const parts = []
@@ -23,6 +29,10 @@ function csvStatus(row, unresolved, adjusted) {
   return parts.join('; ')
 }
 
+// Runs `worker` over `items` with at most `limit` in flight at once. Each
+// item settles independently the moment it's done — a caller updating state
+// per item (rather than waiting for the whole batch) is how a crash mid-run
+// still leaves everything that finished intact.
 async function runWithConcurrency(items, limit, worker) {
   let index = 0
   async function next() {
@@ -37,8 +47,11 @@ async function runWithConcurrency(items, limit, worker) {
 export function CalculatorPage({ getAccessToken, config, calendar, month, onMonthChange, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, defaultMessage, amountOverrides, onAmountOverrideChange, paymentLinks, onPaymentLinkChange, reviewResolutions, onReviewResolutionChange, preparing, onPreparingChange, prepareStatus, onPrepareStatusChange }) {
   const { rows, summary, loading, error, calculate, calculatedWith } = calendar
   // Link progress is owned by App so leaving the page mid-run can't make
-  // finished-looking rows mint a second link when you come back.
-  const setRowStatus = (student, status) => onPrepareStatusChange?.(prev => ({ ...prev, [student]: status }))
+  // finished-looking rows mint a second link when you come back. It is keyed
+  // by month too, so an error from one month never shows on another's table.
+  const statusMonth = summary?.month ?? month
+  const setRowStatus = (student, status) => onPrepareStatusChange?.(prev => ({ ...prev, [invoiceKey(statusMonth, student)]: status }))
+  const monthStatus = Object.fromEntries((rows ?? []).map(r => [r.student, prepareStatus?.[invoiceKey(statusMonth, r.student)]]))
 
   const handleRun = () => calculate(month)
 
@@ -56,10 +69,10 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
   const needsReview = billing.filter(b => b.unresolved > 0).length
   // Names are matched to saved students at Calculate time; a saved spelling or
   // a conflicting detail added since then can change the row or its safety check.
-  const namesStale = rows?.some(r => rowNeedsRecalc(r, customPrices, customerDetails)) ?? false
+  const namesStale = rows?.some(r => rowNeedsRecalc(r, customPrices, customerDetails, config?.prices)) ?? false
   // Settings that decide which events count, and how, were applied at
   // Calculate time too.
-  const settingsStale = !!calculatedWith && STALE_KEYS.some(k => JSON.stringify(calculatedWith[k] ?? null) !== JSON.stringify(config?.[k] ?? null))
+  const settingsStale = !!calculatedWith && Object.keys(STALE_DEFAULTS).some(k => effectiveSetting(calculatedWith, k) !== effectiveSetting(config, k))
   const stale = !!rows && (namesStale || settingsStale)
 
   const rowLink = (row, details) => {
@@ -72,7 +85,7 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
   const handlePrepareAll = async () => {
     if (!rows?.length || !summary || preparing || stale) return
     const eligible = billing
-      .filter(({ unresolved, row }) => unresolved === 0 && !row.name_conflicts?.length && prepareStatus?.[row.student] !== 'loading')
+      .filter(({ unresolved, row }) => unresolved === 0 && !row.name_conflicts?.length && monthStatus[row.student] !== 'loading')
       .map(({ row, amount }) => {
         const details = detailsFor(customerDetails, row)
         return { row, details, phone: details.phone, amount, ...rowLink(row, details) }
@@ -85,7 +98,7 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
     onPreparingChange?.(true)
     onPrepareStatusChange?.(prev => {
       const next = { ...prev }
-      for (const { row } of eligible) next[row.student] = 'loading'
+      for (const { row } of eligible) next[invoiceKey(summary.month, row.student)] = 'loading'
       return next
     })
 
@@ -171,7 +184,7 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
 
       {stale && (
         <div className={styles.staleNote} role="status">
-          {namesStale ? 'Saved students' : 'Settings'} changed since this calculation. Press Calculate again before sending; links and WhatsApp are paused until then.
+          {namesStale && settingsStale ? 'Saved students and Settings' : namesStale ? 'Saved students' : 'Settings'} changed since this calculation. Press Calculate again before sending; links and WhatsApp are paused until then.
         </div>
       )}
 
@@ -190,7 +203,7 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
           paymentLinks={paymentLinks}
           onPaymentLinkChange={onPaymentLinkChange}
           getAccessToken={getAccessToken}
-          prepareStatus={prepareStatus}
+          prepareStatus={monthStatus}
           onRowStatusChange={setRowStatus}
           sendBlocked={stale}
           reviewResolutions={reviewResolutions}

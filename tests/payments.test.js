@@ -326,9 +326,11 @@ Deno.test('isLinkUsable: a stored link goes stale when what it was minted with c
 Deno.test('isLinkUsable: a link saved before fingerprints is reused only while the defaults apply', () => {
   const links = { '2026-10:ענבר': { link: 'https://x', amount: 230 } }
   const row = { student: 'ענבר' }
-  const base = { payerName: 'עינת שמש', phone: '050-1111111', lessonStudent: 'ענבר' }
+  const base = { payerName: 'ענבר', phone: '050-1111111', lessonStudent: 'ענבר' }
   assertEquals(isLinkUsable(links, '2026-10', row, 230, linkInputs({ ...base, paymentProfile: 'standard' })), true)
   assertEquals(isLinkUsable(links, '2026-10', row, 230, linkInputs({ ...base, paymentProfile: 'extended' })), false)
+  // Minted before a separate payer was saved, so it names the student on the payment page.
+  assertEquals(isLinkUsable(links, '2026-10', row, 230, linkInputs({ ...base, payerName: 'עינת שמש' })), false)
 })
 
 // Value: protects=a saved fingerprint round-trips through the store; fails_when=savePaymentLink drops inputs; why_new=new field; seam=none

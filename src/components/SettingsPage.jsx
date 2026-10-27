@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { buildPaymentMessage, DEFAULT_MESSAGE_TEMPLATE } from '../lib/whatsapp.js'
-import { DEFAULT_CANCELLED_KEYWORDS, DEFAULT_PAID_CANCELLATION_PHRASES, DEFAULT_LESSON_KEYWORDS, DEFAULT_MAKEUP_PHRASES } from '../lib/calendarPayments.js'
+import { buildPaymentMessage, DEFAULT_MESSAGE_TEMPLATE, upgradeMessageTemplate } from '../lib/whatsapp.js'
+import { DEFAULT_CANCELLED_KEYWORDS, DEFAULT_PAID_CANCELLATION_PHRASES, DEFAULT_LESSON_KEYWORDS, DEFAULT_MAKEUP_PHRASES, MAKEUP_AUTO_MIN, MAKEUP_AUTO_MAX } from '../lib/calendarPayments.js'
 import styles from './SettingsPage.module.css'
 
 const DURATION_LABELS = { '60': '60 min', '45': '45 min', '30': '30 min' }
@@ -26,7 +26,7 @@ function initialList(saved, defaults) {
 export function SettingsPage({ config, settings, onSave }) {
   const [prices, setPrices] = useState(() => initialPrices(settings, config))
   const [messageTemplate, setMessageTemplate] = useState(
-    () => settings?.default_message || DEFAULT_MESSAGE_TEMPLATE
+    () => upgradeMessageTemplate(settings?.default_message) || DEFAULT_MESSAGE_TEMPLATE
   )
   const [paidCancelPhrases, setPaidCancelPhrases] = useState(() => initialList(settings?.paid_cancellation_phrases, DEFAULT_PAID_CANCELLATION_PHRASES))
   const [keywords, setKeywords] = useState(() => initialList(settings?.cancelled_keywords, config?.cancelled_keywords ?? DEFAULT_CANCELLED_KEYWORDS))
@@ -78,7 +78,7 @@ export function SettingsPage({ config, settings, onSave }) {
     setSaved(true)
   }
 
-  const preview = buildPaymentMessage('דנה', 300, currentMonth(), messageTemplate, 4)
+  const preview = buildPaymentMessage('נועה', 300, currentMonth(), messageTemplate, 4, undefined, 'דנה לוי')
 
   return (
     <div className={styles.page}>
@@ -124,10 +124,11 @@ export function SettingsPage({ config, settings, onSave }) {
           </button>
         </div>
         <p className={styles.tokenHint}>
-          Use <code>{'{student}'}</code>, <code>{'{amount}'}</code>,{' '}
-          <code>{'{month}'}</code>, <code>{'{lessons}'}</code>, and{' '}
-          <code>{'{link}'}</code> — they're replaced automatically per
-          student. If <code>{'{link}'}</code> isn't in the template, the
+          Use <code>{'{payer}'}</code> (who pays: a parent, else the
+          student), <code>{'{student}'}</code> (the student),{' '}
+          <code>{'{amount}'}</code>, <code>{'{month}'}</code>,{' '}
+          <code>{'{lessons}'}</code>, and <code>{'{link}'}</code> — they're
+          replaced automatically per student. If <code>{'{link}'}</code> isn't in the template, the
           payment link is added at the end instead.
         </p>
         <textarea
@@ -178,7 +179,7 @@ export function SettingsPage({ config, settings, onSave }) {
 
       <PhraseListCard
         title="Make-up phrases"
-        hint="A 30–89 minute lesson with a non-standard length (e.g. 75 min) whose title contains one of these is charged as the standard lesson inside it, with the extra minutes free, instead of asking you each month. Shorter or longer events still ask you."
+        hint={`A ${MAKEUP_AUTO_MIN}–${MAKEUP_AUTO_MAX - 1} minute lesson with a non-standard length (e.g. 75 min) whose title contains one of these is charged as the standard lesson inside it, with the extra minutes free, instead of asking you each month. Shorter or longer events still ask you.`}
         items={makeupPhrases}
         defaults={DEFAULT_MAKEUP_PHRASES}
         onChange={listChanger(setMakeupPhrases)}

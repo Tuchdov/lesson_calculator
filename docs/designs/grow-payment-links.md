@@ -124,7 +124,10 @@ thread they already use.
    This supersedes an earlier decision to batch them into one settings write: that write
    still spread a settings snapshot captured before the batch began, wiping edits made
    during the ~15 seconds of preparing, and an interruption at student 34 lost all 34.
-5. **Invalidation is amount-only.** A stored link is reused unless the amount changed.
+5. **Invalidation is amount-only.** *(Superseded 2026-10-27: a stored link now also goes
+   stale when the payer, phone, student, profile or invoice text it was minted with
+   changes; see "Payload additions". Links stored before then keep the old rule while the
+   student uses the defaults.)* A stored link is reused unless the amount changed.
    Accepted residual: correcting a name or phone after a link was minted leaves the stored
    link carrying the old value, which is cosmetic on the payment page while the amount
    charged stays correct.
@@ -261,13 +264,14 @@ both handling and a test requirement.
     link; links stored before this only carry the defaults.
   - Validation (400 before Make is called): `number_of_lessons` must be a non-negative
     integer; `payment_profile` must match `/^[\p{L}\p{N}_-]{1,40}$/u` (blank → `standard`);
-    the rendered invoice text is capped at 200 characters.
+    the rendered invoice text is capped at 200 characters; `studentName` (the payer) must be
+    a non-empty string and both names at most 80 characters.
   - Live scenario ("Integration Webhooks", 2026-10-27): the Router sends any profile other
     than `extended` (case-insensitive) to the standard route, so an unknown profile falls
     back rather than failing. Both Grow modules use `invoice_description` as the product
     name and fall back to the default line (`פיתוח קול - <student_name> - תשלום <previous month> <YY>`) when it is empty.
-  - A link already prepared for the month is reused while the amount is unchanged, so
-    after changing a student's profile or invoice text use ↻ to mint a fresh one.
+  - A prepared link is reused only while the amount and what it was minted with are
+    unchanged; ↻ forces a fresh link (for example, an expired one).
 - **Getting the real response required two Make-side fixes**, not just filling in fields:
   the scenario had to be turned ON (an inactive scenario returns
   `"There is no scenario listening for this webhook"`, 410), and the trigger needed a

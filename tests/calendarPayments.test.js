@@ -691,8 +691,19 @@ Deno.test('savedNameConflicts: equivalent phones, names and prices are not confl
   const details = { 'אלה עוז (9.5)': { phone: '050-1234567', full_name: 'נועה  עוז' }, 'אלה עוז (אמה נועה)': { phone: '0501234567', full_name: 'נועה עוז' } }
   const custom = { 'אלה עוז (9.5)': { '60': 240, '45': 200, '30': 180 }, 'אלה עוז (אמה נועה)': { regular: { '60': 240, '45': 200, '30': 180 } } }
   assertEquals(savedNameConflicts(['אלה עוז (9.5)', 'אלה עוז (אמה נועה)'], custom, details), [])
-  assertEquals(savedNameConflicts(['a', 'b'], { a: { '60': 240 }, b: { '60': 250 } }, {}), ['price'])
+  assertEquals(savedNameConflicts(['a', 'b'], { a: { '60': 240, '45': 200, '30': 180 }, b: { '60': 250, '45': 200, '30': 180 } }, {}), ['price'])
   assertEquals(savedNameConflicts(['a', 'b'], { a: { regular: {}, non_regular: {} }, b: { '60': 250 } }, {}), [])
+})
+
+// Value: protects=two spellings conflict on price only when they would bill differently; fails_when=a partial entry that falls back to the defaults is compared raw and blocks sending; why_new=billedPriceKey resolves through resolvePriceTable; seam=none
+Deno.test('savedNameConflicts: prices are compared as billed, defaults included', () => {
+  const defaults = { regular: { '60': 240, '45': 200, '30': 180 }, non_regular: { '60': 260, '45': 220, '30': 190 } }
+  // Incomplete flat entries both fall back to the defaults.
+  assertEquals(savedNameConflicts(['a', 'b'], { a: { '60': 240 }, b: { '60': 250 } }, {}, defaults), [])
+  // A regular-only tier matching the defaults bills like the defaults for regular, differently for non-regular.
+  assertEquals(savedNameConflicts(['a', 'b'], { a: { regular: { '60': 240 } }, b: { regular: { '60': 240, '45': 200, '30': 180 }, non_regular: { '60': 260, '45': 220, '30': 190 } } }, {}, defaults), ['price'])
+  // A flat price and a tiered one whose gaps the defaults fill the same way.
+  assertEquals(savedNameConflicts(['a', 'b'], { a: { '60': 300, '45': 200, '30': 180 }, b: { regular: { '60': 300 }, non_regular: { '60': 300, '45': 200, '30': 180 } } }, {}, defaults), [])
 })
 
 // Value: protects=a conflicting spelling added after Calculate pauses sending until recalculation; fails_when=only the row key is compared, so the stale conflict-free row can be billed; why_new=rowNeedsRecalc is new; seam=none
@@ -707,4 +718,23 @@ Deno.test('rowNeedsRecalc: flags a row whose spellings or conflicts changed sinc
   assertEquals(rowNeedsRecalc(row, custom, later), true)
   // A phone saved from the table under the row's own key changes nothing.
   assertEquals(rowNeedsRecalc(row, custom, { 'ענבר 11.5 (אמא עינת)': { phone: '050-1111111', full_name: 'עינת שמש' } }), false)
+})
+
+// Value: protects=a contradicting phone saved under a spelling the row already merges (same key, same aliases) pauses sending until recalculation, and clearing a conflict is noticed too; fails_when=rowNeedsRecalc compares only the key and aliases, so a row that is now probably two students can still be billed; why_new=the existing rowNeedsRecalc test only adds a new alias, never changes conflicts alone; seam=none
+Deno.test('rowNeedsRecalc: a conflict appearing or clearing among existing spellings needs recalculation', () => {
+  const custom = { 'ענבר 11.5 (אמא עינת)': { '60': 230, '45': 200, '30': 180 } }
+  const details = { 'ענבר 3.2 (אמא רות)': { phone: '050-2222222' } }
+  const events = [makeLessonEvent('ענבר - פיתוח קול', '2026-10-05T10:00:00Z', '2026-10-05T11:00:00Z')]
+  const [row] = calculatePayments(events, { ...BASE_CONFIG, custom_prices: custom, customer_details: details }, '2026-10').rows
+  assertEquals(row.name_conflicts, [])
+  assertEquals(rowNeedsRecalc(row, custom, details), false)
+  // A different phone is saved under the priced spelling: same key and aliases, new conflict.
+  const conflicting = { ...details, 'ענבר 11.5 (אמא עינת)': { phone: '050-1111111' } }
+  assertEquals(rowNeedsRecalc(row, custom, conflicting), true)
+  // The same phone typed another way is not a conflict.
+  assertEquals(rowNeedsRecalc(row, custom, { ...details, 'ענבר 11.5 (אמא עינת)': { phone: '0502222222' } }), false)
+
+  const [conflictedRow] = calculatePayments(events, { ...BASE_CONFIG, custom_prices: custom, customer_details: conflicting }, '2026-10').rows
+  assertEquals(conflictedRow.name_conflicts, ['phone'])
+  assertEquals(rowNeedsRecalc(conflictedRow, custom, { ...conflicting, 'ענבר 11.5 (אמא עינת)': { phone: '050-2222222' } }), true)
 })

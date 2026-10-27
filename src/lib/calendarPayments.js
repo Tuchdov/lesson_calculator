@@ -4,8 +4,9 @@ export const DEFAULT_CANCELLED_KEYWORDS = ['בוטל', 'מבוטל']
 // Titles containing one of these mark a make-up add-on: a non-standard
 // duration is charged as the standard lesson inside it, extra minutes free.
 export const DEFAULT_MAKEUP_PHRASES = []
-const MAKEUP_AUTO_MIN = 30
-const MAKEUP_AUTO_MAX = 90
+// Make-up phrases auto-price events of MAKEUP_AUTO_MIN to MAKEUP_AUTO_MAX - 1 minutes.
+export const MAKEUP_AUTO_MIN = 30
+export const MAKEUP_AUTO_MAX = 90
 // A parent's name trails the student's in titles and saved keys
 // ("ענבר אמא עינת", "אלה עוז ✨ אמא נועה") — everything from the marker on is
 // dropped. A marker in first position is kept so the name is never emptied.
@@ -120,42 +121,43 @@ const CONFLICT_FIELDS = {
   phone: v => String(v).replace(/\D/g, ''),
   full_name: v => String(v).trim().replace(/\s+/g, ' '),
 }
-export function savedNameConflicts(keys, customPrices = {}, customerDetails = {}) {
+export function savedNameConflicts(keys, customPrices = {}, customerDetails = {}, defaults = {}) {
   const conflicts = []
   for (const [field, normalize] of Object.entries(CONFLICT_FIELDS)) {
     const values = new Set(keys.map(k => customerDetails?.[k]?.[field]).filter(v => v !== '' && v != null).map(normalize).filter(Boolean))
     if (values.size > 1) conflicts.push(field)
   }
-  const prices = new Set(keys.map(k => normalizedPriceKey(customPrices?.[k])).filter(Boolean))
+  const prices = new Set(keys.map(k => billedPriceKey(k, customPrices, defaults)).filter(Boolean))
   if (prices.size > 1) conflicts.push('price')
   return conflicts
 }
 
-// One comparable string per custom price, mirroring resolvePriceTable: a flat
-// entry applies to both tiers, and a single tier stands in for the missing one.
-// Null when the entry holds no price at all.
-function normalizedPriceKey(entry) {
-  if (!entry || typeof entry !== 'object') return null
-  const tiered = 'regular' in entry || 'non_regular' in entry
-  const regular = tiered ? (entry.regular ?? entry.non_regular) : entry
-  const nonRegular = tiered ? (entry.non_regular ?? entry.regular) : entry
-  const nums = t => Object.fromEntries(['60', '45', '30'].map(d => [d, Number(t?.[d])]).filter(([, v]) => Number.isFinite(v)))
-  const r = nums(regular)
-  const n = nums(nonRegular)
-  if (!Object.keys(r).length && !Object.keys(n).length) return null
-  return JSON.stringify({ r, n })
+// What a saved key's custom price actually bills, per tier, via the same
+// resolvePriceTable the calculation uses (so a partial flat price that falls
+// back to the defaults compares as the defaults). Null when the key has no
+// price filled in.
+function billedPriceKey(key, customPrices, defaults) {
+  const entry = customPrices?.[key]
+  const filled = v => Number.isFinite(Number(v)) && v !== '' && v != null
+  const hasPrice = entry && typeof entry === 'object' && Object.values(entry).some(v => (v && typeof v === 'object') ? Object.values(v).some(filled) : filled(v))
+  if (!hasPrice) return null
+  const tier = regular => {
+    const t = resolvePriceTable(key, regular, defaults?.regular ?? {}, defaults?.non_regular ?? {}, customPrices)
+    return ['60', '45', '30'].map(d => Number(t?.[d]))
+  }
+  return JSON.stringify([tier(true), tier(false)])
 }
 
 // A calculated row was matched to saved students at Calculate time. It needs
 // recalculating (and sending waits) when, with the saved students as they are
 // now, its key, its other spellings or its conflicts would come out different,
 // e.g. a conflicting spelling added on Custom Prices since then.
-export function rowNeedsRecalc(row, customPrices = {}, customerDetails = {}) {
+export function rowNeedsRecalc(row, customPrices = {}, customerDetails = {}, defaults = {}) {
   const now = resolveSavedStudent(normalizeStudentName(row.student), customPrices, customerDetails)
   if (now.key !== row.student) return true
   const same = (a, b) => [...a].sort().join('\u0000') === [...b].sort().join('\u0000')
   if (!same(now.aliases, row.aliases ?? [])) return true
-  return !same(savedNameConflicts([now.key, ...now.aliases], customPrices, customerDetails), row.name_conflicts ?? [])
+  return !same(savedNameConflicts([now.key, ...now.aliases], customPrices, customerDetails, defaults), row.name_conflicts ?? [])
 }
 
 function cleanNameCandidate(name) {
@@ -370,7 +372,7 @@ export function calculatePayments(events, config, monthStr) {
     rows.push({
       student,
       aliases: aliases[student] ?? [],
-      name_conflicts: savedNameConflicts([student, ...(aliases[student] ?? [])], customPrices, customerDetails),
+      name_conflicts: savedNameConflicts([student, ...(aliases[student] ?? [])], customPrices, customerDetails, config.prices),
       student_type: (regular || forceRegular.has(student)) ? 'regular' : 'non_regular',
       lessons_60: s.count_60,
       lessons_45: s.count_45,

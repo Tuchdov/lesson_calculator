@@ -52,8 +52,9 @@ async function verifyCaller(accessToken, { allowedEmail, clientId, fetchImpl }) 
 }
 
 // Confirmed against the live Make scenario (T1): the webhook expects
-// {customer_name, amount, phone, description, invoice_description,
-// payment_profile, number_of_lessons?} (see createPaymentLink) and, on
+// {customer_name, student_name, amount, phone, description,
+// invoice_description, payment_profile, number_of_lessons?} (see
+// createPaymentLink) and, on
 // success, returns
 // {status: 1, err: {}, data: {paymentLinkProcessId, paymentLinkProcessToken,
 // url}}. Grow's amount is shekels, sent as-is — no agorot conversion.
@@ -126,10 +127,14 @@ export async function createPaymentLink({
     throw new ServiceError(400, 'Invalid phone number.')
   }
 
-  if (lessonStudent != null && typeof lessonStudent !== 'string') {
+  if (typeof studentName !== 'string' || !studentName.trim() || studentName.trim().length > MAX_STUDENT_NAME) {
+    throw new ServiceError(400, 'Invalid name.')
+  }
+  if (lessonStudent != null && (typeof lessonStudent !== 'string' || lessonStudent.trim().length > MAX_STUDENT_NAME)) {
     throw new ServiceError(400, 'Invalid student name.')
   }
-  const student = lessonStudent?.trim().slice(0, MAX_STUDENT_NAME) || studentName
+  const payer = studentName.trim()
+  const student = lessonStudent?.trim() || payer
 
   if (!validNumberOfLessons(numberOfLessons)) {
     throw new ServiceError(400, 'Invalid number of lessons.')
@@ -161,7 +166,7 @@ export async function createPaymentLink({
     webhookUrl,
     apiKey,
     payload: {
-      customer_name: studentName,
+      customer_name: payer,
       student_name: student,
       amount,
       phone: normalizePhoneForGrow(phone),
