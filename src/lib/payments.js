@@ -65,7 +65,8 @@ function readRecord(key, storage) {
   const raw = storage.getItem(key)
   if (!raw) return {}
   try {
-    return JSON.parse(raw)
+    const value = JSON.parse(raw)
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
   } catch {
     return {}
   }
@@ -91,7 +92,19 @@ function withRecord(key, storage, mutate) {
 
 export async function loadPaymentLinks(email, storage = globalThis.localStorage) {
   const key = LINKS_KEY_PREFIX + await sha256Hex(email)
-  return readRecord(key, storage)
+  return withRecord(key, storage, (all) => {
+    const now = new Date()
+    const cutoff = now.getFullYear() * 12 + now.getMonth() - 5
+    for (const invoice of Object.keys(all)) {
+      const match = /^(\d{4})-(\d{2}):/.exec(invoice)
+      if (match && Number(match[2]) >= 1 && Number(match[2]) <= 12 && Number(match[1]) * 12 + Number(match[2]) - 1 < cutoff) delete all[invoice]
+    }
+  })
+}
+
+// Migration reads without pruning or deleting the original browser records.
+export async function loadLegacyPaymentLinks(email, storage = globalThis.localStorage) {
+  return readRecord(LINKS_KEY_PREFIX + await sha256Hex(email), storage)
 }
 
 export async function savePaymentLink(email, month, student, link, amount, storage = globalThis.localStorage) {

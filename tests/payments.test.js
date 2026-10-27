@@ -132,28 +132,28 @@ Deno.test('loadPaymentLinks: returns empty object when key absent', async () => 
 
 Deno.test('savePaymentLink + loadPaymentLinks: round-trips one entry', async () => {
   const stub = makeStub()
-  await savePaymentLink('user@example.com', '2026-08', 'רחל כהן', 'https://pay.grow.link/abc', 487.5, stub)
+  await savePaymentLink('user@example.com', '2099-08', 'רחל כהן', 'https://pay.grow.link/abc', 487.5, stub)
   const links = await loadPaymentLinks('user@example.com', stub)
-  assertEquals(links, { '2026-08:רחל כהן': { link: 'https://pay.grow.link/abc', amount: 487.5 } })
+  assertEquals(links, { '2099-08:רחל כהן': { link: 'https://pay.grow.link/abc', amount: 487.5 } })
 })
 
 Deno.test('savePaymentLink: writing a second link preserves the first (crash-safe batch writes)', async () => {
   const stub = makeStub()
-  await savePaymentLink('user@example.com', '2026-08', 'Alice', 'https://pay.grow.link/a', 300, stub)
-  await savePaymentLink('user@example.com', '2026-08', 'Bob', 'https://pay.grow.link/b', 450, stub)
+  await savePaymentLink('user@example.com', '2099-08', 'Alice', 'https://pay.grow.link/a', 300, stub)
+  await savePaymentLink('user@example.com', '2099-08', 'Bob', 'https://pay.grow.link/b', 450, stub)
   const links = await loadPaymentLinks('user@example.com', stub)
   assertEquals(Object.keys(links).length, 2)
-  assertEquals(links['2026-08:Alice'].link, 'https://pay.grow.link/a')
-  assertEquals(links['2026-08:Bob'].link, 'https://pay.grow.link/b')
+  assertEquals(links['2099-08:Alice'].link, 'https://pay.grow.link/a')
+  assertEquals(links['2099-08:Bob'].link, 'https://pay.grow.link/b')
 })
 
 Deno.test('savePaymentLink: same student, different months, do not collide', async () => {
   const stub = makeStub()
-  await savePaymentLink('user@example.com', '2026-07', 'Alice', 'https://pay.grow.link/july', 300, stub)
-  await savePaymentLink('user@example.com', '2026-08', 'Alice', 'https://pay.grow.link/aug', 450, stub)
+  await savePaymentLink('user@example.com', '2099-07', 'Alice', 'https://pay.grow.link/july', 300, stub)
+  await savePaymentLink('user@example.com', '2099-08', 'Alice', 'https://pay.grow.link/aug', 450, stub)
   const links = await loadPaymentLinks('user@example.com', stub)
-  assertEquals(links['2026-07:Alice'].amount, 300)
-  assertEquals(links['2026-08:Alice'].amount, 450)
+  assertEquals(links['2099-07:Alice'].amount, 300)
+  assertEquals(links['2099-08:Alice'].amount, 450)
 })
 
 // Regression guard for a code-review finding: "Prepare all links" fires
@@ -167,12 +167,12 @@ Deno.test('savePaymentLink: concurrent writes to different students do not clobb
   const stub = makeStub()
   const students = Array.from({ length: 10 }, (_, i) => `Student${i}`)
   await Promise.all(students.map((student, i) =>
-    savePaymentLink('user@example.com', '2026-08', student, `https://pay.grow.link/${i}`, 100 + i, stub)
+    savePaymentLink('user@example.com', '2099-08', student, `https://pay.grow.link/${i}`, 100 + i, stub)
   ))
   const links = await loadPaymentLinks('user@example.com', stub)
   assertEquals(Object.keys(links).length, students.length)
   for (let i = 0; i < students.length; i++) {
-    assertEquals(links[`2026-08:${students[i]}`], { link: `https://pay.grow.link/${i}`, amount: 100 + i })
+    assertEquals(links[`2099-08:${students[i]}`], { link: `https://pay.grow.link/${i}`, amount: 100 + i })
   }
 })
 
@@ -259,4 +259,16 @@ Deno.test('loadAmountOverrides: returns empty object when stored JSON is corrupt
 
 Deno.test('getStoredOverride: returns null when overrides object itself is null', () => {
   assertEquals(getStoredOverride(null, '2026-08', 'Alice'), null)
+})
+
+Deno.test('loadPaymentLinks removes old months and persists the pruning', async () => {
+  const stub = makeStub()
+  const now = new Date()
+  const recent = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  await savePaymentLink('prune@example.com', '2000-01', 'Old', 'https://example.com/old', 1, stub)
+  await savePaymentLink('prune@example.com', recent, 'Recent', 'https://example.com/new', 2, stub)
+  const links = await loadPaymentLinks('prune@example.com', stub)
+  assertEquals(Object.keys(links), [`${recent}:Recent`])
+  const key = 'vocalCalc:paymentLinks:' + await sha256Hex('prune@example.com')
+  assertEquals(JSON.parse(stub.getItem(key)), links)
 })
