@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useAuth } from './hooks/useAuth.js'
 import { useUserSettings } from './hooks/useUserSettings.js'
 import { useCalendarData } from './hooks/useCalendarData.js'
-import { normalizeStudentName } from './lib/calendarPayments.js'
+import { normalizeStudentName, currentMonthKey } from './lib/calendarPayments.js'
 import { loadAmountOverrides, saveAmountOverride, loadPaymentLinks, savePaymentLink, loadReviewResolutions, saveReviewResolution } from './lib/payments.js'
 import { AuthScreen } from './components/AuthScreen.jsx'
 import { Sidebar } from './components/Sidebar.jsx'
@@ -10,11 +10,6 @@ import { CalculatorPage } from './components/CalculatorPage.jsx'
 import { CustomPricesPage } from './components/CustomPricesPage.jsx'
 import { SettingsPage } from './components/SettingsPage.jsx'
 import styles from './App.module.css'
-
-function currentMonth() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
 
 export default function App() {
   const { accessToken, userEmail, signIn, signOut, error: authError, getValidAccessToken } = useAuth()
@@ -25,7 +20,7 @@ export default function App() {
   const [amountOverrides, setAmountOverrides] = useState({})
   const [paymentLinks, setPaymentLinks] = useState({})
   const [reviewResolutions, setReviewResolutions] = useState({})
-  const [month, setMonth] = useState(currentMonth)
+  const [month, setMonth] = useState(currentMonthKey)
   // Payment-link progress per student; kept here (not in CalculatorPage) so a
   // run that is still in flight when you change pages stays visible.
   const [preparing, setPreparing] = useState(false)

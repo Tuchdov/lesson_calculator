@@ -100,9 +100,10 @@ export function isValidPaymentProfile(profile) {
 export function buildGrowDescription(studentName, monthStr, template) {
   const monthName = monthNameFromKey(monthStr)
   if (!template) return `תשלום עבור שיעורי שירה - ${studentName} - ${monthName}`
+  // One pass, so a name that itself contains "{month}" is not substituted again.
+  const values = { student: studentName ?? '', month: monthName ?? '' }
   return template
-    .replaceAll('{student}', () => studentName ?? '')
-    .replaceAll('{month}', () => monthName ?? '')
+    .replace(/\{(student|month)\}/g, (_, token) => values[token])
     .replace(/\s+/g, ' ')
     .trim()
 }

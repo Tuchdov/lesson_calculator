@@ -345,3 +345,8 @@ Deno.test('savePaymentLink: stores the inputs a link was minted with', async () 
   const links = await loadPaymentLinks('user@example.com', stub)
   assertEquals(links['2026-10:ענבר'], { link: 'https://x', amount: 230, inputs: '{"payer":"עינת שמש"}' })
 })
+
+// Value: protects=a student name that contains "{month}" shows up as typed in the invoice text instead of being replaced by the month; fails_when={student} and {month} are substituted in two passes on the same string; why_new=sequential replaceAll re-scanned the inserted name; seam=none
+Deno.test('buildGrowDescription: tokens inside an inserted name are not substituted again', () => {
+  assertEquals(buildGrowDescription('דנה {month}', '2026-08', 'שיעורים - {student} - {month}'), 'שיעורים - דנה {month} - אוגוסט')
+})

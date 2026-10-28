@@ -1,16 +1,11 @@
 import { useState } from 'react'
 import { buildPaymentMessage, DEFAULT_MESSAGE_TEMPLATE } from '../lib/whatsapp.js'
-import { DEFAULT_CANCELLED_KEYWORDS, DEFAULT_PAID_CANCELLATION_PHRASES, DEFAULT_LESSON_KEYWORDS, DEFAULT_MAKEUP_PHRASES, MAKEUP_AUTO_MIN, MAKEUP_AUTO_MAX } from '../lib/calendarPayments.js'
+import { DEFAULT_CANCELLED_KEYWORDS, DEFAULT_PAID_CANCELLATION_PHRASES, DEFAULT_LESSON_KEYWORDS, DEFAULT_MAKEUP_PHRASES, MAKEUP_AUTO_MIN, MAKEUP_AUTO_MAX, currentMonthKey } from '../lib/calendarPayments.js'
 import styles from './SettingsPage.module.css'
 
 const DURATION_LABELS = { '60': '60 min', '45': '45 min', '30': '30 min' }
 const TYPES = ['regular', 'non_regular']
 const TYPE_LABEL = { regular: 'Regular', non_regular: 'Non-regular' }
-
-function currentMonth() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
 
 function initialPrices(settings, config) {
   const saved = settings?.default_prices
@@ -78,7 +73,7 @@ export function SettingsPage({ config, settings, onSave }) {
     setSaved(true)
   }
 
-  const preview = buildPaymentMessage('דנה לוי', 300, currentMonth(), messageTemplate, 4)
+  const preview = buildPaymentMessage('דנה לוי', 300, currentMonthKey(), messageTemplate, 4)
 
   return (
     <div className={styles.page}>

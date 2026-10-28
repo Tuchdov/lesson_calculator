@@ -10,6 +10,8 @@ import {
   isTargetLesson,
   lessonDurationMinutes,
   normalizeStudentName,
+  hasSavedPrice,
+  currentMonthKey,
   resolvePriceTable,
   resolveSavedStudent,
   savedNameConflicts,
@@ -748,4 +750,19 @@ Deno.test('rowNeedsRecalc: a conflict appearing or clearing among existing spell
   const [conflictedRow] = calculatePayments(events, { ...BASE_CONFIG, custom_prices: custom, customer_details: conflicting }, '2026-10').rows
   assertEquals(conflictedRow.name_conflicts, ['phone'])
   assertEquals(rowNeedsRecalc(conflictedRow, custom, { ...conflicting, 'ענבר 11.5 (אמא עינת)': { phone: '050-2222222' } }), true)
+})
+
+// Value: protects=Custom Prices and billing agree on what counts as a saved price (flat or tiered, number or typed string), and blank or non-numeric entries do not; fails_when=the two checks use different parsing again, so an entry the page accepts is not billed or the reverse; why_new=hasSavedPrice replaces two copies; seam=none
+Deno.test('hasSavedPrice: any filled number in a flat or tiered entry', () => {
+  assertEquals(hasSavedPrice({ '60': 230, '45': '', '30': '' }), true)
+  assertEquals(hasSavedPrice({ regular: { '60': '', '45': '150' }, non_regular: { '60': '' } }), true)
+  assertEquals(hasSavedPrice({ '60': '200₪' }), true)
+  assertEquals(hasSavedPrice({ '60': '', '45': null, '30': 'abc' }), false)
+  assertEquals(hasSavedPrice({ regular: { '60': '' } }), false)
+  assertEquals(hasSavedPrice(undefined), false)
+})
+
+Deno.test('currentMonthKey: formats YYYY-MM with a zero-padded month', () => {
+  assertEquals(currentMonthKey(new Date(2026, 0, 15)), '2026-01')
+  assertEquals(currentMonthKey(new Date(2026, 9, 28)), '2026-10')
 })

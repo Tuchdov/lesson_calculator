@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { validateIsraeliPhone } from '../lib/whatsapp.js'
 import { DEFAULT_PAYMENT_PROFILE, isValidPaymentProfile, buildGrowDescription, MAX_INVOICE_DESCRIPTION } from '../lib/payments.js'
 import { DURATION_LABELS, TYPES, TYPE_LABEL } from '../lib/priceConstants.js'
-import { normalizeStudentName } from '../lib/calendarPayments.js'
+import { normalizeStudentName, hasSavedPrice } from '../lib/calendarPayments.js'
 import { ImportPricesPanel } from './ImportPricesPanel.jsx'
 import styles from './CustomPricesPage.module.css'
 
@@ -18,7 +18,8 @@ function initialPhones(settings) {
 // default", so students without them behave exactly as before. full_name is
 // the payer (a child's parent) shown on the payment page and invoice.
 const EXTRA_FIELDS = ['full_name', 'payment_profile', 'invoice_description', 'message']
-const ALL_MONTHS = Array.from({ length: 12 }, (_, i) => `2026-${String(i + 1).padStart(2, '0')}`)
+// Month names don't depend on the year, so any year lists the 12 of them.
+const ALL_MONTHS = Array.from({ length: 12 }, (_, i) => `${new Date().getFullYear()}-${String(i + 1).padStart(2, '0')}`)
 const EMPTY_TIERS = { regular: { '60': '', '45': '', '30': '' }, non_regular: { '60': '', '45': '', '30': '' } }
 
 function initialExtras(settings) {
@@ -35,13 +36,6 @@ function matchesQuery(student, payer, query) {
   const q = query.trim().toLowerCase()
   if (!q) return true
   return [student, payer].some(v => (v ?? '').toLowerCase().includes(q))
-}
-
-// A price entry only counts as custom when at least one price is filled in
-// (inputs hold strings like "230"; saved entries hold numbers).
-function hasAnyPricedValue(entry) {
-  const filled = v => !isNaN(parseFloat(v))
-  return Object.values(entry ?? {}).some(v => (v && typeof v === 'object') ? Object.values(v).some(filled) : filled(v))
 }
 
 export function CustomPricesPage({ settings, onSave, availableStudents = [], onDirtyChange = () => {} }) {
@@ -191,7 +185,7 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
 
     const cleaned = {}
     for (const [student, entry] of Object.entries(customPrices)) {
-      if (!hasAnyPricedValue(entry)) continue
+      if (!hasSavedPrice(entry)) continue
       if (typeof entry === 'object') {
         const hasRegularTiers = 'regular' in entry || 'non_regular' in entry
         if (hasRegularTiers) {
@@ -267,10 +261,10 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
   // resolveSavedStudent). A card with no price of its own edits the priced
   // spelling's, so typing a price there never adds a second, conflicting one.
   const pricedTwin = (student) => {
-    if (hasAnyPricedValue(customPrices[student])) return null
+    if (hasSavedPrice(customPrices[student])) return null
     const name = normalizeStudentName(student)
     return students
-      .filter(s => s !== student && normalizeStudentName(s) === name && hasAnyPricedValue(customPrices[s]))
+      .filter(s => s !== student && normalizeStudentName(s) === name && hasSavedPrice(customPrices[s]))
       .sort((a, b) => (b === name) - (a === name) || a.localeCompare(b, 'he'))[0] ?? null
   }
   const knownProfiles = [...new Set([DEFAULT_PAYMENT_PROFILE, ...Object.values(extras).map(e => e?.payment_profile?.trim()).filter(Boolean)])]

@@ -135,15 +135,26 @@ export function savedNameConflicts(keys, customPrices = {}, customerDetails = {}
   return conflicts
 }
 
+// A price entry only counts as custom when at least one price is filled in
+// (inputs hold strings like "230"; saved entries hold numbers). Parsed with
+// parseFloat, as Custom Prices does when it saves, so what the page accepts is
+// what gets billed.
+export function hasSavedPrice(entry) {
+  const filled = v => !isNaN(parseFloat(v))
+  return Object.values(entry ?? {}).some(v => (v && typeof v === 'object') ? Object.values(v).some(filled) : filled(v))
+}
+
+// "YYYY-MM" for today, the key the calculator and Settings preview use.
+export function currentMonthKey(now = new Date()) {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+}
+
 // What a saved key's custom price actually bills, per tier, via the same
 // resolvePriceTable the calculation uses (so a partial flat price that falls
 // back to the defaults compares as the defaults). Null when the key has no
 // price filled in.
 function billedPriceKey(key, customPrices, defaults) {
-  const entry = customPrices?.[key]
-  const filled = v => Number.isFinite(Number(v)) && v !== '' && v != null
-  const hasPrice = entry && typeof entry === 'object' && Object.values(entry).some(v => (v && typeof v === 'object') ? Object.values(v).some(filled) : filled(v))
-  if (!hasPrice) return null
+  if (!hasSavedPrice(customPrices?.[key])) return null
   const tier = regular => {
     const t = resolvePriceTable(key, regular, defaults?.regular ?? {}, defaults?.non_regular ?? {}, customPrices)
     return ['60', '45', '30'].map(d => Number(t?.[d]))
