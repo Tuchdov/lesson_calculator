@@ -109,6 +109,16 @@ export function totalLessons(row) {
   return row.lessons_60 + row.lessons_45 + row.lessons_30
 }
 
+// The lesson count shown on the invoice and in the WhatsApp message: the
+// regular lessons plus review items charged as a full standard lesson. Extra
+// minutes (pro-rata), fixed amounts and free items add to the amount only.
+export function billedLessonCount(row, resolutions, month) {
+  const standard = (row.review_items ?? [])
+    .filter(item => reviewResolution(item, resolutions, month, row)?.mode === 'base')
+    .length
+  return totalLessons(row) + standard
+}
+
 // Pre-selected answer for an unresolved item. A make-up (a Settings make-up
 // phrase, or "השלמה") defaults the extra minutes to free; anything else
 // pro-rata.

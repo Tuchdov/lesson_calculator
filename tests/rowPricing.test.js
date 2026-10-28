@@ -9,6 +9,7 @@ import {
   detailsFor,
   defaultReviewMode,
   totalLessons,
+  billedLessonCount,
   payerName,
   lessonStudentName,
 } from '../src/lib/rowPricing.js'
@@ -193,4 +194,18 @@ Deno.test('payerName / lessonStudentName: saved payer first, else the calendar n
   assertEquals(lessonStudentName(row), 'ענבר')
   assertEquals(payerName({}, row), 'ענבר')
   assertEquals(payerName({ full_name: 'עינת שמש' }, row), 'עינת שמש')
+})
+
+// Value: protects=the lesson count on the invoice and in WhatsApp includes review items charged as a full standard lesson and nothing else; fails_when=pro-rata, fixed, free or unresolved items are counted, or base items are left out (the amount then covers more lessons than the message says); why_new=billedLessonCount is new; seam=none
+Deno.test('billedLessonCount: regular lessons plus items charged as a standard lesson', () => {
+  const items = ['a', 'b', 'c', 'd', 'e'].map(id => ({ id, minutes: 15, summary: 'x', auto: null }))
+  const row = { student: 'דנה', lessons_60: 3, lessons_45: 0, lessons_30: 0, review_items: items }
+  const resolutions = {
+    [reviewKey('2026-10', 'דנה', 'a')]: { mode: 'base' },
+    [reviewKey('2026-10', 'דנה', 'b')]: { mode: 'prorata' },
+    [reviewKey('2026-10', 'דנה', 'c')]: { mode: 'fixed', amount: 100 },
+    [reviewKey('2026-10', 'דנה', 'd')]: { mode: 'free' },
+  }
+  assertEquals(billedLessonCount(row, resolutions, '2026-10'), 4)
+  assertEquals(billedLessonCount({ ...row, review_items: undefined }, {}, '2026-10'), 3)
 })

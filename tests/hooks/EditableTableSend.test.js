@@ -86,7 +86,7 @@ describe('EditableTable with a ready link', () => {
     defaultMessage: 'שלום {payer}, {student}: ₪{amount} {link}', onCustomPriceChange: vi.fn(), ...overrides,
   })
 
-  // Value: protects=a stale table keeps a ready link's WhatsApp and ↻ buttons and the inline price edit locked, says why, and once fresh sends a message greeting the payer and naming the student; fails_when=sendBlocked only guards the prepare path, the edit lock is dropped, or {payer}/{student} swap; why_new=the ready-link branch and edit lock had no test; seam=none
+  // Value: protects=a stale table keeps a ready link's WhatsApp and ↻ buttons and the inline price edit locked, says why, and once fresh sends a message greeting the payer; fails_when=sendBlocked only guards the prepare path, the edit lock is dropped, or {student} turns back into the lesson student; why_new=the ready-link branch and edit lock had no test; seam=none
   it('pauses send, regenerate and edits while stale, then sends to the payer', async () => {
     const blocked = props({ sendBlocked: true })
     const { rerender } = render(createElement(EditableTable, blocked))
@@ -111,6 +111,6 @@ describe('EditableTable with a ready link', () => {
     await act(async () => { fireEvent.click(screen.getByText('📱 שלח')) })
     expect(requestPaymentLink).not.toHaveBeenCalled()
     const url = new URL(window.open.mock.calls[0][0])
-    expect(url.searchParams.get('text')).toBe('שלום Rina Paz, Omer Paz: ₪200 https://pay.example/omer')
+    expect(url.searchParams.get('text')).toBe('שלום Rina Paz, Rina Paz: ₪200 https://pay.example/omer')
   })
 })

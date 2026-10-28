@@ -1,5 +1,5 @@
 import { EditableTable } from './EditableTable.jsx'
-import { resolveRowPrices, computeRowAmount, detailsFor, totalLessons, payerName, lessonStudentName } from '../lib/rowPricing.js'
+import { resolveRowPrices, computeRowAmount, detailsFor, billedLessonCount, payerName, lessonStudentName } from '../lib/rowPricing.js'
 import { safeTotalsCsvBytes } from '../lib/csvExport.js'
 import { invoiceRecord, invoiceKey, isValidAmount, isLinkUsable, hasFullName, linkInputs } from '../lib/payments.js'
 import { rowNeedsRecalc, DEFAULT_LESSON_KEYWORDS, DEFAULT_CANCELLED_KEYWORDS, DEFAULT_PAID_CANCELLATION_PHRASES, DEFAULT_MAKEUP_PHRASES } from '../lib/calendarPayments.js'
@@ -110,7 +110,7 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
           phone,
           amount,
           month: summary.month,
-          numberOfLessons: totalLessons(row),
+          numberOfLessons: billedLessonCount(row, reviewResolutions, summary.month),
           paymentProfile: details.payment_profile,
           invoiceDescription: details.invoice_description,
         })

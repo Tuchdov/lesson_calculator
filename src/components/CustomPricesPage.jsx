@@ -429,7 +429,7 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
                 className={`${styles.input} ${styles.messageInput}`}
                 rows={4}
                 dir="rtl"
-                placeholder="Empty — uses the default message from Settings. Tokens: {payer} {student} {amount} {month} {lessons} {link}"
+                placeholder="Empty — uses the default message from Settings. Tokens: {payer} {amount} {month} {lessons} {link}"
                 value={extra.message ?? ''}
                 onChange={e => handleExtra(student, 'message', e.target.value)}
               />

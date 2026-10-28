@@ -9,6 +9,7 @@ import {
   loadPaymentLinks,
   savePaymentLink,
   isLinkUsable,
+  isEntryUsable,
   linkInputs,
   loadAmountOverrides,
   saveAmountOverride,
@@ -329,8 +330,12 @@ Deno.test('isLinkUsable: a link saved before fingerprints is reused only while t
   const base = { payerName: 'ענבר', phone: '050-1111111', lessonStudent: 'ענבר' }
   assertEquals(isLinkUsable(links, '2026-10', row, 230, linkInputs({ ...base, paymentProfile: 'standard' })), true)
   assertEquals(isLinkUsable(links, '2026-10', row, 230, linkInputs({ ...base, paymentProfile: 'extended' })), false)
-  // Minted before a separate payer was saved, so it names the student on the payment page.
-  assertEquals(isLinkUsable(links, '2026-10', row, 230, linkInputs({ ...base, payerName: 'עינת שמש' })), false)
+  // main minted it with the saved full name as payer, so a student who has one
+  // keeps the link instead of getting a second live link for the same invoice.
+  assertEquals(isLinkUsable(links, '2026-10', row, 230, linkInputs({ ...base, payerName: 'ענבר כהן' })), true)
+  assertEquals(isLinkUsable(links, '2026-10', row, 230, linkInputs({ ...base, invoiceDescription: 'ייעוץ - {student}' })), false)
+  assertEquals(isEntryUsable(links['2026-10:ענבר'], 230, linkInputs({ ...base, payerName: 'ענבר כהן' })), true)
+  assertEquals(isEntryUsable(null, 230, linkInputs(base)), false)
 })
 
 // Value: protects=a saved fingerprint round-trips through the store; fails_when=savePaymentLink drops inputs; why_new=new field; seam=none

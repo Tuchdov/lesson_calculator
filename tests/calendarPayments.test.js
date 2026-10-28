@@ -440,6 +440,17 @@ Deno.test('normalizeStudentName: drops whole (...) notes, date-like numbers, dec
   assertEquals(normalizeStudentName('✨ 12'), '✨ 12')
 })
 
+// Value: protects=two students who share a first name and differ only by a number stay two rows, while decimals, dates and emoji are still dropped; fails_when=every word with a digit is dropped again, so "דנה 1" and "דנה 2" merge into one invoice and one phone; why_new=the digit filter was widened to date-like numbers and swallowed plain numbers too; seam=none
+Deno.test('normalizeStudentName: a plain number after the name tells same-name students apart', () => {
+  assertEquals(normalizeStudentName('דנה 1'), 'דנה 1')
+  assertEquals(normalizeStudentName('דנה 2'), 'דנה 2')
+  assertEquals(normalizeStudentName('דנה 1 פיתוח קול'), 'דנה 1')
+  assertEquals(normalizeStudentName('ענבר 11.5 (אמא עינת)'), 'ענבר')
+  assertEquals(normalizeStudentName('ענבר 12/3'), 'ענבר')
+  assertEquals(normalizeStudentName('נועה ✨'), 'נועה')
+  assertEquals(normalizeStudentName('12 נועה'), 'נועה')
+})
+
 Deno.test('inferStudentName: real title with a trailing parent note keeps only the student', () => {
   assertEquals(inferStudentName('אלה עוז (9.5) - פיתוח קול ✨ אמא נועה', '^([^-|:]+)'), 'אלה עוז')
   assertEquals(inferStudentName('ענבר (11.5) אמא עינת - פיתוח קול', '^([^-|:]+)'), 'ענבר')

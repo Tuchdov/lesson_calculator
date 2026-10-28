@@ -81,13 +81,16 @@ export function isPaidCancellation(summary, phrases = DEFAULT_PAID_CANCELLATION_
 
 // Keeps the first two words of the student's own name. Whole "(...)" groups
 // are notes ("(9.5)", "(אמא עינת)"), words with digits are dates, words with
-// no letters are decoration (✨), and a parent marker ends the name.
+// no letters are decoration (✨), and a parent marker ends the name. A plain
+// 1-2 digit number after the first word ("דנה 1") tells two students with the
+// same first name apart, so it stays part of the name.
 export function normalizeStudentName(name) {
-  const words = name
-    .replace(/\([^)]*\)?/g, ' ')
-    .replace(/\)/g, ' ')
-    .split(/\s+/)
-    .filter(w => w && /\p{L}/u.test(w) && !/\d/.test(w))
+  const words = []
+  for (const w of name.replace(/\([^)]*\)?/g, ' ').replace(/\)/g, ' ').split(/\s+/)) {
+    if (!w) continue
+    const isNumberTag = /^\d{1,2}$/.test(w) && words.length > 0
+    if (isNumberTag || (/\p{L}/u.test(w) && !/\d/.test(w))) words.push(w)
+  }
   const parentAt = words.findIndex((w, i) => i > 0 && PARENT_MARKERS.includes(w))
   const own = parentAt === -1 ? words : words.slice(0, parentAt)
   return own.slice(0, 2).join(' ') || name

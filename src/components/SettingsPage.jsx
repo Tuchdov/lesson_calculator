@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { buildPaymentMessage, DEFAULT_MESSAGE_TEMPLATE, upgradeMessageTemplate } from '../lib/whatsapp.js'
+import { buildPaymentMessage, DEFAULT_MESSAGE_TEMPLATE } from '../lib/whatsapp.js'
 import { DEFAULT_CANCELLED_KEYWORDS, DEFAULT_PAID_CANCELLATION_PHRASES, DEFAULT_LESSON_KEYWORDS, DEFAULT_MAKEUP_PHRASES, MAKEUP_AUTO_MIN, MAKEUP_AUTO_MAX } from '../lib/calendarPayments.js'
 import styles from './SettingsPage.module.css'
 
@@ -26,7 +26,7 @@ function initialList(saved, defaults) {
 export function SettingsPage({ config, settings, onSave }) {
   const [prices, setPrices] = useState(() => initialPrices(settings, config))
   const [messageTemplate, setMessageTemplate] = useState(
-    () => upgradeMessageTemplate(settings?.default_message) || DEFAULT_MESSAGE_TEMPLATE
+    () => settings?.default_message || DEFAULT_MESSAGE_TEMPLATE
   )
   const [paidCancelPhrases, setPaidCancelPhrases] = useState(() => initialList(settings?.paid_cancellation_phrases, DEFAULT_PAID_CANCELLATION_PHRASES))
   const [keywords, setKeywords] = useState(() => initialList(settings?.cancelled_keywords, config?.cancelled_keywords ?? DEFAULT_CANCELLED_KEYWORDS))
@@ -78,7 +78,7 @@ export function SettingsPage({ config, settings, onSave }) {
     setSaved(true)
   }
 
-  const preview = buildPaymentMessage('נועה', 300, currentMonth(), messageTemplate, 4, undefined, 'דנה לוי')
+  const preview = buildPaymentMessage('דנה לוי', 300, currentMonth(), messageTemplate, 4)
 
   return (
     <div className={styles.page}>
@@ -124,8 +124,8 @@ export function SettingsPage({ config, settings, onSave }) {
           </button>
         </div>
         <p className={styles.tokenHint}>
-          Use <code>{'{payer}'}</code> (who pays: a parent, else the
-          student), <code>{'{student}'}</code> (the student),{' '}
+          Use <code>{'{payer}'}</code> or <code>{'{student}'}</code> (both are
+          who pays: a parent, else the student),{' '}
           <code>{'{amount}'}</code>, <code>{'{month}'}</code>,{' '}
           <code>{'{lessons}'}</code>, and <code>{'{link}'}</code> — they're
           replaced automatically per student. If <code>{'{link}'}</code> isn't in the template, the

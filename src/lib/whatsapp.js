@@ -19,23 +19,14 @@ export function validateIsraeliPhone(phone) {
 
 export const DEFAULT_MESSAGE_TEMPLATE =
   ` שלום {payer} :)\nהנה סיכום השיעורים שלך לחודש {month}:\n מספר שיעורים: {lessons}\n סה״כ לתשלום: ₪{amount}\n לתשלום: [קישור לתשלום]\nתודה ונתראה! `
-// The default before {payer} existed, when {student} held the payer. A saved
-// copy of it is read as the current default, so it keeps greeting the payer.
-const LEGACY_DEFAULT_MESSAGE_TEMPLATE =
-  ` שלום {student} :)\nהנה סיכום השיעורים שלך לחודש {month}:\n מספר שיעורים: {lessons}\n סה״כ לתשלום: ₪{amount}\n לתשלום: [קישור לתשלום]\nתודה ונתראה! `
-
-export function upgradeMessageTemplate(template) {
-  return template === LEGACY_DEFAULT_MESSAGE_TEMPLATE ? DEFAULT_MESSAGE_TEMPLATE : template
-}
-
-// Substitutes {student} (the student, as the calendar names them), {payer}
-// (who pays: a parent, else the student), {amount}, {month} and {lessons}.
-export function renderMessageTemplate(template, { studentName, payerName, amount, monthName, lessons }) {
-  const oneLine = name => (name ?? '').replace(/[\r\n]+/g, ' ').trim()
-  const safeName = oneLine(studentName)
+// Substitutes {payer} and {student} (both are who pays: a parent, else the
+// student, so templates written when {student} held the payer keep working),
+// {amount}, {month} and {lessons}.
+export function renderMessageTemplate(template, { payerName, amount, monthName, lessons }) {
+  const name = (payerName ?? '').replace(/[\r\n]+/g, ' ').trim()
   return (template ?? '')
-    .replaceAll('{student}', safeName)
-    .replaceAll('{payer}', oneLine(payerName) || safeName)
+    .replaceAll('{student}', name)
+    .replaceAll('{payer}', name)
     .replaceAll('{amount}', String(amount))
     .replaceAll('{month}', monthName ?? '')
     .replaceAll('{lessons}', String(lessons ?? ''))
@@ -63,9 +54,9 @@ export function monthNameFromKey(monthStr) {
 // is the total lesson count for the student that month (optional — omitted
 // templates simply won't have a {lessons} token to replace). `link`, when
 // provided, replaces the placeholder/{link} token per applyPaymentLink above.
-// `payerName` fills {payer}; without one the student is the payer.
-export function buildPaymentMessage(studentName, amount, monthStr, template = DEFAULT_MESSAGE_TEMPLATE, lessons, link, payerName) {
-  const rendered = renderMessageTemplate(upgradeMessageTemplate(template), { studentName, payerName, amount, monthName: monthNameFromKey(monthStr), lessons })
+// `payerName` is who the message greets (a child's parent, else the student).
+export function buildPaymentMessage(payerName, amount, monthStr, template = DEFAULT_MESSAGE_TEMPLATE, lessons, link) {
+  const rendered = renderMessageTemplate(template, { payerName, amount, monthName: monthNameFromKey(monthStr), lessons })
   return applyPaymentLink(rendered, link)
 }
 

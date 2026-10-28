@@ -179,17 +179,20 @@ export function linkInputs({ payerName, phone, lessonStudent, paymentProfile, in
 // A stored link is reusable only if it was minted for the amount currently
 // due (decision 5) and with the same payer, phone, profile and invoice text.
 // Looked up under every spelling of the row's student (invoiceRecord). A link
-// saved before fingerprints existed stays usable only while the student still
-// uses the defaults and pays for themselves.
-export function isLinkUsable(links, month, row, currentAmount, currentInputs) {
-  const entry = invoiceRecord(links, month, row)
+// saved before fingerprints existed stays usable while the student still uses
+// the default profile and invoice text. Its payer is unknown (main minted it
+// with the saved full name, else the student), and treating that as stale
+// would mint a second live link for an invoice that may already be sent.
+export function isEntryUsable(entry, currentAmount, currentInputs) {
   if (!entry || amountChanged(entry.amount, currentAmount)) return false
   if (!currentInputs) return true
   if (entry.inputs) return entry.inputs === currentInputs
-  // A link from before fingerprints was minted with the defaults and the
-  // student as the payer, so it stays only while that is still true.
-  const { profile, invoice, payer, student } = JSON.parse(currentInputs)
-  return !profile && !invoice && (!payer || payer === student)
+  const { profile, invoice } = JSON.parse(currentInputs)
+  return !profile && !invoice
+}
+
+export function isLinkUsable(links, month, row, currentAmount, currentInputs) {
+  return isEntryUsable(invoiceRecord(links, month, row), currentAmount, currentInputs)
 }
 
 // --- Amount override store -------------------------------------------------

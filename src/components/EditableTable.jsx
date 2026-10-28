@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { validateIsraeliPhone, buildPaymentMessage, buildWhatsAppUrl } from '../lib/whatsapp.js'
-import { hasFullName, invoiceRecord, invoiceRecordNames, isLinkUsable, isValidAmount, linkInputs } from '../lib/payments.js'
+import { hasFullName, invoiceRecord, invoiceRecordNames, isEntryUsable, isValidAmount, linkInputs } from '../lib/payments.js'
 import { requestPaymentLink } from '../lib/paymentLinkClient.js'
-import { resolveRowPrices, computeRowAmount, detailsFor, totalLessons, reviewKey, reviewResolution, storedReviewResolution, storedReviewNames, reviewItemAmount, baseLessonPrice, proRataPrice, defaultReviewMode, payerName, lessonStudentName } from '../lib/rowPricing.js'
+import { resolveRowPrices, computeRowAmount, detailsFor, billedLessonCount, reviewKey, reviewResolution, storedReviewResolution, storedReviewNames, reviewItemAmount, baseLessonPrice, proRataPrice, defaultReviewMode, payerName, lessonStudentName } from '../lib/rowPricing.js'
 import styles from './EditableTable.module.css'
 
 const DURATION_COLS = ['60', '45', '30']
@@ -51,7 +51,6 @@ export function EditableTable({ rows, config, customPrices, onCustomPriceChange,
                   setExpandedRow={setExpandedRow}
                   amountOverride={invoiceRecord(amountOverrides, month, row)}
                   amountOverrideNames={invoiceRecordNames(amountOverrides, month, row)}
-                  paymentLinks={paymentLinks}
                   onAmountOverrideChange={onAmountOverrideChange}
                   linkEntry={invoiceRecord(paymentLinks, month, row)}
                   onPaymentLinkChange={onPaymentLinkChange}
@@ -87,7 +86,7 @@ function GroupHeader({ type }) {
  * @param {object} props Student data, pricing, payment state, and callbacks.
  * @returns {import('react').ReactNode} The invoice row and optional details rows.
  */
-function StudentRow({ row, config, customPrices, onCustomPriceChange, details, onCustomerDetailChange, month, defaultMessage, expandedRow, setExpandedRow, amountOverride, amountOverrideNames, onAmountOverrideChange, linkEntry, paymentLinks, onPaymentLinkChange, getAccessToken, batchState, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange }) {
+function StudentRow({ row, config, customPrices, onCustomPriceChange, details, onCustomerDetailChange, month, defaultMessage, expandedRow, setExpandedRow, amountOverride, amountOverrideNames, onAmountOverrideChange, linkEntry, onPaymentLinkChange, getAccessToken, batchState, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange }) {
   const { phone, full_name: fullName } = details
   const custom = customPrices?.[row.student]
   const prices = resolveRowPrices(row.student, row.student_type === 'regular', config, custom)
@@ -111,7 +110,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
 
   const { amount: computedAmount, extra: reviewExtra, unresolved: reviewUnresolved } = computeRowAmount(row, prices, reviewResolutions, month)
   const roundedAmount = amountOverride ?? computedAmount
-  const lessonCount = totalLessons(row)
+  const lessonCount = billedLessonCount(row, reviewResolutions, month)
   // An amount override is the teacher's final number, so it settles review.
   const needsReview = amountOverride == null && reviewUnresolved > 0
   const hasReviewItems = row.review_items?.length > 0
@@ -123,7 +122,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
   const nameOk = hasFullName(effectiveName)
   const needsDetails = !phone || !nameOk
   const inputs = linkInputs({ payerName: effectiveName, phone, lessonStudent, paymentProfile: details.payment_profile, invoiceDescription: details.invoice_description })
-  const linkUsable = isLinkUsable(paymentLinks, month, row, roundedAmount, inputs)
+  const linkUsable = isEntryUsable(linkEntry, roundedAmount, inputs)
   // Mint progress lives in App (prepareStatus), so it survives page switches.
   const busy = batchState === 'loading'
   const errorMessage = batchState?.error || null
@@ -261,7 +260,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
     if (busy || needsReview || nameConflict || sendBlocked) return
     if (linkUsable) {
       const template = details.message || defaultMessage || undefined
-      const msg = buildPaymentMessage(lessonStudent, roundedAmount, month, template, lessonCount, linkEntry.link, effectiveName)
+      const msg = buildPaymentMessage(effectiveName, roundedAmount, month, template, lessonCount, linkEntry.link)
       window.open(buildWhatsAppUrl(phone, msg), '_blank', 'noopener')
       return
     }
