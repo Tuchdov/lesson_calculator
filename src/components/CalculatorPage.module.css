@@ -65,6 +65,7 @@
 }
 
 .btnSecondary:hover { background: var(--md-blue-tonal); }
+.btnSecondary:disabled { opacity: .5; cursor: default; }
 
 .error {
   background: var(--md-red-tonal);

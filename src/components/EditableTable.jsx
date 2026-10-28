@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { validateIsraeliPhone, buildPaymentMessage, buildWhatsAppUrl } from '../lib/whatsapp.js'
-import { invoiceKey, hasFullName, getStoredLink, amountChanged, isValidAmount } from '../lib/payments.js'
-import { requestPaymentLink } from '../lib/paymentLinkClient.js'
+import { invoiceKey, hasFullName, isValidAmount } from '../lib/payments.js'
+import { BillingActions } from './BillingActions.jsx'
+import { billingStatus, formatMoney } from '../lib/billing.js'
 import { resolveRowPrices, computeLessonAmount } from '../lib/rowPricing.js'
 import styles from './EditableTable.module.css'
 
@@ -9,7 +10,7 @@ const DURATION_COLS = ['60', '45', '30']
 const TYPE_LABEL = { regular: 'Regular', non_regular: 'Non-regular' }
 const TYPE_CHIP = { regular: styles.chipGreen, non_regular: styles.chipAmber }
 
-export function EditableTable({ rows, config, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, month, defaultMessage, amountOverrides, onAmountOverrideChange, paymentLinks, onPaymentLinkChange, getAccessToken, prepareStatus }) {
+export function EditableTable({ rows, config, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, month, defaultMessage, amountOverrides, onAmountOverrideChange, billing, prepareStatus }) {
   const grouped = groupByType(rows)
   const [expandedRow, setExpandedRow] = useState(null)
 
@@ -23,7 +24,10 @@ export function EditableTable({ rows, config, customPrices, onCustomPriceChange,
             <th className={styles.center}>60 min</th>
             <th className={styles.center}>45 min</th>
             <th className={styles.center}>30 min</th>
-            <th className={styles.center}>Amount Due (₪)</th>
+            <th className={styles.center}>Current charge (₪)</th>
+            <th className={styles.center}>Earlier balance (₪)</th>
+            <th className={styles.center}>Remaining (₪)</th>
+            <th>Payment status</th>
             <th className={styles.center}>WhatsApp</th>
           </tr>
         </thead>
@@ -49,9 +53,7 @@ export function EditableTable({ rows, config, customPrices, onCustomPriceChange,
                   setExpandedRow={setExpandedRow}
                   amountOverride={amountOverrides?.[invoiceKey(month, row.student)] ?? null}
                   onAmountOverrideChange={onAmountOverrideChange}
-                  linkEntry={getStoredLink(paymentLinks, month, row.student)}
-                  onPaymentLinkChange={onPaymentLinkChange}
-                  getAccessToken={getAccessToken}
+                  billing={billing}
                   batchState={prepareStatus?.[row.student]}
                 />
               )),
@@ -66,7 +68,7 @@ export function EditableTable({ rows, config, customPrices, onCustomPriceChange,
 function GroupHeader({ type }) {
   return (
     <tr className={`${styles.groupRow} ${type === 'regular' ? styles.groupRegular : styles.groupNonRegular}`}>
-      <td colSpan={7}>
+      <td colSpan={10}>
         <span className={`${styles.chip} ${TYPE_CHIP[type]}`}>{TYPE_LABEL[type]}</span>
       </td>
     </tr>
@@ -79,7 +81,7 @@ function GroupHeader({ type }) {
  * @param {object} props Student data, pricing, payment state, and callbacks.
  * @returns {import('react').ReactNode} The invoice row and optional details row.
  */
-function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, fullName, onCustomerDetailChange, month, defaultMessage, expandedRow, setExpandedRow, amountOverride, onAmountOverrideChange, linkEntry, onPaymentLinkChange, getAccessToken, batchState }) {
+function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, fullName, onCustomerDetailChange, month, defaultMessage, expandedRow, setExpandedRow, amountOverride, onAmountOverrideChange, billing, batchState }) {
   const custom = customPrices?.[row.student]
   const prices = resolveRowPrices(row.student, row.student_type === 'regular', config, custom)
 
@@ -103,14 +105,18 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
   }
 
   const computedAmount = computeLessonAmount(row, prices)
-  const roundedAmount = amountOverride ?? computedAmount
+  const roundedAmount = row.billing_only ? (row.billingStudent?.currentAgorot ?? 0) / 100 : amountOverride ?? computedAmount
   const totalLessons = row.lessons_60 + row.lessons_45 + row.lessons_30
 
   const effectiveName = fullName || row.student
   const nameOk = hasFullName(effectiveName)
   const needsDetails = !phone || !nameOk
-  const linkUsable = !!linkEntry && !amountChanged(linkEntry.amount, roundedAmount)
-  const busy = localBusy || batchState === 'loading'
+  const student = row.billingStudent
+  const linkEntry = student?.request?.reusable ? { link: student.request.link } : null
+  const linkUsable = !!linkEntry
+  const saved = !!student && (student.currentVersion !== null ? student.currentAgorot === Math.round(roundedAmount * 100) : row.billing_only)
+  const collectionReady = saved && billing?.data?.mode === 'live' && !billing.data.recovery && !billing.loading && !billing.aliasesConflict && !student.hold && !student.pending.length && student.remainingAgorot > 0
+  const busy = localBusy || billing?.loading || batchState === 'loading'
   const errorMessage = localError || (batchState === 'error' ? 'Failed to create the link. Try again.' : null)
 
   const handleStartAmountEdit = () => {
@@ -202,20 +208,15 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
   }
 
   const mintLink = async () => {
-    if (!isValidAmount(roundedAmount)) {
+    if (!isValidAmount((student?.remainingAgorot ?? 0) / 100)) {
       setLocalError('Invalid amount.')
       return
     }
     setLocalBusy(true)
     setLocalError(null)
     try {
-      const link = await requestPaymentLink(getAccessToken, {
-        studentName: effectiveName,
-        phone,
-        amount: roundedAmount,
-        month,
-      })
-      await onPaymentLinkChange?.(month, row.student, link, roundedAmount)
+      if (!collectionReady) throw new Error('Save this month and resolve any payment review before preparing links.')
+      await billing.prepare(student, { full_name: effectiveName, phone })
     } catch (err) {
       setLocalError(err.message ?? 'Failed to create the link. Try again.')
     } finally {
@@ -224,20 +225,15 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
   }
 
   const handleSendClick = async () => {
-    if (busy) return
+    if (busy || !collectionReady) return
     if (linkUsable) {
-      const msg = buildPaymentMessage(effectiveName, roundedAmount, month, defaultMessage || undefined, totalLessons, linkEntry.link)
+      const msg = buildPaymentMessage(effectiveName, student.remainingAgorot / 100, month, defaultMessage || undefined, totalLessons, linkEntry.link)
       window.open(buildWhatsAppUrl(phone, msg), '_blank', 'noopener')
       return
     }
     await mintLink()
   }
 
-  const handleRegenerate = async (e) => {
-    e.stopPropagation()
-    if (busy) return
-    await mintLink()
-  }
 
   return (
     <>
@@ -318,22 +314,28 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
             </span>
           )}
         </td>
+        <td className={styles.center}>{student ? `₪${formatMoney(student.priorAgorot)}` : '—'}</td>
+        <td className={styles.center}>{student ? `₪${formatMoney(student.remainingAgorot)}` : '—'}</td>
+        <td>
+          <span>{student ? saved ? billingStatus(student) : 'Current charge not saved' : billing?.error ? 'Status unavailable' : 'Save month first'}</span>
+          {student && !saved && <p>Charge differs from saved invoice. Save or adjust it first.</p>}
+          {student && <BillingActions student={student} billing={billing} previewCharge={Math.round(roundedAmount * 100)} />}
+        </td>
         <td className={styles.waCell}>
           {needsDetails ? (
             <button className={`${styles.waChipMissing} ${isExpanded ? styles.waChipActive : ''}`} onClick={handleToggleExpand}>
               {!phone ? '📱 הוסף טלפון' : '⚠️ השלם שם מלא'}
             </button>
           ) : errorMessage ? (
-            <button className={styles.waChipError} onClick={handleSendClick} title={errorMessage} disabled={busy}>
+            <button className={styles.waChipError} onClick={handleSendClick} title={errorMessage} disabled={busy || !collectionReady}>
               {busy ? '…' : '⚠️ נסה שוב'}
             </button>
           ) : linkUsable ? (
             <span className={styles.waReadyGroup}>
-              <button className={styles.waChipReady} onClick={handleSendClick} disabled={busy}>📱 שלח</button>
-              <button className={styles.regenBtn} onClick={handleRegenerate} disabled={busy} title="Create a new link">↻</button>
+              <button className={styles.waChipReady} onClick={handleSendClick} disabled={busy || !collectionReady}>📱 שלח</button>
             </span>
           ) : (
-            <button className={styles.waChipPrepare} onClick={handleSendClick} disabled={busy} title="Creates the payment link — click again to send once it's ready">
+            <button className={styles.waChipPrepare} onClick={handleSendClick} disabled={busy || !collectionReady} title="Creates the payment link — click again to send once it's ready">
               {busy ? '…' : '🔗 הכן קישור'}
             </button>
           )}
@@ -341,7 +343,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
       </tr>
       {isExpanded && (
         <tr className={styles.expandRow}>
-          <td colSpan={7} className={styles.expandCell}>
+          <td colSpan={10} className={styles.expandCell}>
             <div className={styles.expandInner}>
               <span className={styles.expandLabel}>📱 {row.student}:</span>
               {!phone && (

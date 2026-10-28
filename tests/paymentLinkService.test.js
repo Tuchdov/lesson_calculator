@@ -294,3 +294,22 @@ Deno.test('createPaymentLink: missing webhookUrl is a 500 before any Make reques
   )
   assertEquals(err.status, 500)
 })
+
+Deno.test('batch verifies once and returns independent results in input order', async () => {
+  const { createPaymentLinks } = await import('../src/api/paymentLinkService.js')
+  let verifications = 0
+  let calls = 0
+  const fetchImpl = async (url) => {
+    if (String(url).includes('tokeninfo')) { verifications++; return tokeninfoOk() }
+    calls++
+    return makeOk()
+  }
+  const result = await createPaymentLinks({ ...baseArgs({ fetchImpl }), items: [
+    { studentName: 'רחל כהן', phone: '0501234567', amount: 100, month: '2026-08' },
+    { studentName: 'אחר כהן', phone: 'bad', amount: 100, month: '2026-08' },
+  ] })
+  assertEquals(verifications, 1)
+  assertEquals(calls, 1)
+  assertEquals(result.results[0].link, 'https://pay.grow.link/abc123')
+  assertEquals(result.results[1].error, 'Invalid phone number.')
+})

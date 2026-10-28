@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Save invoices and review paid, unpaid, and carried balances in a durable billing ledger.
+- Record cash or bank payments, checked Grow reports, charge adjustments, and verified refunds.
+- Review historical links and recover payment requests after interrupted creation.
+
+### Changed
+- Prepare payment links in batches with one Google identity check and prevent overlapping active requests for a student.
+- Export saved balances and payment status, or download a lesson-only estimate when billing is unavailable or unsaved.
+- Keep live collection disabled until the billing database and payment integration are configured and reviewed.
+
 ## [0.1.0] — 2026-07-01
 
 ### Added

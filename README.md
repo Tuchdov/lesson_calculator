@@ -1,6 +1,6 @@
 # Lesson Calculator
 
-A client-side React app for calculating monthly lesson payments from Google Calendar events.
+A React app for calculating monthly lesson payments from Google Calendar, with a Turso-backed billing ledger served by Vercel API functions.
 
 Signs in with Google, reads your calendar, groups events by student, applies pricing rules, and exports a CSV invoice.
 
@@ -9,7 +9,14 @@ Signs in with Google, reads your calendar, groups events by student, applies pri
 1. Sign in with your Google account — the app requests read-only access to your calendar.
 2. Select a month and click **Calculate**.
 3. The app fetches your calendar events, filters for lessons (events containing "פיתוח קול"), and calculates what each student owes based on lesson duration and regularity.
-4. Download the results as a CSV file.
+4. Click **Save month** to record invoices, then review prior balances and payment status.
+5. Prepare payment links and send them through WhatsApp, or export the saved balances as CSV.
+6. Check Grow payment reports and confirm them under **Manage payments**. Cash/bank payments and reviewed refunds have separate actions.
+
+Billing setup is documented in [Billing setup and Grow/Make handoff](docs/billing-setup.md).
+The database starts with collection disabled. Automatic payment verification and
+recovery of an unknown creation result remain later integration work; the app uses
+explicit review rather than automatically retrying a potentially created link.
 
 Student pricing is determined automatically:
 - **Regular** — attended at least once per week in the billing month (or 4+ lessons total).
@@ -44,13 +51,17 @@ Student pricing is determined automatically:
    npm run dev
    ```
 
+   This runs the calendar and calculator UI only. CSV lesson estimates remain
+   available; saving billing records and preparing links require the API and
+   database setup in the [billing guide](docs/billing-setup.md).
+
 ### Build for production
 
 ```bash
 npm run build
 ```
 
-The output is in `dist/` — deploy it to any static host (Vercel, Netlify, GitHub Pages, etc.). Remember to add your production domain to the Authorized JavaScript origins in Google Cloud Console.
+Deploy the Vite output in `dist/` together with `api/` to Vercel. Add your production domain to the Authorized JavaScript origins in Google Cloud Console and configure the server environment using the billing setup guide. `npm run dev` serves the UI; use `npx vercel dev` to exercise the API routes locally.
 
 ## Configuration
 
@@ -68,17 +79,18 @@ Per-student price overrides are managed through the **Custom Prices** page in th
 
 ## Running tests
 
-Run both the existing Deno unit tests and the React hook tests:
+Run the Deno unit tests, Node database/API tests, and React hook/component tests:
 
 ```bash
 npm test
 ```
 
-Run either suite independently:
+Run the suites independently:
 
 ```bash
 npm run test:unit        # Deno tests for the API and calculation/storage helpers
-npm run test:hooks       # React hook tests, once
+npm run test:db          # Real local libSQL transactions and API adapters
+npm run test:hooks       # React hook/component tests, once
 npm run test:hooks:watch # React hook tests, watch mode
 ```
 
@@ -95,7 +107,17 @@ hooks and resets timers, mocks, globals, and browser storage after every test.
 
 ## Security
 
-- The app never sends your calendar data to any server — all processing happens in your browser.
+- Raw calendar events are processed in the browser. Saving a month sends invoice amounts, lesson counts and price snapshots to the authenticated billing API. Student billing and payment records are stored in Turso.
 - Your Google OAuth access token is stored in `sessionStorage` (cleared when you close the tab).
 - Custom pricing settings are stored in `localStorage` keyed by `SHA-256(email)`.
 - A Content Security Policy restricts script execution to this app and `accounts.google.com`.
+
+### Vercel preview sign-in
+
+Google OAuth requires an exact authorized JavaScript origin; per-deployment
+Vercel preview URLs cannot be registered automatically by this app. Assign a
+stable preview domain to the project in Vercel, add its `https://` origin to
+Authorized JavaScript origins on the Google Cloud OAuth client, and configure
+`VITE_GOOGLE_CLIENT_ID` for the Preview environment. Open previews through
+that domain. The Google account must also be an OAuth test user if the consent
+screen is in testing mode. Configure separate preview billing credentials and Grow Sandbox/Make connections using [the setup guide](docs/billing-setup.md).

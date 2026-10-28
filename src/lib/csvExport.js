@@ -26,6 +26,12 @@ export function safeTotalsCsvBytes(rows) {
   return new TextEncoder().encode(bom + csv)
 }
 
+export function safeBillingCsvBytes(rows) {
+  const fields = ['student', 'student_type', 'lessons_60', 'lessons_45', 'lessons_30', 'current_charge', 'prior_balance', 'paid', 'amount_due', 'payment_status']
+  const lines = rows.map(row => fields.map(field => csvCell(escapeCsvFormula(row[field] ?? ''))).join(','))
+  return new TextEncoder().encode('\uFEFF' + [fields.join(','), ...lines].join('\r\n'))
+}
+
 function csvCell(value) {
   const str = String(value ?? '')
   if (str.includes(',') || str.includes('"') || str.includes('\n')) {

@@ -1,65 +1,20 @@
 import { isValidAmount, normalizePhoneForGrow, buildGrowDescription } from '../lib/payments.js'
 import { validateIsraeliPhone } from '../lib/whatsapp.js'
 
-const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo'
-
-// Carries an HTTP status and a retryable flag through to the thin Vercel
-// adapter, so the UI can tell "sign in again" apart from "try again".
-export class ServiceError extends Error {
-  constructor(status, message, { retryable = false } = {}) {
-    super(message)
-    this.status = status
-    this.retryable = retryable
-  }
-}
-
-// Identity is read from Google's answer, never from the request body — the
-// caller cannot claim to be anyone by changing what it sends.
-async function verifyCaller(accessToken, { allowedEmail, clientId, fetchImpl }) {
-  if (!accessToken) throw new ServiceError(401, 'Sign in again.')
-
-  let res
-  try {
-    res = await fetchImpl(`${TOKENINFO_URL}?access_token=${encodeURIComponent(accessToken)}`)
-  } catch {
-    throw new ServiceError(503, 'Could not reach Google. Try again.', { retryable: true })
-  }
-
-  let data
-  try {
-    data = await res.json()
-  } catch {
-    throw new ServiceError(401, 'Sign in again.')
-  }
-
-  if (!res.ok || !data.email || !data.aud) {
-    throw new ServiceError(401, 'Sign in again.')
-  }
-
-  const expiresIn = Number(data.expires_in)
-  if (!Number.isFinite(expiresIn) || expiresIn <= 0) {
-    throw new ServiceError(401, 'Sign in again.')
-  }
-
-  if (data.aud !== clientId) {
-    throw new ServiceError(403, 'Not authorized.')
-  }
-
-  if (data.email !== allowedEmail) {
-    throw new ServiceError(403, 'Not authorized.')
-  }
-}
+import { ServiceError } from './serviceError.js'
+import { verifyCaller } from './verifyCaller.js'
+export { ServiceError } from './serviceError.js'
 
 // Confirmed against the live Make scenario (T1): the webhook expects
 // {customer_name, amount, phone, description} and, on success, returns
 // {status: 1, err: {}, data: {paymentLinkProcessId, paymentLinkProcessToken,
 // url}}. Grow's amount is shekels, sent as-is — no agorot conversion.
-async function callMakeWebhook({ webhookUrl, apiKey, payload, fetchImpl }) {
+export async function callMakeWebhook({ webhookUrl, apiKey, payload, fetchImpl }) {
   let res
   try {
     const headers = { 'Content-Type': 'application/json' }
     if (apiKey) headers['x-make-apikey'] = apiKey
-    res = await fetchImpl(webhookUrl, { method: 'POST', headers, body: JSON.stringify(payload) })
+    res = await fetchImpl(webhookUrl, { method: 'POST', headers, body: JSON.stringify(payload), signal: AbortSignal.timeout(12000) })
   } catch {
     throw new ServiceError(502, 'Could not reach the payment service. Try again.', { retryable: true })
   }
@@ -76,11 +31,11 @@ async function callMakeWebhook({ webhookUrl, apiKey, payload, fetchImpl }) {
   }
 
   const link = body?.data?.url
-  if (typeof link !== 'string' || !link.startsWith('https://')) {
+  if (String(body?.status) !== '1' || typeof link !== 'string' || !link.startsWith('https://')) {
     throw new ServiceError(502, 'The payment service did not return a link. Try again.', { retryable: true })
   }
 
-  return link
+  return { link, processId: String(body.data.paymentLinkProcessId ?? ''), processToken: body.data.paymentLinkProcessToken ?? '' }
 }
 
 // month is "YYYY-MM", used only to build the Hebrew description shown on
@@ -99,7 +54,10 @@ export async function createPaymentLink({
   fetchImpl = fetch,
 }) {
   await verifyCaller(accessToken, { allowedEmail, clientId, fetchImpl })
+  return createVerifiedLink({ studentName, phone, amount, month, webhookUrl, apiKey, fetchImpl })
+}
 
+async function createVerifiedLink({ studentName, phone, amount, month, webhookUrl, apiKey, fetchImpl }) {
   if (!isValidAmount(amount)) {
     throw new ServiceError(400, 'Invalid amount.')
   }
@@ -112,7 +70,7 @@ export async function createPaymentLink({
     throw new ServiceError(500, 'Payment service is not configured.')
   }
 
-  const link = await callMakeWebhook({
+  const { link } = await callMakeWebhook({
     webhookUrl,
     apiKey,
     payload: {
@@ -125,4 +83,26 @@ export async function createPaymentLink({
   })
 
   return { link }
+}
+
+// Authenticate once, then keep each item's failure independent.
+export async function createPaymentLinks({ items, accessToken, allowedEmail, clientId, webhookUrl, apiKey, fetchImpl = fetch }) {
+  await verifyCaller(accessToken, { allowedEmail, clientId, fetchImpl })
+  if (!Array.isArray(items) || items.length < 1 || items.length > 40) {
+    throw new ServiceError(400, 'Provide between 1 and 40 payment requests.')
+  }
+  const results = new Array(items.length)
+  let index = 0
+  async function worker() {
+    while (index < items.length) {
+      const i = index++
+      try {
+        results[i] = await createVerifiedLink({ ...items[i], webhookUrl, apiKey, fetchImpl })
+      } catch (err) {
+        results[i] = { error: err instanceof ServiceError ? err.message : 'Unexpected server error.', retryable: !!err.retryable }
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(6, items.length) }, worker))
+  return { results }
 }
