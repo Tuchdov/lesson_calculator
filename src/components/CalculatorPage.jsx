@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { EditableTable } from './EditableTable.jsx'
 import { resolveRowPrices, computeRowAmount, detailsFor, billedLessonCount, payerName, lessonStudentName } from '../lib/rowPricing.js'
 import { safeTotalsCsvBytes } from '../lib/csvExport.js'
@@ -56,20 +57,23 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
   const handleRun = () => calculate(month)
 
   // A manual amount override is the teacher's final number for the invoice,
-  // so it also settles any review items on that row.
-  const rowBilling = (row) => {
+  // so it also settles any review items on that row. Memoized: the page
+  // re-renders on every Prepare-all status update, and each row scans the
+  // saved prices, answers and overrides.
+  const billing = useMemo(() => (rows ?? []).map(row => {
     const prices = resolveRowPrices(row.student, row.student_type === 'regular', config, customPrices?.[row.student])
     const { amount, unresolved } = computeRowAmount(row, prices, reviewResolutions, summary?.month)
     const override = invoiceRecord(amountOverrides, summary?.month, row)
-    return override != null ? { amount: override, unresolved: 0 } : { amount, unresolved }
-  }
-
-  const billing = rows?.map(row => ({ row, ...rowBilling(row) })) ?? []
+    return { row, ...(override != null ? { amount: override, unresolved: 0 } : { amount, unresolved }) }
+  }), [rows, config, customPrices, reviewResolutions, amountOverrides, summary?.month])
   const liveTotal = Math.round(billing.reduce((sum, b) => sum + b.amount, 0) * 100) / 100
   const needsReview = billing.filter(b => b.unresolved > 0).length
   // Names are matched to saved students at Calculate time; a saved spelling or
   // a conflicting detail added since then can change the row or its safety check.
-  const namesStale = rows?.some(r => rowNeedsRecalc(r, customPrices, customerDetails, config?.prices)) ?? false
+  const namesStale = useMemo(
+    () => rows?.some(r => rowNeedsRecalc(r, customPrices, customerDetails, config?.prices)) ?? false,
+    [rows, customPrices, customerDetails, config?.prices],
+  )
   // Settings that decide which events count, and how, were applied at
   // Calculate time too.
   const settingsStale = !!calculatedWith && Object.keys(STALE_DEFAULTS).some(k => effectiveSetting(calculatedWith, k) !== effectiveSetting(config, k))

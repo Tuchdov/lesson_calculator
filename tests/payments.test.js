@@ -10,11 +10,11 @@ import {
   savePaymentLink,
   isLinkUsable,
   isEntryUsable,
+  invoiceRecordNames,
   linkInputs,
   loadAmountOverrides,
   saveAmountOverride,
   invoiceRecord,
-  invoiceRecordNames,
   loadReviewResolutions,
   saveReviewResolution,
 } from '../src/lib/payments.js'
@@ -349,4 +349,19 @@ Deno.test('savePaymentLink: stores the inputs a link was minted with', async () 
 // Value: protects=a student name that contains "{month}" shows up as typed in the invoice text instead of being replaced by the month; fails_when={student} and {month} are substituted in two passes on the same string; why_new=sequential replaceAll re-scanned the inserted name; seam=none
 Deno.test('buildGrowDescription: tokens inside an inserted name are not substituted again', () => {
   assertEquals(buildGrowDescription('דנה {month}', '2026-08', 'שיעורים - {student} - {month}'), 'שיעורים - דנה {month} - אוגוסט')
+})
+
+// Value: protects=the per-record name scan is cached per record object without going stale: repeated calls agree, a new record object (what every save produces) is rescanned, and months and suffixes do not share a cache entry; fails_when=the cache is keyed on the month or suffix alone or reused across record objects, so a just-saved link or answer is not found; why_new=invoiceRecordNames now caches its scan; seam=none
+Deno.test('invoiceRecordNames: cached scan matches a fresh scan after the record changes', () => {
+  const row = { student: 'ענבר' }
+  const first = { '2026-10:ענבר 11.5 (אמא עינת)': { link: 'a' }, '2026-09:ענבר 9.5': { link: 'b' } }
+  assertEquals(invoiceRecordNames(first, '2026-10', row), ['ענבר 11.5 (אמא עינת)'])
+  assertEquals(invoiceRecordNames(first, '2026-10', row), ['ענבר 11.5 (אמא עינת)'])
+  assertEquals(invoiceRecordNames(first, '2026-09', row), ['ענבר 9.5'])
+  const second = { ...first, '2026-10:ענבר (9.5)': { link: 'c' } }
+  assertEquals(invoiceRecordNames(second, '2026-10', row), ['ענבר 11.5 (אמא עינת)', 'ענבר (9.5)'])
+  assertEquals(invoiceRecordNames(first, '2026-10', row), ['ענבר 11.5 (אמא עינת)'])
+  const answers = { '2026-10:ענבר:e1': { mode: 'free' } }
+  assertEquals(invoiceRecordNames(answers, '2026-10', row, ':e1'), ['ענבר'])
+  assertEquals(invoiceRecordNames(answers, '2026-10', row, ':e2'), [])
 })

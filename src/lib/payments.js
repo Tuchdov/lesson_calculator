@@ -26,13 +26,32 @@ export function invoiceRecordNames(record, month, row, suffix = '') {
   if (row.name_conflicts?.length) return has(row.student) ? [row.student] : []
   const names = [row.student, ...(row.aliases ?? [])].filter(has)
   const base = normalizeStudentName(row.student)
-  const prefix = `${month}:`
-  for (const [key, value] of Object.entries(record)) {
-    if (value == null || !key.startsWith(prefix) || !key.endsWith(suffix)) continue
-    const name = key.slice(prefix.length, key.length - suffix.length)
-    if (name && !names.includes(name) && normalizeStudentName(name) === base) names.push(name)
+  for (const entry of monthEntries(record, month, suffix)) {
+    if (entry.base === base && !names.includes(entry.name)) names.push(entry.name)
   }
   return names
+}
+
+// The names a month's record is stored under, with their normalized form.
+// Every row asks for this on every render, and each save produces a new
+// record object (withRecord), so the scan is kept per record object.
+const entriesCache = new WeakMap()
+function monthEntries(record, month, suffix) {
+  let byMonth = entriesCache.get(record)
+  if (!byMonth) entriesCache.set(record, byMonth = new Map())
+  const id = `${month}\u0000${suffix}`
+  let entries = byMonth.get(id)
+  if (!entries) {
+    entries = []
+    const prefix = `${month}:`
+    for (const [key, value] of Object.entries(record)) {
+      if (value == null || !key.startsWith(prefix) || !key.endsWith(suffix)) continue
+      const name = key.slice(prefix.length, key.length - suffix.length)
+      if (name) entries.push({ name, base: normalizeStudentName(name) })
+    }
+    byMonth.set(id, entries)
+  }
+  return entries
 }
 
 export function invoiceRecordName(record, month, row, suffix = '') {
