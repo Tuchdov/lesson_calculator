@@ -58,11 +58,6 @@ export default function App() {
     loadReviewResolutions(userEmail).then(setReviewResolutions).catch(err => console.error('Failed to load review answers:', err))
   }, [userEmail])
 
-  const handleAmountOverrideChange = async (month, student, amount) => {
-    const next = await saveAmountOverride(userEmail, month, student, amount)
-    setAmountOverrides(next)
-  }
-
   // A Prepare-all run that finishes after a switch to another account must not
   // write the previous account's links or progress into this one's state.
   const sameAccount = (email) => lastEmailRef.current === email
@@ -78,17 +73,24 @@ export default function App() {
     if (sameAccount(userEmail)) setPreparing(value)
   }
 
-  const handleReviewResolutionChange = async (itemKey, resolution) => {
-    const next = await saveReviewResolution(userEmail, itemKey, resolution)
-    setReviewResolutions(next)
+  const handleAmountOverrideChange = async (month, student, amount) => {
+    const email = userEmail
+    const next = await saveAmountOverride(email, month, student, amount)
+    if (sameAccount(email)) setAmountOverrides(next)
   }
 
-  const handleCustomPriceChange = async (student, prices) => {
-    const next = {
-      ...settings,
-      custom_prices: { ...settings.custom_prices, [student]: prices },
-    }
-    await saveSettings(next)
+  const handleReviewResolutionChange = async (itemKey, resolution) => {
+    const email = userEmail
+    const next = await saveReviewResolution(email, itemKey, resolution)
+    if (sameAccount(email)) setReviewResolutions(next)
+  }
+
+  // `students` is every saved spelling the new rate applies to; one save, so
+  // the spellings can't overwrite each other through a stale `settings`.
+  const handleCustomPriceChange = async (students, prices) => {
+    const custom_prices = { ...settings.custom_prices }
+    for (const student of [].concat(students)) custom_prices[student] = prices
+    await saveSettings({ ...settings, custom_prices })
   }
 
   const handleCustomerDetailChange = async (student, details) => {

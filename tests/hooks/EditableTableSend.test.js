@@ -114,3 +114,31 @@ describe('EditableTable with a ready link', () => {
     expect(url.searchParams.get('text')).toBe('שלום Rina Paz, Rina Paz: ₪200 https://pay.example/omer')
   })
 })
+
+describe('EditableTable review answers while stale', () => {
+  const reviewRow = { ...cleanRow, review_items: [reviewItem] }
+  const stored = { [`${month}:Dana Levy:e1`]: { mode: 'free' } }
+
+  // Value: protects=a stale table cannot save or clear a review answer, like every other per-row edit, and both buttons say why; fails_when=ReviewItem's שמור/נקה stay enabled under sendBlocked, writing the answer under a spelling the next Calculate no longer uses; why_new=review answers were the one edit not covered by the stale lock; seam=none
+  it('disables save and clear and writes nothing', async () => {
+    const onReviewResolutionChange = vi.fn()
+    render(createElement(EditableTable, baseProps({ rows: [reviewRow], sendBlocked: true, reviewResolutions: stored, onReviewResolutionChange })))
+    await act(async () => { fireEvent.click(screen.getByText(/\+₪0 extra/)) })
+    const save = screen.getByText('שמור')
+    const clear = screen.getByText('נקה')
+    for (const button of [save, clear]) {
+      expect(button.disabled).toBe(true)
+      expect(button.title).toBe('Press Calculate again first')
+      await act(async () => { fireEvent.click(button) })
+    }
+    expect(onReviewResolutionChange).not.toHaveBeenCalled()
+  })
+
+  it('saves once the table is fresh', async () => {
+    const onReviewResolutionChange = vi.fn()
+    render(createElement(EditableTable, baseProps({ rows: [reviewRow], reviewResolutions: stored, onReviewResolutionChange })))
+    await act(async () => { fireEvent.click(screen.getByText(/\+₪0 extra/)) })
+    await act(async () => { fireEvent.click(screen.getByText('שמור')) })
+    expect(onReviewResolutionChange).toHaveBeenCalledWith(`${month}:Dana Levy:e1`, { mode: 'free' })
+  })
+})

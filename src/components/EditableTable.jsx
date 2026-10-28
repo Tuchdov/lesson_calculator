@@ -184,7 +184,10 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
     } else {
       update = { regular: parsed, non_regular: parsed }
     }
-    onCustomPriceChange?.(row.student, update)
+    // A rate saved under other spellings of this student moves with it, so the
+    // spellings don't end up with two different prices (a name conflict).
+    const priced = row.name_conflicts?.length ? [] : (row.aliases ?? []).filter(a => customPrices?.[a])
+    onCustomPriceChange?.([row.student, ...priced], update)
     setEditing(false)
   }
 
@@ -450,7 +453,9 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
                   prices={prices}
                   resolution={reviewResolution(item, reviewResolutions, month, row)}
                   stored={storedReviewResolution(item, reviewResolutions, month, row)}
+                  locked={editLocked}
                   onSave={async resolution => {
+                    if (editLocked) return
                     // Answers under older spellings are cleared, so the one
                     // just saved (or the cleared state) is what shows.
                     const older = storedReviewNames(item, reviewResolutions, month, row).filter(n => n !== row.student)
@@ -472,7 +477,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
 
 const REVIEW_MODE_LABEL = { prorata: 'Pro-rata', base: 'Standard lesson only', fixed: 'Fixed amount', free: "Don't charge" }
 
-function ReviewItem({ item, prices, resolution, stored, onSave }) {
+function ReviewItem({ item, prices, resolution, stored, locked, onSave }) {
   const [mode, setMode] = useState(() => resolution?.mode ?? defaultReviewMode(item, prices))
   const [fixedAmount, setFixedAmount] = useState(() => (resolution?.mode === 'fixed' ? String(resolution.amount) : ''))
   const [error, setError] = useState(null)
@@ -536,8 +541,8 @@ function ReviewItem({ item, prices, resolution, stored, onSave }) {
               : <span className={styles.reviewMeta}>₪{optionAmount[m]}</span>}
           </label>
         ))}
-        <button className={styles.btnSavePhone} onClick={handleSave}>שמור</button>
-        {stored && <button className={styles.btnCancelPhone} onClick={() => persist(null)}>נקה</button>}
+        <button className={styles.btnSavePhone} onClick={handleSave} disabled={locked} title={locked ? STALE_HINT : undefined}>שמור</button>
+        {stored && <button className={styles.btnCancelPhone} onClick={() => persist(null)} disabled={locked} title={locked ? STALE_HINT : undefined}>נקה</button>}
         {error && <span className={styles.phoneErrorMsg}>{error}</span>}
       </div>
     </div>

@@ -33,9 +33,41 @@ describe('EditableTable price editing', () => {
     expect(screen.getByDisplayValue('300')).toBeTruthy()
     fireEvent.change(screen.getByDisplayValue('300'), { target: { value: '325' } })
     fireEvent.click(screen.getByTitle('Save price'))
-    expect(onCustomPriceChange).toHaveBeenCalledWith('Alice', {
+    expect(onCustomPriceChange).toHaveBeenCalledWith(['Alice'], {
       regular: { '60': 325, '45': 150, '30': 100 },
       non_regular: { '60': 325, '45': 150, '30': 100 },
     })
+  })
+})
+
+describe('EditableTable price editing across spellings', () => {
+  const spelled = { ...row, student: 'Alice', aliases: ['Alice 11.5 (Mom)', 'Alice Cohen'], name_conflicts: [] }
+  const edit = (props) => {
+    render(createElement(EditableTable, { rows: [spelled], config, month: '2026-03', ...props }))
+    fireEvent.doubleClick(screen.getByTitle("Double-click to change this student's ₪/lesson rate"))
+    fireEvent.change(screen.getByDisplayValue('200'), { target: { value: '220' } })
+    fireEvent.click(screen.getByTitle('Save price'))
+  }
+  const same = { regular: { '60': 200, '45': 150, '30': 100 }, non_regular: { '60': 200, '45': 150, '30': 100 } }
+
+  // Value: protects=a rate edit is saved under every other spelling that already has a saved price, so the spellings still agree and the row is not blocked as "two students?"; fails_when=onCustomPriceChange receives only row.student, leaving the alias on the old price; why_new=the edit used to write the canonical key alone; seam=none
+  it('saves the new rate under each priced spelling, not unpriced ones', () => {
+    const onCustomPriceChange = vi.fn()
+    edit({ onCustomPriceChange, customPrices: { Alice: same, 'Alice 11.5 (Mom)': same } })
+    expect(onCustomPriceChange).toHaveBeenCalledTimes(1)
+    const [students, update] = onCustomPriceChange.mock.calls[0]
+    expect(students).toEqual(['Alice', 'Alice 11.5 (Mom)'])
+    expect(update.regular['60']).toBe(220)
+  })
+
+  // Value: protects=spellings that conflict (probably two students) are never edited together; fails_when=the name_conflicts check is dropped and a rate written for one student lands on the other; why_new=aliases are now written to; seam=none
+  it('writes only the row itself when its spellings conflict', () => {
+    const onCustomPriceChange = vi.fn()
+    const conflicted = { ...spelled, name_conflicts: ['price'] }
+    render(createElement(EditableTable, { rows: [conflicted], config, month: '2026-03', onCustomPriceChange, customPrices: { Alice: same, 'Alice 11.5 (Mom)': same } }))
+    fireEvent.doubleClick(screen.getByTitle("Double-click to change this student's ₪/lesson rate"))
+    fireEvent.change(screen.getByDisplayValue('200'), { target: { value: '220' } })
+    fireEvent.click(screen.getByTitle('Save price'))
+    expect(onCustomPriceChange.mock.calls[0][0]).toEqual(['Alice'])
   })
 })
