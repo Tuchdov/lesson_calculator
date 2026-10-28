@@ -207,7 +207,7 @@ Proposed endpoints (keep adapters thin and business logic injectable):
 | `POST /api/create-payment-link` | Extend existing single/batch route with request IDs, student IDs and invoice versions; server derives invoice totals and saves each result before responding |
 | `GET /api/payment-requests?id=...` | Authenticated recovery/status query after a timeout or reload; owner-scoped lookup |
 | `POST /api/payment-link-result` | Authenticated Make-to-app completion callback that saves process IDs and URL independently of the original HTTP response |
-| `POST /api/grow-notify` | Atomically save receipt, replay payload and processing job before acknowledgement; accept direct Grow delivery or a separately authenticated Make forwarding adapter |
+| `POST /api/grow-notify` | Atomically save receipt, replay payload and processing job before acknowledgement; authenticated Make forwarding can associate reports with requests; anonymous direct delivery stays quarantined |
 | `POST /api/payment-jobs` | Secret-authenticated job/reconciliation runner, callable by a scheduled Make scenario; bounded batches and atomic job claims |
 
 Extend each Make request with a request correlation ID and opaque billing reference;
@@ -232,8 +232,10 @@ If Notify URL uses Make's Grow webhook trigger, add a distinct
 `MAKE_NOTIFY_SECRET` to its app forwarding call. This authenticates the forwarding
 hop, not necessarily the original notification. Make must durably deliver the
 receipt to the app before approval; a failed delivery must retry forwarding,
-not recreate a link. Direct-to-app intake remains the fallback if the trigger's
-durability/authenticity behavior cannot be established.
+not recreate a link. When the secret is configured, every delivery must supply
+it. With no secret configured, direct-to-app intake stores anonymous receipts in
+separate quarantine; authenticated redelivery is required before associating them
+with requests or placing student holds.
 
 Add `useBilling` and a browser billing client. Load after auth/month selection and
 refresh after preparation, on window focus, and through an explicit Refresh action.
@@ -318,8 +320,10 @@ status-code specification. [Callback documentation][grow-callback]
   encrypted replay payload, processing job and applicable student hold **before**
   acknowledging. Failure rolls all four back and returns non-success. A duplicate
   receipt must find its existing job or repair it transactionally, not just return
-  early. Unknown processes use fixed intake caps, never name/phone matching;
-  support replay when a known result later arrives. Time-window rate limiting
+  early. Anonymous receipts use a separate fixed intake cap and cannot consume
+  authenticated request or orphan capacity. Authenticated unknown processes use
+  fixed intake caps, never name/phone matching; support replay when a known result
+  later arrives. Time-window rate limiting
   and quarantine expiry remain unimplemented; saturated intake requires manual
   reconciliation rather than being treated as an automatically expiring queue.
 - A known process ID or a custom field is correlation, not proof of authenticity.

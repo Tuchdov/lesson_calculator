@@ -20,7 +20,7 @@ export async function runtime() {
   try { version = await one(database, 'SELECT MAX(version) AS version FROM schema_migrations') } catch {
     throw new ServiceError(503, 'Run the billing database migrations before using Billing.')
   }
-  if (version?.version !== 1) throw new ServiceError(503, 'Unsupported billing database version.')
+  if (version?.version !== 2) throw new ServiceError(503, 'Unsupported billing database version. Run the billing database migrations.')
   const options = config()
   const control = await one(database, 'SELECT environment,merchant FROM billing_control WHERE id=1')
   if (control?.environment !== options.environment || control?.merchant !== options.merchant) throw new ServiceError(503, 'Billing database belongs to another environment/merchant or has not been configured.')

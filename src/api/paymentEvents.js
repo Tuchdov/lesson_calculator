@@ -26,7 +26,9 @@ async function unseal(data, secret, context) {
 }
 
 export function createPaymentEvents(db, { environment, merchant, payloadKey, operationsUrl, apiKey, approvalReplaySafe = false, fetchImpl = fetch, now = Date.now }) {
-  async function receive(body) {
+  // Authentication is supplied by the adapter after checking the forwarding secret.
+  async function receive(body, { authenticated = false } = {}) {
+    authenticated = authenticated === true
     if (!body || JSON.stringify(body).length > 32768) fail('Invalid notification size.', 400)
     const data = body.data
     if (String(body.status) !== '1' || !data || typeof data !== 'object') fail('Invalid Grow notification envelope.', 400)
@@ -51,17 +53,25 @@ export function createPaymentEvents(db, { environment, merchant, payloadKey, ope
     const encrypted = await seal(payload, payloadKey, eventId)
     return transaction(db, async tx => {
       const previous = await one(tx, "SELECT * FROM payment_events WHERE provider='grow' AND environment=? AND merchant=? AND fingerprint=?", [environment, merchant, fingerprint])
-      if (previous) {
+      if (previous && (previous.forwarding_authenticated || !authenticated || ['confirmed', 'dismissed'].includes(previous.state))) {
         if (previous.state !== 'confirmed') await tx.execute({ sql: "INSERT INTO integration_jobs(id,operation,event_id) VALUES(?,'verify',?) ON CONFLICT(operation,event_id) DO NOTHING", args: [id(), previous.id] })
         return { received: true, duplicate: true }
       }
-      const request = await one(tx, 'SELECT * FROM payment_requests WHERE environment=? AND merchant=? AND process_id=?', [environment, merchant, processId])
-      // Bound unauthenticated intake. Known requests also have a finite event budget.
-      const count = await one(tx, `SELECT COUNT(*) AS n FROM payment_events WHERE environment=? AND merchant=? AND ${request ? 'request_id=?' : "request_id IS NULL AND state='quarantined'"}`, request ? [environment, merchant, request.id] : [environment, merchant])
+      const request = authenticated ? await one(tx, 'SELECT * FROM payment_requests WHERE environment=? AND merchant=? AND process_id=?', [environment, merchant, processId]) : null
+      // Anonymous quarantine cannot consume authenticated request or orphan capacity.
+      const count = await one(tx, `SELECT COUNT(*) AS n FROM payment_events WHERE environment=? AND merchant=? AND forwarding_authenticated=? AND ${request ? 'request_id=?' : "request_id IS NULL AND state='quarantined'"}`, request ? [environment, merchant, authenticated ? 1 : 0, request.id] : [environment, merchant, authenticated ? 1 : 0])
       if (count.n >= (request ? 100 : 250)) fail('Notification intake needs review. Please retry later.', 429)
-      await tx.execute({ sql: 'INSERT INTO payment_events(id,environment,merchant,fingerprint,process_id,transaction_id,status_code,amount_agorot,state,request_id,supported) VALUES(?,?,?,?,?,?,?,?,?,?,?)', args: [eventId, environment, merchant, fingerprint, processId, transactionId, status, amount, request ? 'reported' : 'quarantined', request?.id ?? null, supported ? 1 : 0] })
-      await tx.execute({ sql: 'INSERT INTO integration_payloads(id,ciphertext,expires_at) VALUES(?,?,?)', args: [eventId, encrypted, now() + 7 * DAY] })
-      await tx.execute({ sql: "INSERT INTO integration_jobs(id,operation,event_id) VALUES(?,'verify',?)", args: [id(), eventId] })
+      if (previous) {
+        // A trusted redelivery replaces the anonymous payload as well as its intake state.
+        const trustedPayload = await seal(payload, payloadKey, previous.id)
+        await tx.execute({ sql: 'UPDATE payment_events SET forwarding_authenticated=1,state=?,request_id=? WHERE id=?', args: [request ? 'reported' : 'quarantined', request?.id ?? null, previous.id] })
+        await tx.execute({ sql: 'UPDATE integration_payloads SET ciphertext=?,expires_at=?,purge_after=NULL,purged_at=NULL WHERE id=?', args: [trustedPayload, now() + 7 * DAY, previous.id] })
+        await tx.execute({ sql: "INSERT INTO integration_jobs(id,operation,event_id) VALUES(?,'verify',?) ON CONFLICT(operation,event_id) DO UPDATE SET state='pending',error=NULL", args: [id(), previous.id] })
+      } else {
+        await tx.execute({ sql: 'INSERT INTO payment_events(id,environment,merchant,fingerprint,process_id,transaction_id,status_code,amount_agorot,state,request_id,supported,forwarding_authenticated) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', args: [eventId, environment, merchant, fingerprint, processId, transactionId, status, amount, request ? 'reported' : 'quarantined', request?.id ?? null, supported ? 1 : 0, authenticated ? 1 : 0] })
+        await tx.execute({ sql: 'INSERT INTO integration_payloads(id,ciphertext,expires_at) VALUES(?,?,?)', args: [eventId, encrypted, now() + 7 * DAY] })
+        await tx.execute({ sql: "INSERT INTO integration_jobs(id,operation,event_id) VALUES(?,'verify',?)", args: [id(), eventId] })
+      }
       if (request) await tx.execute({ sql: "UPDATE students SET hold='Payment reported — check Grow before collecting again.' WHERE id=?", args: [request.student_id] })
       return { received: true }
     })

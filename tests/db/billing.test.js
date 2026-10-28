@@ -42,9 +42,9 @@ test('migrations are repeatable, detect changed versions, and rollback a failed 
   const migrations = await readMigrations()
   await migrate(db, migrations)
   await assert.rejects(migrate(db, [{ ...migrations[0], checksum: 'changed' }]), /modified/)
-  await assert.rejects(migrate(db, [...migrations, { version: 2, checksum: 'bad', sql: 'CREATE TABLE should_rollback(id TEXT); INSERT INTO nonexistent VALUES(1)' }]))
+  await assert.rejects(migrate(db, [...migrations, { version: 3, checksum: 'bad', sql: 'CREATE TABLE should_rollback(id TEXT); INSERT INTO nonexistent VALUES(1)' }]))
   assert.equal(await one(db, "SELECT name FROM sqlite_master WHERE name='should_rollback'"), null)
-  assert.equal((await one(db, 'SELECT COUNT(*) AS n FROM schema_migrations')).n, 1)
+  assert.equal((await one(db, 'SELECT COUNT(*) AS n FROM schema_migrations')).n, 2)
 })
 
 test('partial payments carry once across months and never create a duplicated charge', async t => {
@@ -57,7 +57,7 @@ test('partial payments carry once across months and never create a duplicated ch
   const r = await repo.claimRequest(owner, input(s, { month: '2026-09' }))
   assert.equal(r.amount_agorot, 60000)
   await repo.completeRequest(r.id, { ...result, amountAgorot: 60000 })
-  await events.receive(notification({ sum: '600' }))
+  await events.receive(notification({ sum: '600' }), { authenticated: true })
   const report = await one(db, 'SELECT id FROM payment_events')
   await repo.confirmEvent(owner, { eventId: report.id, month: '2026-09', evidence: 'Checked Grow transaction and amount' })
   s = (await repo.getBilling(owner, '2026-09')).students[0]
@@ -103,7 +103,7 @@ test('callbacks before link results are quarantined, then matched; no payment is
   const { repo, events, db } = await setup(t)
   const s = await save(repo)
   const r = await repo.claimRequest(owner, input(s))
-  await events.receive(notification())
+  await events.receive(notification(), { authenticated: true })
   assert.equal((await one(db, 'SELECT state FROM payment_events')).state, 'quarantined')
   await repo.completeRequest(r.id, result)
   await events.runJobs()
@@ -119,9 +119,9 @@ test('multiple receipts and manual confirmation of one transaction post principa
   const { repo, events, db } = await setup(t)
   const s = await save(repo)
   await ready(repo, s)
-  await events.receive(notification())
-  await events.receive(notification())
-  await events.receive(notification({ paymentDate: '01/08/26' }))
+  await events.receive(notification(), { authenticated: true })
+  await events.receive(notification(), { authenticated: true })
+  await events.receive(notification({ paymentDate: '01/08/26' }), { authenticated: true })
   const reports = await query(db, 'SELECT id FROM payment_events')
   assert.equal(reports.length, 2)
   for (const report of reports) await repo.confirmEvent(owner, { eventId: report.id, month: '2026-08', evidence: 'Checked transaction in Grow dashboard' })
@@ -137,7 +137,7 @@ test('principal, allocations and acknowledgement jobs roll back together on fail
   const { repo, events, db } = await setup(t)
   const s = await save(repo)
   await ready(repo, s)
-  await events.receive(notification())
+  await events.receive(notification(), { authenticated: true })
   const report = await one(db, 'SELECT id FROM payment_events')
   // Inject a real constraint failure at the final acknowledgement insert.
   await db.execute("CREATE TRIGGER fail_approval BEFORE INSERT ON integration_jobs WHEN NEW.operation='approve' BEGIN SELECT RAISE(ABORT, 'injected failure'); END")
@@ -241,8 +241,8 @@ test('approval replays encrypted payload, purges only after success, and retains
   })
   const s = await save(repo)
   await ready(repo, s)
-  await events.receive(notification())
-  await events.receive(notification({ paymentDate: '01/08/26' }))
+  await events.receive(notification(), { authenticated: true })
+  await events.receive(notification({ paymentDate: '01/08/26' }), { authenticated: true })
   const payload = await one(db, 'SELECT * FROM integration_payloads')
   assert.equal(payload.ciphertext.includes('txn-secret'), false)
   const event = await one(db, 'SELECT id FROM payment_events')
@@ -252,7 +252,7 @@ test('approval replays encrypted payload, purges only after success, and retains
   assert.equal(calls[0].data.transactionToken, 'txn-secret')
   assert.equal((await one(db, "SELECT state FROM integration_jobs WHERE operation='approve'")).state, 'done')
   assert.ok((await one(db, 'SELECT ciphertext FROM integration_payloads')).ciphertext)
-  await events.receive(notification({ paymentDate: '1/08/2026' }))
+  await events.receive(notification({ paymentDate: '1/08/2026' }), { authenticated: true })
   const duplicate = await one(db, "SELECT id FROM payment_events WHERE state='reported'")
   await repo.confirmEvent(owner, { eventId: duplicate.id, month: '2026-08', evidence: 'Verified duplicate transaction in Grow dashboard' })
   clock += 86_400_001
@@ -267,7 +267,7 @@ test('uncertain approvals are not blindly retried; expired payloads remain revie
   const { repo, events, db } = await setup(t, { now: () => clock, operationsUrl: 'https://make.example/operations', fetchImpl: async () => { calls++; throw new Error('timeout') } })
   const s = await save(repo)
   await ready(repo, s)
-  await events.receive(notification())
+  await events.receive(notification(), { authenticated: true })
   const event = await one(db, 'SELECT id FROM payment_events')
   await repo.confirmEvent(owner, { eventId: event.id, month: '2026-08', evidence: 'Checked dashboard receipt' })
   await events.runJobs()
@@ -290,7 +290,7 @@ test('a stale worker cannot overwrite a newer review decision', async t => {
     return { ok: true, json: async () => ({ version: 1, action: 'approve', jobId: body.jobId, approved: true }) }
   } })
   await ready(repo, await save(repo))
-  await events.receive(notification())
+  await events.receive(notification(), { authenticated: true })
   const event = await one(db, 'SELECT id FROM payment_events')
   await repo.confirmEvent(owner, { eventId: event.id, month: '2026-08', evidence: 'Verified Grow transaction' })
   const running = events.runJobs()
@@ -322,7 +322,7 @@ test('invalid months cannot commit payments and foreign keys reject cross-owner 
   const { repo, events, db } = await setup(t)
   const s = await save(repo)
   const r = await ready(repo, s)
-  await events.receive(notification())
+  await events.receive(notification(), { authenticated: true })
   const event = await one(db, 'SELECT id FROM payment_events')
   await assert.rejects(repo.confirmEvent(owner, { eventId: event.id, month: 'bad', evidence: 'Verified in Grow dashboard' }), /month/)
   assert.equal((await one(db, 'SELECT COUNT(*) AS n FROM payments')).n, 0)
@@ -353,7 +353,7 @@ test('a late provider result after a reviewed cancellation holds collection, eve
 test('unsupported installment/currency reports require reconciliation and cannot post principal', async t => {
   const { repo, events, db } = await setup(t)
   await ready(repo, await save(repo))
-  await events.receive(notification({ allPaymentsNum: '12', paymentType: '4' }))
+  await events.receive(notification({ allPaymentsNum: '12', paymentType: '4' }), { authenticated: true })
   const report = await one(db, 'SELECT id FROM payment_events')
   await assert.rejects(repo.confirmEvent(owner, { eventId: report.id, month: '2026-08', evidence: 'Checked transaction in dashboard' }), /single-payment/)
   assert.equal((await one(db, 'SELECT COUNT(*) AS n FROM payments')).n, 0)
@@ -369,7 +369,7 @@ test('replaying resolved review actions cannot invalidate a later ready link', a
     let replay
     if (kind === 'event') {
       const old = await ready(repo, s)
-      await events.receive(notification({ statusCode: '3' }))
+      await events.receive(notification({ statusCode: '3' }), { authenticated: true })
       s = (await repo.getBilling(owner, '2026-08')).students[0]
       const action = { eventId: s.pending[0].id, month: '2026-08', evidence: 'Checked unsuccessful charge in Grow' }
       await repo.resolveEvent(owner, action)
@@ -411,4 +411,80 @@ test('batch preparation defers later items after its dispatch budget without cla
   assert.equal(result.results.filter(r => r.state === 'deferred').length, 1)
   assert.equal(calls, 6)
   assert.equal((await one(db, 'SELECT COUNT(*) AS n FROM payment_requests')).n, 6)
+})
+
+test('anonymous intake cannot hold a student or exhaust authenticated request or orphan budgets', async t => {
+  const { repo, events, db } = await setup(t)
+  const s = await save(repo)
+  await ready(repo, s)
+  for (let i = 0; i < 250; i++) await events.receive(notification({ transactionId: `anonymous${i}` }))
+  await assert.rejects(events.receive(notification({ transactionId: 'anonymous-overflow' })), { status: 429 })
+  const unchanged = (await repo.getBilling(owner, '2026-08')).students[0]
+  assert.equal(unchanged.hold, null)
+  assert.equal(unchanged.pending.length, 0)
+  assert.equal(unchanged.request.reusable, true)
+  await events.receive(notification({ paymentLinkProcessId: 'unknown-process' }), { authenticated: true })
+  // Trusted redelivery of an anonymous fingerprint must also be admitted.
+  await events.receive(notification({ transactionId: 'anonymous0' }), { authenticated: true })
+  for (let i = 1; i < 100; i++) await events.receive(notification({ transactionId: `trusted${i}` }), { authenticated: true })
+  await assert.rejects(events.receive(notification({ transactionId: 'trusted-overflow' }), { authenticated: true }), { status: 429 })
+  const duplicate = await events.receive(notification({ transactionId: 'trusted1' }), { authenticated: true })
+  assert.equal(duplicate.duplicate, true)
+  assert.equal((await one(db, 'SELECT COUNT(*) AS n FROM payment_events WHERE request_id IS NOT NULL')).n, 100)
+  assert.equal((await repo.getBilling(owner, '2026-08')).students[0].pending.length, 100)
+})
+
+test('anonymous early receipts stay quarantined until authenticated redelivery replaces their payload', async t => {
+  let approved
+  const { repo, events, db } = await setup(t, {
+    operationsUrl: 'https://make.example/operations',
+    fetchImpl: async (_url, request) => {
+      approved = JSON.parse(request.body)
+      return { ok: true, json: async () => ({ version: 1, action: 'approve', jobId: approved.jobId, approved: true }) }
+    },
+  })
+  const s = await save(repo)
+  const r = await repo.claimRequest(owner, input(s))
+  await events.receive(notification({ payerEmail: 'untrusted@example.com' }))
+  const original = await one(db, 'SELECT * FROM payment_events')
+  await repo.completeRequest(r.id, result)
+  assert.equal((await one(db, 'SELECT request_id FROM payment_events')).request_id, null)
+  assert.equal((await repo.getBilling(owner, '2026-08')).students[0].hold, null)
+  await events.runJobs()
+  await events.receive(notification({ payerEmail: 'checked@example.com' }), { authenticated: true })
+  const promoted = await one(db, 'SELECT * FROM payment_events')
+  assert.equal(promoted.id, original.id)
+  assert.equal(promoted.forwarding_authenticated, 1)
+  assert.equal(promoted.request_id, r.id)
+  assert.equal(promoted.state, 'reported')
+  assert.equal((await one(db, 'SELECT COUNT(*) AS n FROM payment_events')).n, 1)
+  await repo.confirmEvent(owner, { eventId: promoted.id, month: '2026-08', evidence: 'Verified transaction in Grow dashboard' })
+  await events.runJobs()
+  assert.equal(approved.data.payerEmail, 'checked@example.com')
+  assert.equal((await one(db, 'SELECT COUNT(*) AS n FROM payments')).n, 1)
+})
+
+test('ledger changes require valid revisions and reject stale writes without changing records', async t => {
+  const { repo, db } = await setup(t)
+  let s = await save(repo)
+  const r = await ready(repo, s)
+  s = (await repo.recordManual(owner, { ...input(s), actionId: crypto.randomUUID(), source: 'bank', amountAgorot: 10000, evidence: 'Bank receipt checked' })).students[0]
+  const base = { studentId: s.id, month: '2026-08', evidence: 'Verified transaction in bank records', actionId: crypto.randomUUID() }
+  const actions = [
+    ['recordManual', { ...base, source: 'cash', amountAgorot: 10000 }],
+    ['closeRequest', { ...base, requestId: r.id, providerClosed: true, dispatchSettled: true }],
+    ['reversePayment', { ...base, paymentId: s.payments[0].id, amountAgorot: 5000 }],
+    ['adjustInvoice', { ...base, invoiceId: s.invoices[0].id, chargeAgorot: 25000 }],
+    ['openingBalance', { ...base, amountAgorot: 20000 }],
+  ]
+  const tables = ['students', 'invoices', 'invoice_adjustments', 'payments', 'payment_reversals', 'payment_allocations', 'payment_requests']
+  const snapshot = async () => Promise.all(tables.map(table => query(db, `SELECT * FROM ${table}`)))
+  const records = await snapshot()
+  for (const [action, payload] of actions) {
+    for (const revision of [undefined, null, '2', -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+      await assert.rejects(repo[action](owner, { ...payload, revision }), { status: 400 }, `${action}: ${revision}`)
+    }
+    await assert.rejects(repo[action](owner, { ...payload, revision: s.revision - 1 }), /Billing changed/, action)
+    assert.deepEqual(await snapshot(), records, action)
+  }
 })

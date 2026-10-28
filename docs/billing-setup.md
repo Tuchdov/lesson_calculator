@@ -48,7 +48,7 @@ late completion, held credit, refunds, and a real snapshot-restore test.
 | `PAYMENT_PAYLOAD_KEY` | Base64 AES-256 key for stored callback replay fields |
 | `MAKE_WEBHOOK_URL`, `MAKE_API_KEY` | Creation webhook and its `x-make-apikey` credential |
 | `MAKE_RESULT_SECRET` | Authenticates result delivery to the app |
-| `MAKE_NOTIFY_SECRET` | Optional authenticated forwarding from Make; it does not establish Grow authenticity |
+| `MAKE_NOTIFY_SECRET` | Authenticates forwarding from Make; when set, every notification must supply it. Required to associate new reports with billing requests; it does not establish Grow authenticity |
 | `MAKE_OPERATIONS_WEBHOOK_URL` | Approval workflow described below |
 | `PAYMENT_JOBS_SECRET` | Authenticates scheduled worker calls |
 | `GROW_APPROVAL_REPLAY_SAFE` | Defaults false; only set true after testing repeated approval behavior |
@@ -114,7 +114,7 @@ again and appears as a separate review item.
 
 ## Payment notifications and confirmation
 
-The direct endpoint accepts JSON with Grow's nested envelope:
+The notification endpoint accepts JSON with Grow's nested envelope:
 
 ```json
 {
@@ -136,19 +136,36 @@ short example. The server retains an encrypted allowlist of those fields. It
 commits the receipt, payload and job before returning 200. That HTTP response
 acknowledges storage; Grow's Approve Transaction action is a separate step.
 
-Alternatively, use Grow's Notify URL Webhook trigger in Make and forward the
-original envelope with `x-make-notify-secret`. Establish durable forwarding and
-inspect what authenticity checks the trigger actually provides before switching
-Notify URL. A shared forwarding secret alone is not proof that Grow originated
-an event. [Callback reference](https://developers.grow.business/reference/payment-request-callback)
+Use Grow's Notify URL Webhook trigger in Make and forward the original envelope
+with `x-make-notify-secret`, matching `MAKE_NOTIFY_SECRET` on the server. Once
+configured, missing or incorrect credentials are rejected before storage.
+Establish durable forwarding and inspect what authenticity checks the trigger
+actually provides before switching Notify URL. A shared forwarding secret alone
+is not proof that Grow originated an event. [Callback reference](https://developers.grow.business/reference/payment-request-callback)
+
+If `MAKE_NOTIFY_SECRET` is unset, direct delivery is stored only in anonymous
+quarantine, even for a known process ID. It cannot attach to a billing request or
+place a student on hold. Anonymous quarantine has a separate 250-event limit;
+authenticated unmatched receipts have their own 250-event limit, and authenticated
+reports for each request have a 100-event limit. To make a quarantined receipt
+available for confirmation, forward it again through the authenticated adapter.
+That redelivery replaces the anonymous replay payload without duplicating the
+receipt. Each forwarding credential authenticates only that hop; confirmation
+still requires checking Grow.
+
+Existing deployments must run `npm run db:migrate` for migration 002 before
+deploying this version. Older receipts have no recorded forwarding authentication;
+their existing links and owner decisions are preserved. Unmatched older receipts
+require authenticated redelivery before they can be associated with a request.
 
 Until a supported verification mechanism is established, reports appear as
 pending. The teacher checks the transaction ID, paid amount and final status in
 Grow, then uses **Manage payments → Confirm after checking Grow** and records
 evidence. Confirmation posts the transaction once, allocates against the original
 invoices, and queues approval. Unsupported currencies/installments/statuses stay
-in review. A report arriving before the creation result is quarantined until the
-process ID can be matched; it never creates debt or posts payment automatically.
+in review. An authenticated report arriving before the creation result is
+quarantined until the process ID can be matched; it never creates debt or posts
+payment automatically.
 
 Historical browser links are copied to review records before old local copies
 are pruned. They do not establish debt or payment. Inspect their status in Grow,

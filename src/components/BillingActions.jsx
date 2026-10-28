@@ -11,7 +11,7 @@ export function BillingActions({ student, billing, previewCharge }) {
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
   const open = (action, extra = {}, amountAgorot = student.remainingAgorot) => {
-    setForm({ action, actionId: crypto.randomUUID(), ...extra })
+    setForm({ action, actionId: crypto.randomUUID(), revision: student.revision, ...extra })
     setAmount(formatMoney(amountAgorot))
     setEvidence('')
     setError(null)
@@ -22,7 +22,7 @@ export function BillingActions({ student, billing, previewCharge }) {
     setBusy(true)
     setError(null)
     try {
-      const input = { ...form, studentId: student.id, revision: student.revision, evidence }
+      const input = { ...form, studentId: student.id, evidence }
       if (form.action === 'recordManual' || form.action === 'reversePayment' || form.action === 'openingBalance') input.amountAgorot = toAgorot(amount)
       if (form.action === 'recordManual') input.source = source
       if (form.action === 'adjustInvoice') input.chargeAgorot = toAgorot(amount)

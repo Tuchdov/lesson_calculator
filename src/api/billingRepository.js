@@ -13,6 +13,9 @@ export function requireMoney(value, allowZero = false) {
   if (!Number.isSafeInteger(value) || value < (allowZero ? 0 : 1) || value > 100_000_000) fail('Invalid amount.', 400)
   return value
 }
+function requireRevision(value) {
+  if (!Number.isSafeInteger(value) || value < 0) fail('Invalid billing revision. Refresh before continuing.', 400)
+}
 export function requireEvidence(value) {
   if (typeof value !== 'string' || value.trim().length < 5 || value.length > 1000) fail('Record how this was checked in Grow or your payment records.', 400)
   return value.trim()
@@ -232,7 +235,7 @@ export function createBillingRepository(db, { environment, merchant, mode = 'sha
       const unexpectedLateLink = !r.process_id && ['cancelled', 'completed'].includes(r.state)
       const state = unexpectedLateLink ? 'needs_review' : ['cancelled', 'completed', 'needs_review'].includes(r.state) ? r.state : 'ready'
       await tx.execute({ sql: 'UPDATE payment_requests SET url=?,process_id=?,process_token=?,state=? WHERE id=?', args: [link, processId, processToken, state, r.id] })
-      const unmatched = await query(tx, "SELECT * FROM payment_events WHERE environment=? AND merchant=? AND process_id=? AND request_id IS NULL", [environment, merchant, processId])
+      const unmatched = await query(tx, "SELECT * FROM payment_events WHERE environment=? AND merchant=? AND process_id=? AND request_id IS NULL AND forwarding_authenticated=1", [environment, merchant, processId])
       for (const event of unmatched) {
         await tx.execute({ sql: "UPDATE payment_events SET request_id=?,state='reported' WHERE id=?", args: [r.id, event.id] })
         await tx.execute({ sql: "INSERT INTO integration_jobs(id,operation,event_id) VALUES(?,'verify',?) ON CONFLICT(operation,event_id) DO UPDATE SET state='pending',error=NULL", args: [id(), event.id] })
@@ -246,6 +249,7 @@ export function createBillingRepository(db, { environment, merchant, mode = 'sha
   }
 
   async function recordManual(owner, input) {
+    requireRevision(input.revision)
     requireId(input.actionId)
     requireMoney(input.amountAgorot)
     const evidence = requireEvidence(input.evidence)
@@ -303,6 +307,7 @@ export function createBillingRepository(db, { environment, merchant, mode = 'sha
   }
 
   async function closeRequest(owner, input) {
+    requireRevision(input.revision)
     monthKey(input.month)
     const evidence = requireEvidence(input.evidence)
     if (input.providerClosed !== true || input.dispatchSettled !== true) fail('Confirm the Make execution has finished and the Grow link is closed with no payment in progress.', 400)
@@ -344,6 +349,7 @@ export function createBillingRepository(db, { environment, merchant, mode = 'sha
   }
 
   async function reversePayment(owner, input) {
+    requireRevision(input.revision)
     monthKey(input.month)
     requireId(input.actionId)
     requireMoney(input.amountAgorot)
@@ -368,6 +374,7 @@ export function createBillingRepository(db, { environment, merchant, mode = 'sha
   }
 
   async function adjustInvoice(owner, input) {
+    requireRevision(input.revision)
     monthKey(input.month)
     requireId(input.actionId)
     requireMoney(input.chargeAgorot, true)
@@ -416,6 +423,7 @@ export function createBillingRepository(db, { environment, merchant, mode = 'sha
   }
 
   async function openingBalance(owner, input) {
+    requireRevision(input.revision)
     requireId(input.actionId)
     requireMoney(input.amountAgorot)
     const evidence = requireEvidence(input.evidence)

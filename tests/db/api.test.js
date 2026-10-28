@@ -28,7 +28,7 @@ test('real API adapters authenticate batches once, persist results, and protect 
   const environment = {
     TURSO_DATABASE_URL: url, GROW_ENVIRONMENT: 'sandbox', GROW_MERCHANT_ID: 'api-test', BILLING_MODE: 'live',
     ALLOWED_EMAIL: 'teacher@example.com', VITE_GOOGLE_CLIENT_ID: 'client-123', MAKE_WEBHOOK_URL: 'https://make.example/create',
-    MAKE_API_KEY: 'create-api-key', MAKE_RESULT_SECRET: 'r'.repeat(32), PAYMENT_JOBS_SECRET: 'j'.repeat(32),
+    MAKE_API_KEY: 'create-api-key', MAKE_RESULT_SECRET: 'r'.repeat(32), MAKE_NOTIFY_SECRET: 'n'.repeat(32), PAYMENT_JOBS_SECRET: 'j'.repeat(32),
     PAYMENT_PAYLOAD_KEY: Buffer.alloc(32, 8).toString('base64'),
   }
   const previous = {}
@@ -66,12 +66,23 @@ test('real API adapters authenticate batches once, persist results, and protect 
   assert.equal((await one(db, 'SELECT COUNT(*) AS n FROM payment_requests')).n, 2)
   assert.equal((await invoke(billing, { method: 'GET', query: { month: '2026-08' } })).statusCode, 401)
   assert.equal((await invoke(notify, { method: 'GET' })).statusCode, 405)
-  assert.equal((await invoke(notify, { body: { data: 'invalid' } })).statusCode, 400)
+  const notifyHeaders = { 'x-make-notify-secret': environment.MAKE_NOTIFY_SECRET }
+  assert.equal((await invoke(notify, { body: { data: 'invalid' }, headers: notifyHeaders })).statusCode, 400)
   assert.equal((await invoke(resultCallback, { headers: { 'x-make-result-secret': 'incorrect' }, body: {} })).statusCode, 401)
   assert.equal((await invoke(jobs, { headers: { 'x-payment-jobs-secret': 'incorrect' } })).statusCode, 401)
-  const received = await invoke(notify, { body: { status: 1, data: { paymentLinkProcessId: 'process1', transactionId: 'transaction1', statusCode: '2', sum: '300', transactionToken: 'callback-secret' } } })
+  const body = { status: 1, data: { paymentLinkProcessId: 'process1', transactionId: 'transaction1', statusCode: '2', sum: '300', transactionToken: 'callback-secret' } }
+  assert.equal((await invoke(notify, { body })).statusCode, 401)
+  assert.equal((await invoke(notify, { body, headers: { 'x-make-notify-secret': 'incorrect' } })).statusCode, 401)
+  assert.equal((await one(db, 'SELECT COUNT(*) AS n FROM payment_events')).n, 0)
+  const received = await invoke(notify, { body, headers: notifyHeaders })
   assert.equal(received.statusCode, 200)
+  assert.equal((await one(db, 'SELECT forwarding_authenticated FROM payment_events')).forwarding_authenticated, 1)
   assert.equal((await one(db, 'SELECT COUNT(*) AS n FROM payments')).n, 0)
+  delete process.env.MAKE_NOTIFY_SECRET
+  const anonymous = await invoke(notify, { body: { ...body, authenticated: true, data: { ...body.data, transactionId: 'anonymous1', authenticated: true } } })
+  assert.equal(anonymous.statusCode, 200)
+  assert.equal((await one(db, "SELECT request_id FROM payment_events WHERE transaction_id='anonymous1'")).request_id, null)
+  assert.equal((await invoke(notify, { body, headers: notifyHeaders })).statusCode, 503)
   const accountMismatch = await invoke(billing, { method: 'GET', headers: { ...headers, 'x-billing-owner': 'old@example.com' }, query: { month: '2026-08' } })
   assert.equal(accountMismatch.statusCode, 409)
   const visible = await invoke(billing, { method: 'GET', headers, query: { month: '2026-08' } })
