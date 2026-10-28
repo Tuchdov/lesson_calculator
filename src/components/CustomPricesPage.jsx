@@ -323,7 +323,7 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
         {knownProfiles.map(p => <option key={p} value={p} />)}
       </datalist>
 
-      {students.length === 0 && (
+      {students.length === 0 && Object.keys(removed).length === 0 && (
         <div className={styles.empty}>No saved students yet. Add a student above.</div>
       )}
       {students.length > 0 && visibleStudents.length === 0 && removedStrips.length === 0 && (
@@ -475,7 +475,7 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
         )
       })}
 
-      {students.length > 0 && (
+      {(students.length > 0 || Object.keys(removed).length > 0) && (
         <div className={styles.footer}>
           {saveError && <span className={styles.saveErrorMsg} role="alert">{saveError}</span>}
           {saved && !saveError && <span className={styles.savedMsg}>Saved!</span>}

@@ -34,6 +34,28 @@ describe('CustomPricesPage spellings of one student', () => {
 })
 
 describe('CustomPricesPage remove and undo', () => {
+  it('keeps Save all available to persist removal of the last student', async () => {
+    const onSave = vi.fn().mockResolvedValue()
+    render(createElement(CustomPricesPage, {
+      settings: {
+        custom_prices: settings.custom_prices,
+        customer_details: { [PRICED]: { phone: '050-1111111', full_name: 'Parent Name' } },
+      },
+      onSave,
+    }))
+
+    fireEvent.click(within(card(PRICED)).getByText('Remove'))
+    expect(screen.getByRole('status').textContent).toContain('will be removed when you press Save all.')
+    expect(screen.queryByText(/No saved students yet/)).toBeNull()
+    expect(onSave).not.toHaveBeenCalled()
+
+    const next = await save(onSave)
+    expect(next.custom_prices).toEqual({})
+    expect(next.customer_details).toEqual({})
+    expect(screen.queryByText('Undo')).toBeNull()
+    expect(screen.getByText(/No saved students yet/)).toBeTruthy()
+  })
+
   // Value: protects=Remove can be undone until Save all, restoring everything the card held, and a confirmed remove deletes it; fails_when=Undo restores only part of the card (phone lost) or Remove deletes immediately; why_new=undo is new; seam=none
   it('restores a removed card until Save all, and deletes it after', async () => {
     const onSave = vi.fn().mockResolvedValue()
