@@ -97,11 +97,16 @@ export function amountChanged(storedAmount, currentAmount) {
 
 // --- Make payment profile ------------------------------------------------------
 
-// What the Make scenario's Router treats as the default route; shared by the
-// server (paymentLinkService.js) and the Custom Prices suggestions.
+// What the Make scenario's Router treats as the default route; the server
+// (paymentLinkService.js) sends it when a student has no profile.
 export const DEFAULT_PAYMENT_PROFILE = 'standard'
-// The Router's other route: a payment page offering every Grow method.
-export const EXTENDED_PAYMENT_PROFILE = 'extended'
+// The Router's routes, offered on the Custom Prices page. Make sends anything
+// other than 'extended' (any case) to the standard route; the labels mirror the
+// Grow methods each route's module is set up with in Make.
+export const PAYMENT_PROFILES = [
+  { id: DEFAULT_PAYMENT_PROFILE, label: 'Standard: card, Apple Pay, Google Pay, bank transfer' },
+  { id: 'extended', label: 'Extended: all methods, including Bit' },
+]
 // Grow's product line; the server rejects longer rendered invoice text.
 export const MAX_INVOICE_DESCRIPTION = 200
 

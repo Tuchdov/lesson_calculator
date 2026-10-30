@@ -75,25 +75,40 @@ describe('CustomPricesPage remove and undo', () => {
 })
 
 describe('CustomPricesPage payment profile', () => {
-  // Value: protects=the teacher can pick "extended" (every Grow method) without knowing the word; fails_when=suggestions only list profiles already saved, so extended never appears; why_new=bug report, only "standard" was offered; seam=none
-  it('suggests both Make routes before any student uses them', () => {
-    const { container } = render(createElement(CustomPricesPage, { settings, onSave: vi.fn() }))
-    const options = [...container.querySelectorAll('#payment-profiles option')].map(o => o.value)
-    expect(options).toEqual(['standard', 'extended'])
+  const profileFor = name => within(card(name)).getByLabelText('💳 Payment profile')
+  const optionValues = select => [...select.options].map(o => o.value)
+
+  // Value: protects=the teacher picks from exactly the Make Router's two routes, defaulting to standard; fails_when=the field goes back to free text or a typed profile leaks into other cards' choices; why_new=bug report, extended was never offered and typos spread as suggestions; seam=none
+  it('offers only the two Make routes and saves the chosen one', async () => {
+    const onSave = vi.fn().mockResolvedValue()
+    render(createElement(CustomPricesPage, { settings, onSave }))
+    const select = profileFor('Dana Levy')
+    expect(optionValues(select)).toEqual(['standard', 'extended'])
+    expect(select.value).toBe('standard')
+
+    fireEvent.change(select, { target: { value: 'extended' } })
+    expect(optionValues(profileFor(PLAIN))).toEqual(['standard', 'extended'])
+
+    const next = await save(onSave)
+    expect(next.customer_details['Dana Levy'].payment_profile).toBe('extended')
   })
 
-  // Value: protects=a profile name already in use (custom or built-in) stays offered once, after the two routes; fails_when=the list becomes a hard-coded pair of routes (custom profiles vanish) or loses its dedupe (a saved "extended" shows twice); why_new=existing test has no saved profiles, so neither merge path runs; seam=none
-  it('keeps saved custom profiles and lists each name once', () => {
-    const { container } = render(createElement(CustomPricesPage, {
+  // Value: protects=saved profiles map onto the Router's case-insensitive match, and an unknown one is shown as falling back to standard instead of vanishing; fails_when='Extended' shows as a separate or unselected option, or a legacy value is silently replaced; why_new=the select must round-trip values saved by the old free-text field; seam=none
+  it('selects a differently cased route and flags an unrecognized saved value', () => {
+    render(createElement(CustomPricesPage, {
       settings: {
         customer_details: {
-          'Dana Levy': { phone: '050-2222222', payment_profile: 'extended' },
-          'Noa Cohen': { phone: '050-3333333', payment_profile: ' vip ' },
+          'Dana Levy': { phone: '050-2222222', payment_profile: 'Extended' },
+          'Noa Cohen': { phone: '050-3333333', payment_profile: 'vip' },
         },
       },
       onSave: vi.fn(),
     }))
-    const options = [...container.querySelectorAll('#payment-profiles option')].map(o => o.value)
-    expect(options).toEqual(['standard', 'extended', 'vip'])
+    expect(profileFor('Dana Levy').value).toBe('extended')
+    expect(optionValues(profileFor('Dana Levy'))).toEqual(['standard', 'extended'])
+
+    const legacy = profileFor('Noa Cohen')
+    expect(legacy.value).toBe('vip')
+    expect(legacy.selectedOptions[0].textContent).toBe('vip (not recognized: gets Standard)')
   })
 })
