@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { validateIsraeliPhone } from '../lib/whatsapp.js'
-import { DEFAULT_PAYMENT_PROFILE, isValidPaymentProfile, buildGrowDescription, MAX_INVOICE_DESCRIPTION } from '../lib/payments.js'
+import { DEFAULT_PAYMENT_PROFILE, EXTENDED_PAYMENT_PROFILE, isValidPaymentProfile, buildGrowDescription, MAX_INVOICE_DESCRIPTION } from '../lib/payments.js'
 import { DURATION_LABELS, TYPES, TYPE_LABEL } from '../lib/priceConstants.js'
 import { normalizeStudentName, hasSavedPrice } from '../lib/calendarPayments.js'
 import { ImportPricesPanel } from './ImportPricesPanel.jsx'
@@ -267,7 +267,7 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
       .filter(s => s !== student && normalizeStudentName(s) === name && hasSavedPrice(customPrices[s]))
       .sort((a, b) => (b === name) - (a === name) || a.localeCompare(b, 'he'))[0] ?? null
   }
-  const knownProfiles = [...new Set([DEFAULT_PAYMENT_PROFILE, ...Object.values(extras).map(e => e?.payment_profile?.trim()).filter(Boolean)])]
+  const knownProfiles = [...new Set([DEFAULT_PAYMENT_PROFILE, EXTENDED_PAYMENT_PROFILE, ...Object.values(extras).map(e => e?.payment_profile?.trim()).filter(Boolean)])]
 
   return (
     <div className={styles.page}>
@@ -392,7 +392,7 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
                   className={`${styles.input} ${styles.phoneInput} ${profileErrors[student] ? styles.phoneInputError : ''}`}
                   list="payment-profiles"
                   placeholder={DEFAULT_PAYMENT_PROFILE}
-                  title="Sent to Make as payment_profile — the scenario's router picks which payment options this student gets"
+                  title="standard: card, Apple Pay, Google Pay, bank transfer. extended: every method, including Bit and Paybox"
                   value={extra.payment_profile ?? ''}
                   onChange={e => handleExtra(student, 'payment_profile', e.target.value)}
                   dir="auto"

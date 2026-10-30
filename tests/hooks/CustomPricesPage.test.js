@@ -73,3 +73,27 @@ describe('CustomPricesPage remove and undo', () => {
     expect(screen.queryByText('Undo')).toBeNull()
   })
 })
+
+describe('CustomPricesPage payment profile', () => {
+  // Value: protects=the teacher can pick "extended" (every Grow method) without knowing the word; fails_when=suggestions only list profiles already saved, so extended never appears; why_new=bug report, only "standard" was offered; seam=none
+  it('suggests both Make routes before any student uses them', () => {
+    const { container } = render(createElement(CustomPricesPage, { settings, onSave: vi.fn() }))
+    const options = [...container.querySelectorAll('#payment-profiles option')].map(o => o.value)
+    expect(options).toEqual(['standard', 'extended'])
+  })
+
+  // Value: protects=a profile name already in use (custom or built-in) stays offered once, after the two routes; fails_when=the list becomes a hard-coded pair of routes (custom profiles vanish) or loses its dedupe (a saved "extended" shows twice); why_new=existing test has no saved profiles, so neither merge path runs; seam=none
+  it('keeps saved custom profiles and lists each name once', () => {
+    const { container } = render(createElement(CustomPricesPage, {
+      settings: {
+        customer_details: {
+          'Dana Levy': { phone: '050-2222222', payment_profile: 'extended' },
+          'Noa Cohen': { phone: '050-3333333', payment_profile: ' vip ' },
+        },
+      },
+      onSave: vi.fn(),
+    }))
+    const options = [...container.querySelectorAll('#payment-profiles option')].map(o => o.value)
+    expect(options).toEqual(['standard', 'extended', 'vip'])
+  })
+})

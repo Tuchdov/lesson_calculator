@@ -100,6 +100,8 @@ export function amountChanged(storedAmount, currentAmount) {
 // What the Make scenario's Router treats as the default route; shared by the
 // server (paymentLinkService.js) and the Custom Prices suggestions.
 export const DEFAULT_PAYMENT_PROFILE = 'standard'
+// The Router's other route: a payment page offering every Grow method.
+export const EXTENDED_PAYMENT_PROFILE = 'extended'
 // Grow's product line; the server rejects longer rendered invoice text.
 export const MAX_INVOICE_DESCRIPTION = 200
 
