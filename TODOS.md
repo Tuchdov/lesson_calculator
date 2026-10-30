@@ -197,3 +197,31 @@ finding 13, which also pointed out that production would receive all twenty on f
 deploy.
 
 **Depends on / blocked by:** Nothing technical. This is a sequencing decision.
+
+## Bulk-send the prepared payment messages on WhatsApp
+
+**What:** Once "Prepare all links" has made a link for every student, add a
+way to send all the WhatsApp payment messages in one go. Each student gets a
+checkbox so the teacher picks who is included (for example, leaving out a student
+who already paid or is away this month).
+
+**Why:** Today each message is sent one at a time from its row: click the
+student's 📱 chip, WhatsApp opens, press send, return, repeat. With ~30 students a
+month, that's the slowest part of collecting payment.
+
+**Pros:** Turns ~30 manual round-trips into choose-and-confirm. The checkboxes also
+give a clear "who still needs a message" view.
+
+**Cons:** `wa.me` links (`src/lib/whatsapp.js`) open one chat per click, and browsers
+block opening many tabs at once. True one-click bulk sending needs the WhatsApp
+Business Cloud API (Meta business verification, approved message templates,
+per-message cost). The cheaper middle ground is a guided queue: send the checked
+students one after another, opening the next chat as each one is sent.
+
+**Context:** Requested by the user on 2026-10-30, after the payment-profile dropdown
+fix (PR #11). Builds on the per-row send in `src/components/EditableTable.jsx` and
+prepare-all in `src/components/CalculatorPage.jsx`.
+
+**Depends on / blocked by:** Choosing between the Business API and the guided
+queue. Fits well with "Track payment status from Grow's server-to-server callback"
+above, which could untick students who already paid.
