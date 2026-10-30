@@ -76,7 +76,9 @@ export function reviewItemAmount(item, resolution, prices) {
 }
 
 // Lesson amount plus every resolved review item, and how many are still
-// unresolved (a row with any unresolved item must not be billed).
+// unresolved (a row with any unresolved item must not be billed). The final
+// amount is always rounded up to a whole shekel (802.4 → 803); it is rounded
+// to cents first so float noise like 802.0000000001 doesn't bump it to 803.
 export function computeRowAmount(row, prices, resolutions, month) {
   let extra = 0
   let unresolved = 0
@@ -85,7 +87,7 @@ export function computeRowAmount(row, prices, resolutions, month) {
     if (!resolution) unresolved++
     else extra += reviewItemAmount(item, resolution, prices)
   }
-  const amount = Math.round((computeLessonAmount(row, prices) + extra) * 100) / 100
+  const amount = Math.ceil(Math.round((computeLessonAmount(row, prices) + extra) * 100) / 100)
   return { amount, extra: Math.round(extra * 100) / 100, unresolved }
 }
 

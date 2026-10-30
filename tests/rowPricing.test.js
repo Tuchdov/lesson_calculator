@@ -125,6 +125,14 @@ Deno.test('computeRowAmount: a fixed answer with a missing or non-numeric amount
   assertEquals(computeRowAmount(row, PRICES, resolutions, '2026-10'), { amount: 240, extra: 0, unresolved: 0 })
 })
 
+Deno.test('computeRowAmount: rounds the final amount up to a whole shekel', () => {
+  const row = { student: 'x', lessons_60: 4, lessons_45: 0, lessons_30: 0, review_items: [] }
+  assertEquals(computeRowAmount(row, { '60': 200.6, '45': 0, '30': 0 }, {}, '2026-10').amount, 803)
+  // Float noise (3 × 0.1 = 0.30000000000000004) must not bump an exact amount.
+  assertEquals(computeRowAmount({ ...row, lessons_60: 3 }, { '60': 0.1, '45': 0, '30': 0 }, {}, '2026-10').amount, 1)
+  assertEquals(computeRowAmount({ ...row, lessons_60: 4 }, { '60': 200, '45': 0, '30': 0 }, {}, '2026-10').amount, 800)
+})
+
 Deno.test('computeRowAmount: a make-up phrase auto-resolves; a stored answer still wins', () => {
   const row = reviewRow([{ id: 'a', minutes: 75, summary: 'x', auto: 'base' }])
   assertEquals(computeRowAmount(row, PRICES, {}, '2026-10').amount, 480)
