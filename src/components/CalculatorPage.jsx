@@ -1,17 +1,33 @@
-import { useState, useEffect } from 'react'
-import { useCalendarData } from '../hooks/useCalendarData.js'
+import { useMemo } from 'react'
 import { EditableTable } from './EditableTable.jsx'
-import { resolveRowPrices, computeLessonAmount } from '../lib/rowPricing.js'
+import { resolveRowPrices, computeRowAmount, detailsFor, billedLessonCount, payerName, lessonStudentName } from '../lib/rowPricing.js'
 import { safeTotalsCsvBytes } from '../lib/csvExport.js'
-import { getStoredOverride, isValidAmount, isLinkUsable, hasFullName } from '../lib/payments.js'
+import { invoiceRecord, invoiceKey, isValidAmount, isLinkUsable, hasFullName, linkInputs } from '../lib/payments.js'
+import { rowNeedsRecalc, DEFAULT_LESSON_KEYWORDS, DEFAULT_CANCELLED_KEYWORDS, DEFAULT_PAID_CANCELLATION_PHRASES, DEFAULT_MAKEUP_PHRASES } from '../lib/calendarPayments.js'
 import { requestPaymentLink } from '../lib/paymentLinkClient.js'
 import styles from './CalculatorPage.module.css'
 
 const PREPARE_CONCURRENCY = 6
+// Settings applied at Calculate time; changing one later makes the table stale.
+// Compared as calculatePayments applies them, so saving a list that still
+// equals its default (null before, the default array after) is no change.
+const STALE_DEFAULTS = {
+  lesson_keywords: DEFAULT_LESSON_KEYWORDS,
+  cancelled_keywords: DEFAULT_CANCELLED_KEYWORDS,
+  paid_cancellation_phrases: DEFAULT_PAID_CANCELLATION_PHRASES,
+  makeup_phrases: DEFAULT_MAKEUP_PHRASES,
+  student_name_regex: null,
+  calendar_id: 'primary',
+}
+const effectiveSetting = (c, k) => JSON.stringify(c?.[k] ?? STALE_DEFAULTS[k])
 
-function currentMonth() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+// Marks rows whose amount isn't final yet, so a low total doesn't look settled.
+function csvStatus(row, unresolved, adjusted) {
+  const parts = []
+  if (row.name_conflicts?.length) parts.push('name conflict')
+  if (unresolved > 0) parts.push('needs review')
+  if (adjusted) parts.push('adjusted')
+  return parts.join('; ')
 }
 
 // Runs `worker` over `items` with at most `limit` in flight at once. Each
@@ -29,64 +45,98 @@ async function runWithConcurrency(items, limit, worker) {
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, next))
 }
 
-export function CalculatorPage({ getAccessToken, config, customPrices, onCustomPriceChange, onStudentsChange, customerDetails, onCustomerDetailChange, defaultMessage, amountOverrides, onAmountOverrideChange, paymentLinks, onPaymentLinkChange }) {
-  const [month, setMonth] = useState(currentMonth)
-  const { rows, summary, loading, error, calculate } = useCalendarData(getAccessToken, {
-    ...config,
-    custom_prices: customPrices,
-  })
-  const [preparing, setPreparing] = useState(false)
-  const [prepareStatus, setPrepareStatus] = useState({})
-
-  useEffect(() => {
-    if (rows) onStudentsChange?.(rows.map(r => r.student))
-  }, [rows, onStudentsChange])
+export function CalculatorPage({ getAccessToken, config, calendar, month, onMonthChange, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, defaultMessage, amountOverrides, onAmountOverrideChange, paymentLinks, onPaymentLinkChange, reviewResolutions, onReviewResolutionChange, preparing, onPreparingChange, prepareStatus, onPrepareStatusChange }) {
+  const { rows, summary, loading, error, calculate, calculatedWith } = calendar
+  // Link progress is owned by App so leaving the page mid-run can't make
+  // finished-looking rows mint a second link when you come back. It is keyed
+  // by month too, so an error from one month never shows on another's table.
+  const statusMonth = summary?.month ?? month
+  const setRowStatus = (student, status) => onPrepareStatusChange?.(prev => ({ ...prev, [invoiceKey(statusMonth, student)]: status }))
+  const monthStatus = Object.fromEntries((rows ?? []).map(r => [r.student, prepareStatus?.[invoiceKey(statusMonth, r.student)]]))
 
   const handleRun = () => calculate(month)
 
-  const rowAmount = (row) => {
+  // A manual amount override is the teacher's final number for the invoice,
+  // so it also settles any review items on that row. Memoized: the page
+  // re-renders on every Prepare-all status update, and each row scans the
+  // saved prices, answers and overrides.
+  const billing = useMemo(() => (rows ?? []).map(row => {
     const prices = resolveRowPrices(row.student, row.student_type === 'regular', config, customPrices?.[row.student])
-    const computed = computeLessonAmount(row, prices)
-    return getStoredOverride(amountOverrides, summary?.month, row.student) ?? computed
+    const { amount, unresolved } = computeRowAmount(row, prices, reviewResolutions, summary?.month)
+    const override = invoiceRecord(amountOverrides, summary?.month, row)
+    return { row, ...(override != null ? { amount: override, unresolved: 0 } : { amount, unresolved }) }
+  }), [rows, config, customPrices, reviewResolutions, amountOverrides, summary?.month])
+  const liveTotal = Math.round(billing.reduce((sum, b) => sum + b.amount, 0) * 100) / 100
+  const needsReview = billing.filter(b => b.unresolved > 0).length
+  // Names are matched to saved students at Calculate time; a saved spelling or
+  // a conflicting detail added since then can change the row or its safety check.
+  const namesStale = useMemo(
+    () => rows?.some(r => rowNeedsRecalc(r, customPrices, customerDetails, config?.prices)) ?? false,
+    [rows, customPrices, customerDetails, config?.prices],
+  )
+  // Settings that decide which events count, and how, were applied at
+  // Calculate time too.
+  const settingsStale = !!calculatedWith && Object.keys(STALE_DEFAULTS).some(k => effectiveSetting(calculatedWith, k) !== effectiveSetting(config, k))
+  const stale = !!rows && (namesStale || settingsStale)
+
+  const rowLink = (row, details) => {
+    const name = payerName(details, row)
+    const lessonStudent = lessonStudentName(row)
+    const inputs = linkInputs({ payerName: name, phone: details.phone, lessonStudent, paymentProfile: details.payment_profile, invoiceDescription: details.invoice_description })
+    return { name, lessonStudent, inputs }
   }
 
   const handlePrepareAll = async () => {
-    if (!rows?.length || !summary || preparing) return
-    const eligible = rows
-      .map(row => ({
-        row,
-        phone: customerDetails?.[row.student]?.phone,
-        name: customerDetails?.[row.student]?.full_name || row.student,
-        amount: rowAmount(row),
-      }))
-      .filter(({ phone, name, amount, row }) =>
-        phone && hasFullName(name) && isValidAmount(amount) && !isLinkUsable(paymentLinks, summary.month, row.student, amount)
+    if (!rows?.length || !summary || preparing || stale) return
+    const eligible = billing
+      .filter(({ unresolved, row }) => unresolved === 0 && !row.name_conflicts?.length && monthStatus[row.student] !== 'loading')
+      .map(({ row, amount }) => {
+        const details = detailsFor(customerDetails, row)
+        return { row, details, phone: details.phone, amount, ...rowLink(row, details) }
+      })
+      .filter(({ phone, name, amount, row, inputs }) =>
+        phone && hasFullName(name) && isValidAmount(amount) && !isLinkUsable(paymentLinks, summary.month, row, amount, inputs)
       )
     if (!eligible.length) return
 
-    setPreparing(true)
-    setPrepareStatus(prev => {
+    onPreparingChange?.(true)
+    onPrepareStatusChange?.(prev => {
       const next = { ...prev }
-      for (const { row } of eligible) next[row.student] = 'loading'
+      for (const { row } of eligible) next[invoiceKey(summary.month, row.student)] = 'loading'
       return next
     })
 
-    await runWithConcurrency(eligible, PREPARE_CONCURRENCY, async ({ row, phone, name, amount }) => {
+    await runWithConcurrency(eligible, PREPARE_CONCURRENCY, async ({ row, details, phone, name, lessonStudent, inputs, amount }) => {
       try {
-        const link = await requestPaymentLink(getAccessToken, { studentName: name, phone, amount, month: summary.month })
-        await onPaymentLinkChange?.(summary.month, row.student, link, amount)
-        setPrepareStatus(prev => ({ ...prev, [row.student]: null }))
-      } catch {
-        setPrepareStatus(prev => ({ ...prev, [row.student]: 'error' }))
+        const link = await requestPaymentLink(getAccessToken, {
+          studentName: name,
+          lessonStudent,
+          phone,
+          amount,
+          month: summary.month,
+          numberOfLessons: billedLessonCount(row, reviewResolutions, summary.month),
+          paymentProfile: details.payment_profile,
+          invoiceDescription: details.invoice_description,
+        })
+        await onPaymentLinkChange?.(summary.month, row.student, link, amount, inputs)
+        setRowStatus(row.student, null)
+      } catch (err) {
+        setRowStatus(row.student, { error: err.message || 'Failed to create the link. Try again.' })
       }
     })
 
-    setPreparing(false)
+    onPreparingChange?.(false)
   }
 
   const handleDownload = () => {
     if (!rows?.length) return
-    const bytes = safeTotalsCsvBytes(rows)
+    // The CSV carries the amounts the table shows (review answers and manual
+    // adjustments included), not the bare lesson totals from calculation.
+    const bytes = safeTotalsCsvBytes(billing.map(({ row, amount, unresolved }) => ({
+      ...row,
+      amount_due: amount,
+      status: csvStatus(row, unresolved, invoiceRecord(amountOverrides, summary?.month, row) != null),
+    })))
     const blob = new Blob([bytes], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -104,7 +154,7 @@ export function CalculatorPage({ getAccessToken, config, customPrices, onCustomP
           type="month"
           className={styles.monthInput}
           value={month}
-          onChange={e => setMonth(e.target.value)}
+          onChange={e => onMonthChange(e.target.value)}
         />
         <button className={styles.btnPrimary} onClick={handleRun} disabled={loading}>
           {loading ? 'Loading…' : 'Calculate'}
@@ -115,7 +165,7 @@ export function CalculatorPage({ getAccessToken, config, customPrices, onCustomP
           </button>
         )}
         {rows?.length > 0 && (
-          <button className={styles.btnSecondary} onClick={handlePrepareAll} disabled={preparing}>
+          <button className={styles.btnSecondary} onClick={handlePrepareAll} disabled={preparing || stale} title={stale ? 'Press Calculate again first' : undefined}>
             {preparing ? 'Preparing links…' : 'Prepare all links'}
           </button>
         )}
@@ -127,7 +177,18 @@ export function CalculatorPage({ getAccessToken, config, customPrices, onCustomP
         <div className={styles.summaryBar}>
           <span>{summary.month}</span>
           <span>{summary.students} students</span>
-          <span className={styles.total}>Total: ₪{summary.total_amount_due}</span>
+          <span className={styles.total}>Total: ₪{liveTotal}</span>
+          {needsReview > 0 && (
+            <span className={styles.reviewNote}>
+              {needsReview} {needsReview === 1 ? 'student needs' : 'students need'} review before sending
+            </span>
+          )}
+        </div>
+      )}
+
+      {stale && (
+        <div className={styles.staleNote} role="status">
+          {namesStale && settingsStale ? 'Saved students and Settings' : namesStale ? 'Saved students' : 'Settings'} changed since this calculation. Press Calculate again before sending; links and WhatsApp are paused until then.
         </div>
       )}
 
@@ -146,7 +207,11 @@ export function CalculatorPage({ getAccessToken, config, customPrices, onCustomP
           paymentLinks={paymentLinks}
           onPaymentLinkChange={onPaymentLinkChange}
           getAccessToken={getAccessToken}
-          prepareStatus={prepareStatus}
+          prepareStatus={monthStatus}
+          onRowStatusChange={setRowStatus}
+          sendBlocked={stale}
+          reviewResolutions={reviewResolutions}
+          onReviewResolutionChange={onReviewResolutionChange}
         />
       )}
 

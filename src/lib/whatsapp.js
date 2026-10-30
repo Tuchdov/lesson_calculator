@@ -18,13 +18,15 @@ export function validateIsraeliPhone(phone) {
 }
 
 export const DEFAULT_MESSAGE_TEMPLATE =
-  ` שלום {student} :)\nהנה סיכום השיעורים שלך לחודש {month}:\n מספר שיעורים: {lessons}\n סה״כ לתשלום: ₪{amount}\n לתשלום: [קישור לתשלום]\nתודה ונתראה! `
-
-// Substitutes {student}, {amount}, {month}, {lessons} tokens into a user-editable template.
-export function renderMessageTemplate(template, { studentName, amount, monthName, lessons }) {
-  const safeName = (studentName ?? '').replace(/[\r\n]+/g, ' ').trim()
+  ` שלום {payer} :)\nהנה סיכום השיעורים שלך לחודש {month}:\n מספר שיעורים: {lessons}\n סה״כ לתשלום: ₪{amount}\n לתשלום: [קישור לתשלום]\nתודה ונתראה! `
+// Substitutes {payer} and {student} (both are who pays: a parent, else the
+// student, so templates written when {student} held the payer keep working),
+// {amount}, {month} and {lessons}.
+export function renderMessageTemplate(template, { payerName, amount, monthName, lessons }) {
+  const name = (payerName ?? '').replace(/[\r\n]+/g, ' ').trim()
   return (template ?? '')
-    .replaceAll('{student}', safeName)
+    .replaceAll('{student}', name)
+    .replaceAll('{payer}', name)
     .replaceAll('{amount}', String(amount))
     .replaceAll('{month}', monthName ?? '')
     .replaceAll('{lessons}', String(lessons ?? ''))
@@ -52,8 +54,9 @@ export function monthNameFromKey(monthStr) {
 // is the total lesson count for the student that month (optional — omitted
 // templates simply won't have a {lessons} token to replace). `link`, when
 // provided, replaces the placeholder/{link} token per applyPaymentLink above.
-export function buildPaymentMessage(studentName, amount, monthStr, template = DEFAULT_MESSAGE_TEMPLATE, lessons, link) {
-  const rendered = renderMessageTemplate(template, { studentName, amount, monthName: monthNameFromKey(monthStr), lessons })
+// `payerName` is who the message greets (a child's parent, else the student).
+export function buildPaymentMessage(payerName, amount, monthStr, template = DEFAULT_MESSAGE_TEMPLATE, lessons, link) {
+  const rendered = renderMessageTemplate(template, { payerName, amount, monthName: monthNameFromKey(monthStr), lessons })
   return applyPaymentLink(rendered, link)
 }
 

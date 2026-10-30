@@ -184,7 +184,7 @@
   background: #25D366;
   color: #fff;
 }
-.waChipReady:hover { background: #128C7E; }
+.waChipReady:hover:not(:disabled) { background: #128C7E; }
 .waChipReady:focus-visible,
 .waChipMissing:focus-visible {
   outline: 2px solid var(--md-blue);
@@ -196,7 +196,8 @@
   color: var(--md-amber);
   border: 1.5px solid color-mix(in srgb, var(--md-amber) 35%, transparent);
 }
-.waChipMissing:hover { background: color-mix(in srgb, var(--md-amber-tonal) 70%, var(--md-amber) 10%); }
+.waChipMissing:disabled { opacity: 0.6; cursor: default; }
+.waChipMissing:hover:not(:disabled) { background: color-mix(in srgb, var(--md-amber-tonal) 70%, var(--md-amber) 10%); }
 .waChipActive { opacity: 0.7; }
 
 .waChipPrepare {
@@ -204,7 +205,7 @@
   color: var(--md-blue);
   border: 1.5px solid color-mix(in srgb, var(--md-blue) 35%, transparent);
 }
-.waChipPrepare:hover { background: color-mix(in srgb, var(--md-blue-tonal) 70%, var(--md-blue) 10%); }
+.waChipPrepare:hover:not(:disabled) { background: color-mix(in srgb, var(--md-blue-tonal) 70%, var(--md-blue) 10%); }
 .waChipPrepare:disabled { opacity: 0.6; cursor: default; }
 
 .waChipError {
@@ -212,7 +213,7 @@
   color: var(--md-red);
   border: 1.5px solid color-mix(in srgb, var(--md-red) 35%, transparent);
 }
-.waChipError:hover { background: color-mix(in srgb, var(--md-red-tonal) 70%, var(--md-red) 10%); }
+.waChipError:hover:not(:disabled) { background: color-mix(in srgb, var(--md-red-tonal) 70%, var(--md-red) 10%); }
 .waChipError:disabled { opacity: 0.6; cursor: default; }
 
 .waChipReady:disabled { opacity: 0.6; cursor: default; }
@@ -237,7 +238,7 @@
   align-items: center;
   justify-content: center;
 }
-.regenBtn:hover { background: var(--md-border); color: var(--md-text); }
+.regenBtn:hover:not(:disabled) { background: var(--md-border); color: var(--md-text); }
 .regenBtn:disabled { opacity: 0.5; cursor: default; }
 
 /* ── Inline phone expansion row ── */
@@ -285,7 +286,7 @@
 .phoneInputError { border-color: var(--md-red) !important; background: var(--md-red-tonal); }
 
 .phoneErrorMsg {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--md-red);
 }
 
@@ -301,7 +302,8 @@
   font-family: var(--font-gs);
   white-space: nowrap;
 }
-.btnSavePhone:hover { background: var(--md-blue-hover); }
+.btnSavePhone:hover:not(:disabled) { background: var(--md-blue-hover); }
+.btnSavePhone:disabled { opacity: 0.5; cursor: default; }
 .btnSavePhone:focus-visible { outline: 2px solid var(--md-blue); outline-offset: 2px; }
 
 .btnCancelPhone {
@@ -315,3 +317,66 @@
 }
 .btnCancelPhone:hover { color: var(--md-text); }
 .btnCancelPhone:focus-visible { outline: 2px solid var(--md-border); outline-offset: 2px; }
+
+.reviewChip, .reviewChipDone, .conflictChip {
+  display: block;
+  width: fit-content;
+  margin-top: 4px;
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: var(--font-gs);
+}
+/* A status label, not a control: no pointer or hover. */
+.conflictChip { background: var(--md-amber-tonal); color: var(--md-amber); cursor: default; }
+.waChipStatic { cursor: default; }
+.waChipStatic:hover { background: var(--md-amber-tonal); }
+.reviewChip { background: var(--md-amber-tonal); color: var(--md-amber); }
+.reviewChipDone { background: var(--md-blue-tonal); color: var(--md-blue); }
+.reviewChip:hover { background: color-mix(in srgb, var(--md-amber-tonal) 70%, var(--md-amber) 10%); }
+.reviewChipDone:hover { background: color-mix(in srgb, var(--md-blue-tonal) 70%, var(--md-blue) 10%); }
+.reviewChip:focus-visible, .reviewChipDone:focus-visible { outline: 2px solid var(--md-blue); outline-offset: 2px; }
+
+.reviewList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 10px 16px;
+}
+.reviewItem {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.reviewTitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  font-weight: 500;
+}
+.reviewMeta {
+  color: var(--md-text-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.reviewOptions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+}
+.reviewOption {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.reviewHint {
+  color: var(--md-text-muted);
+  font-size: 12px;
+}

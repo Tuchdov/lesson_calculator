@@ -69,7 +69,8 @@
   white-space: nowrap;
 }
 
-.btnSecondary:hover { background: var(--md-blue-tonal); }
+.btnSecondary:hover:not(:disabled) { background: var(--md-blue-tonal); }
+.btnSecondary:disabled { opacity: 0.5; cursor: default; }
 
 .card {
   background: var(--md-surface);
@@ -104,6 +105,7 @@
 }
 
 .removeBtn:hover { background: var(--md-red-tonal); border-color: var(--md-red); }
+.removeBtn:focus-visible { outline: 2px solid var(--md-blue); outline-offset: 2px; }
 
 .tier {
   display: flex;
@@ -179,7 +181,8 @@
   color: var(--md-text-muted);
   padding-top: 9px;
   white-space: nowrap;
-  min-width: 60px;
+  /* One label column, so every field on a card starts at the same edge. */
+  flex: 0 0 140px;
 }
 
 .phoneInputWrap {
@@ -199,6 +202,53 @@
 }
 
 .phoneError {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--md-red);
+}
+
+.searchInput {
+  width: 100%;
+  max-width: 320px;
+}
+.wideInput {
+  flex: 1;
+  min-width: 0;
+}
+.messageDetails {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--md-border);
+}
+.messageDetails summary {
+  cursor: pointer;
+  padding-top: 0;
+}
+.messageInput {
+  width: 100%;
+  margin-top: 8px;
+  resize: vertical;
+  font-family: var(--font-rb);
+}
+.wideInput > .input { width: 100%; }
+
+/* ── Removed card (undo until Save all) ── */
+.removedStrip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border: 1px dashed var(--md-border);
+  border-radius: var(--radius);
+  color: var(--md-text-muted);
+  font-size: 14px;
+}
+.removedName { font-weight: 500; color: var(--md-text); }
+
+/* ── Another spelling of a priced student ── */
+.twinNote {
+  font-size: 13px;
+  color: var(--md-text-muted);
+  background: var(--md-blue-tonal);
+  border-radius: var(--radius);
+  padding: 6px 10px;
 }

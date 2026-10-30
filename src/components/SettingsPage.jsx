@@ -1,16 +1,11 @@
 import { useState } from 'react'
 import { buildPaymentMessage, DEFAULT_MESSAGE_TEMPLATE } from '../lib/whatsapp.js'
-import { DEFAULT_CANCELLED_KEYWORDS, DEFAULT_PAID_CANCELLATION_PHRASES } from '../lib/calendarPayments.js'
+import { DEFAULT_CANCELLED_KEYWORDS, DEFAULT_PAID_CANCELLATION_PHRASES, DEFAULT_LESSON_KEYWORDS, DEFAULT_MAKEUP_PHRASES, MAKEUP_AUTO_MIN, MAKEUP_AUTO_MAX, currentMonthKey } from '../lib/calendarPayments.js'
 import styles from './SettingsPage.module.css'
 
 const DURATION_LABELS = { '60': '60 min', '45': '45 min', '30': '30 min' }
 const TYPES = ['regular', 'non_regular']
 const TYPE_LABEL = { regular: 'Regular', non_regular: 'Non-regular' }
-
-function currentMonth() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
 
 function initialPrices(settings, config) {
   const saved = settings?.default_prices
@@ -18,15 +13,9 @@ function initialPrices(settings, config) {
   return deepClone(config?.prices ?? { regular: {}, non_regular: {} })
 }
 
-function initialPhrases(settings) {
-  return settings?.paid_cancellation_phrases != null
-    ? [...settings.paid_cancellation_phrases]
-    : [...DEFAULT_PAID_CANCELLATION_PHRASES]
-}
-
-function initialKeywords(settings, config) {
-  if (settings?.cancelled_keywords != null) return [...settings.cancelled_keywords]
-  return [...(config?.cancelled_keywords ?? DEFAULT_CANCELLED_KEYWORDS)]
+// Saved list if customized (null = never customized), else the default.
+function initialList(saved, defaults) {
+  return saved != null ? [...saved] : [...defaults]
 }
 
 export function SettingsPage({ config, settings, onSave }) {
@@ -34,10 +23,10 @@ export function SettingsPage({ config, settings, onSave }) {
   const [messageTemplate, setMessageTemplate] = useState(
     () => settings?.default_message || DEFAULT_MESSAGE_TEMPLATE
   )
-  const [paidCancelPhrases, setPaidCancelPhrases] = useState(() => initialPhrases(settings))
-  const [newPhrase, setNewPhrase] = useState('')
-  const [keywords, setKeywords] = useState(() => initialKeywords(settings, config))
-  const [newKeyword, setNewKeyword] = useState('')
+  const [paidCancelPhrases, setPaidCancelPhrases] = useState(() => initialList(settings?.paid_cancellation_phrases, DEFAULT_PAID_CANCELLATION_PHRASES))
+  const [keywords, setKeywords] = useState(() => initialList(settings?.cancelled_keywords, config?.cancelled_keywords ?? DEFAULT_CANCELLED_KEYWORDS))
+  const [lessonKeywords, setLessonKeywords] = useState(() => initialList(settings?.lesson_keywords, DEFAULT_LESSON_KEYWORDS))
+  const [makeupPhrases, setMakeupPhrases] = useState(() => initialList(settings?.makeup_phrases, DEFAULT_MAKEUP_PHRASES))
   const [saved, setSaved] = useState(false)
 
   const handlePrice = (type, duration, value) => {
@@ -58,39 +47,8 @@ export function SettingsPage({ config, settings, onSave }) {
     setSaved(false)
   }
 
-  const handleAddPhrase = () => {
-    const phrase = newPhrase.trim()
-    if (!phrase || paidCancelPhrases.includes(phrase)) return
-    setPaidCancelPhrases(prev => [...prev, phrase])
-    setNewPhrase('')
-    setSaved(false)
-  }
-
-  const handleRemovePhrase = (index) => {
-    setPaidCancelPhrases(prev => prev.filter((_, i) => i !== index))
-    setSaved(false)
-  }
-
-  const handleResetPhrases = () => {
-    setPaidCancelPhrases([...DEFAULT_PAID_CANCELLATION_PHRASES])
-    setSaved(false)
-  }
-
-  const handleAddKeyword = () => {
-    const keyword = newKeyword.trim()
-    if (!keyword || keywords.includes(keyword)) return
-    setKeywords(prev => [...prev, keyword])
-    setNewKeyword('')
-    setSaved(false)
-  }
-
-  const handleRemoveKeyword = (index) => {
-    setKeywords(prev => prev.filter((_, i) => i !== index))
-    setSaved(false)
-  }
-
-  const handleResetKeywords = () => {
-    setKeywords([...(config?.cancelled_keywords ?? DEFAULT_CANCELLED_KEYWORDS)])
+  const listChanger = (setter) => (next) => {
+    setter(next)
     setSaved(false)
   }
 
@@ -109,11 +67,13 @@ export function SettingsPage({ config, settings, onSave }) {
       default_message: messageTemplate,
       paid_cancellation_phrases: paidCancelPhrases,
       cancelled_keywords: keywords,
+      lesson_keywords: lessonKeywords,
+      makeup_phrases: makeupPhrases,
     })
     setSaved(true)
   }
 
-  const preview = buildPaymentMessage('דנה', 300, currentMonth(), messageTemplate, 4)
+  const preview = buildPaymentMessage('דנה לוי', 300, currentMonthKey(), messageTemplate, 4)
 
   return (
     <div className={styles.page}>
@@ -159,10 +119,11 @@ export function SettingsPage({ config, settings, onSave }) {
           </button>
         </div>
         <p className={styles.tokenHint}>
-          Use <code>{'{student}'}</code>, <code>{'{amount}'}</code>,{' '}
-          <code>{'{month}'}</code>, <code>{'{lessons}'}</code>, and{' '}
-          <code>{'{link}'}</code> — they're replaced automatically per
-          student. If <code>{'{link}'}</code> isn't in the template, the
+          Use <code>{'{payer}'}</code> or <code>{'{student}'}</code> (both are
+          who pays: a parent, else the student),{' '}
+          <code>{'{amount}'}</code>, <code>{'{month}'}</code>,{' '}
+          <code>{'{lessons}'}</code>, and <code>{'{link}'}</code> — they're
+          replaced automatically per student. If <code>{'{link}'}</code> isn't in the template, the
           payment link is added at the end instead.
         </p>
         <textarea
@@ -178,90 +139,99 @@ export function SettingsPage({ config, settings, onSave }) {
         </div>
       </div>
 
-      <div className={styles.card}>
-        <div className={styles.cardHeader}>
-          <h3 className={styles.cardTitle}>Paid cancellation phrases</h3>
-          <button className={styles.resetBtn} onClick={handleResetPhrases}>
-            Reset to original
-          </button>
-        </div>
-        <p className={styles.tokenHint}>
-          A lesson whose title contains any of these phrases is billed even
-          though it's cancelled.
-        </p>
-        <div className={styles.phraseList}>
-          {paidCancelPhrases.length === 0 && (
-            <div className={styles.emptyPhrases}>
-              No phrases — paid cancellations won't be detected.
-            </div>
-          )}
-          {paidCancelPhrases.map((phrase, i) => (
-            <div key={i} className={styles.phraseRow}>
-              <span className={styles.phraseText} dir="rtl">{phrase}</span>
-              <button className={styles.removeBtn} onClick={() => handleRemovePhrase(i)}>
-                Remove
-              </button>
-            </div>
-          ))}
-        </div>
-        <div className={styles.addPhraseRow}>
-          <input
-            type="text"
-            className={styles.input}
-            dir="rtl"
-            placeholder="ביטול בתשלום"
-            value={newPhrase}
-            onChange={e => setNewPhrase(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleAddPhrase()}
-          />
-          <button className={styles.btnPrimary} onClick={handleAddPhrase}>Add phrase</button>
-        </div>
-      </div>
+      <PhraseListCard
+        title="Lesson keywords"
+        hint="A calendar event counts as a lesson when its title contains any of these. The student's name is read from around the keyword."
+        items={lessonKeywords}
+        defaults={DEFAULT_LESSON_KEYWORDS}
+        onChange={listChanger(setLessonKeywords)}
+        emptyText="No keywords — no lessons will be counted."
+        placeholder="כתיבה והלחנה"
+        addLabel="Add keyword"
+      />
 
-      <div className={styles.card}>
-        <div className={styles.cardHeader}>
-          <h3 className={styles.cardTitle}>Cancelled lesson keywords</h3>
-          <button className={styles.resetBtn} onClick={handleResetKeywords}>
-            Reset to original
-          </button>
-        </div>
-        <p className={styles.tokenHint}>
-          A lesson whose title contains any of these keywords is treated as
-          cancelled and excluded (unless it also matches a paid cancellation
-          phrase above).
-        </p>
-        <div className={styles.phraseList}>
-          {keywords.length === 0 && (
-            <div className={styles.emptyPhrases}>
-              No keywords — cancelled lessons won't be detected.
-            </div>
-          )}
-          {keywords.map((keyword, i) => (
-            <div key={i} className={styles.phraseRow}>
-              <span className={styles.phraseText} dir="rtl">{keyword}</span>
-              <button className={styles.removeBtn} onClick={() => handleRemoveKeyword(i)}>
-                Remove
-              </button>
-            </div>
-          ))}
-        </div>
-        <div className={styles.addPhraseRow}>
-          <input
-            type="text"
-            className={styles.input}
-            dir="rtl"
-            placeholder="בוטל"
-            value={newKeyword}
-            onChange={e => setNewKeyword(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleAddKeyword()}
-          />
-          <button className={styles.btnPrimary} onClick={handleAddKeyword}>Add keyword</button>
-        </div>
-      </div>
+      <PhraseListCard
+        title="Paid cancellation phrases"
+        hint="A lesson whose title contains any of these phrases is billed even though it's cancelled."
+        items={paidCancelPhrases}
+        defaults={DEFAULT_PAID_CANCELLATION_PHRASES}
+        onChange={listChanger(setPaidCancelPhrases)}
+        emptyText="No phrases — paid cancellations won't be detected."
+        placeholder="ביטול בתשלום"
+        addLabel="Add phrase"
+      />
+
+      <PhraseListCard
+        title="Cancelled lesson keywords"
+        hint="A lesson whose title contains any of these keywords is treated as cancelled and excluded (unless it also matches a paid cancellation phrase above)."
+        items={keywords}
+        defaults={config?.cancelled_keywords ?? DEFAULT_CANCELLED_KEYWORDS}
+        onChange={listChanger(setKeywords)}
+        emptyText="No keywords — cancelled lessons won't be detected."
+        placeholder="בוטל"
+        addLabel="Add keyword"
+      />
+
+      <PhraseListCard
+        title="Make-up phrases"
+        hint={`A ${MAKEUP_AUTO_MIN}–${MAKEUP_AUTO_MAX - 1} minute lesson with a non-standard length (e.g. 75 min) whose title contains one of these is charged as the standard lesson inside it, with the extra minutes free, instead of asking you each month. Shorter or longer events still ask you.`}
+        items={makeupPhrases}
+        defaults={DEFAULT_MAKEUP_PHRASES}
+        onChange={listChanger(setMakeupPhrases)}
+        emptyText="No phrases — every non-standard lesson asks you how to charge it."
+        placeholder="השלמה"
+        addLabel="Add phrase"
+      />
 
       <div className={styles.footer}>
         {saved && <span className={styles.savedMsg}>Saved!</span>}
         <button className={styles.btnPrimary} onClick={handleSave}>Save settings</button>
+      </div>
+    </div>
+  )
+}
+
+function PhraseListCard({ title, hint, items, defaults, onChange, emptyText, placeholder, addLabel }) {
+  const [draft, setDraft] = useState('')
+
+  const handleAdd = () => {
+    const value = draft.trim()
+    if (!value || items.includes(value)) return
+    onChange([...items, value])
+    setDraft('')
+  }
+
+  return (
+    <div className={styles.card}>
+      <div className={styles.cardHeader}>
+        <h3 className={styles.cardTitle}>{title}</h3>
+        <button className={styles.resetBtn} onClick={() => onChange([...defaults])}>
+          Reset to original
+        </button>
+      </div>
+      <p className={styles.tokenHint}>{hint}</p>
+      <div className={styles.phraseList}>
+        {items.length === 0 && <div className={styles.emptyPhrases}>{emptyText}</div>}
+        {items.map((item, i) => (
+          <div key={i} className={styles.phraseRow}>
+            <span className={styles.phraseText} dir="rtl">{item}</span>
+            <button className={styles.removeBtn} onClick={() => onChange(items.filter((_, j) => j !== i))}>
+              Remove
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className={styles.addPhraseRow}>
+        <input
+          type="text"
+          className={styles.input}
+          dir="rtl"
+          placeholder={placeholder}
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleAdd()}
+        />
+        <button className={styles.btnPrimary} onClick={handleAdd}>{addLabel}</button>
       </div>
     </div>
   )

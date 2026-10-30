@@ -262,6 +262,80 @@ Deno.test('createPaymentLink: sends phone normalized for Grow and a Hebrew descr
   assertEquals(capturedBody.description.includes('רחל כהן'), true)
 })
 
+function captureMakeBody() {
+  const captured = {}
+  const fetchImpl = async (url, opts) => {
+    if (String(url).includes('tokeninfo')) return tokeninfoOk()
+    captured.body = JSON.parse(opts.body)
+    return makeOk()
+  }
+  return { captured, fetchImpl }
+}
+
+Deno.test('createPaymentLink: defaults — standard profile, no custom invoice text, no lesson count', async () => {
+  const { captured, fetchImpl } = captureMakeBody()
+  await createPaymentLink(baseArgs({ fetchImpl }))
+  assertEquals(captured.body.payment_profile, 'standard')
+  assertEquals(captured.body.invoice_description, '')
+  assertEquals('number_of_lessons' in captured.body, false)
+})
+
+Deno.test('createPaymentLink: sends number_of_lessons, payment_profile and a rendered custom invoice description', async () => {
+  const { captured, fetchImpl } = captureMakeBody()
+  await createPaymentLink(baseArgs({
+    fetchImpl,
+    numberOfLessons: 4,
+    paymentProfile: ' extended ',
+    invoiceDescription: 'ייעוץ קולי - {student} - {month}',
+  }))
+  assertEquals(captured.body.number_of_lessons, 4)
+  assertEquals(captured.body.payment_profile, 'extended')
+  assertEquals(captured.body.invoice_description, 'ייעוץ קולי - רחל כהן - אוגוסט')
+  assertEquals(captured.body.description, 'ייעוץ קולי - רחל כהן - אוגוסט')
+})
+
+// Value: protects=a review-only row (0 standard lessons, fixed price) still mints a link carrying number_of_lessons: 0; fails_when=validation or payload uses truthiness (!n / n ? ...); why_new=only 4 and undefined were tested; seam=none
+Deno.test('createPaymentLink: zero lessons is valid and sent as number_of_lessons 0', async () => {
+  const { captured, fetchImpl } = captureMakeBody()
+  await createPaymentLink(baseArgs({ fetchImpl, numberOfLessons: 0 }))
+  assertEquals(captured.body.number_of_lessons, 0)
+})
+
+// Value: protects=Hebrew profile names reach the Make router; blank per-student fields fall back to defaults; fails_when=pattern loses \p{L}/u, or whitespace-only text is sent as custom; why_new=only latin profile and real template tested; seam=none
+Deno.test('createPaymentLink: Hebrew profile is accepted; whitespace-only profile and invoice text use the defaults', async () => {
+  const hebrew = captureMakeBody()
+  await createPaymentLink(baseArgs({ fetchImpl: hebrew.fetchImpl, paymentProfile: 'מורחב' }))
+  assertEquals(hebrew.captured.body.payment_profile, 'מורחב')
+
+  const blank = captureMakeBody()
+  await createPaymentLink(baseArgs({ fetchImpl: blank.fetchImpl, paymentProfile: '   ', invoiceDescription: '  \n ' }))
+  assertEquals(blank.captured.body.payment_profile, 'standard')
+  assertEquals(blank.captured.body.invoice_description, '')
+  assertEquals(blank.captured.body.description, 'תשלום עבור שיעורי שירה - רחל כהן - אוגוסט')
+})
+
+for (const [label, overrides, message] of [
+  ['negative lesson count', { numberOfLessons: -1 }, 'Invalid number of lessons.'],
+  ['fractional lesson count', { numberOfLessons: 1.5 }, 'Invalid number of lessons.'],
+  ['profile with spaces', { paymentProfile: 'two words' }, 'Invalid payment profile.'],
+  ['non-string profile', { paymentProfile: 42 }, 'Invalid payment profile.'],
+  ['non-string student name', { lessonStudent: 7 }, 'Invalid student name.'],
+  // Value: protects=a missing, non-string or over-long payer/student name is refused, never truncated or sent blank to Grow; fails_when=studentName is unchecked or lessonStudent is silently cut to 80; why_new=name validation is new; seam=none
+  ['blank payer name', { studentName: '   ' }, 'Invalid name.'],
+  ['non-string payer name', { studentName: ['רחל'] }, 'Invalid name.'],
+  ['over-long payer name', { studentName: 'א'.repeat(81) }, 'Invalid name.'],
+  ['over-long student name', { lessonStudent: 'א'.repeat(81) }, 'Invalid student name.'],
+  ['non-string invoice text', { invoiceDescription: 42 }, 'Invalid invoice description.'],
+  ['over-long invoice text', { invoiceDescription: 'א'.repeat(201) }, 'Invoice description is too long.'],
+]) {
+  Deno.test(`createPaymentLink: rejects ${label} with a 400 before calling Make`, async () => {
+    const fetchImpl = queueFetch([tokeninfoOk()])
+    const err = await assertRejects(() => createPaymentLink(baseArgs({ fetchImpl, ...overrides })), ServiceError)
+    assertEquals(err.status, 400)
+    assertEquals(err.message, message)
+  })
+}
+
 Deno.test('createPaymentLink: includes x-make-apikey header only when an apiKey is configured', async () => {
   let capturedHeaders
   const fetchImpl = async (url, opts) => {
@@ -293,4 +367,21 @@ Deno.test('createPaymentLink: missing webhookUrl is a 500 before any Make reques
     ServiceError,
   )
   assertEquals(err.status, 500)
+})
+
+// Value: protects=the payer's name goes to Grow while the product line and invoice text name the child; fails_when=lessonStudent is ignored or replaces customer_name; why_new=lessonStudent is new; seam=none
+Deno.test('createPaymentLink: sends the payer as customer_name and the child as student_name', async () => {
+  const { captured, fetchImpl } = captureMakeBody()
+  await createPaymentLink(baseArgs({ fetchImpl, studentName: 'עינת שמש', lessonStudent: 'ענבר', invoiceDescription: 'ייעוץ - {student} - {month}' }))
+  assertEquals(captured.body.customer_name, 'עינת שמש')
+  assertEquals(captured.body.student_name, 'ענבר')
+  assertEquals(captured.body.invoice_description, 'ייעוץ - ענבר - אוגוסט')
+})
+
+// Value: protects=older clients without lessonStudent keep the payer in the product line; fails_when=student_name is blank when lessonStudent is missing; why_new=new field; seam=none
+Deno.test('createPaymentLink: without lessonStudent, student_name falls back to the payer', async () => {
+  const { captured, fetchImpl } = captureMakeBody()
+  await createPaymentLink(baseArgs({ fetchImpl }))
+  assertEquals(captured.body.student_name, 'רחל כהן')
+  assertEquals(captured.body.description.includes('רחל כהן'), true)
 })

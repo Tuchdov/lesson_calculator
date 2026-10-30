@@ -1,7 +1,9 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useAuth } from './hooks/useAuth.js'
 import { useUserSettings } from './hooks/useUserSettings.js'
-import { loadAmountOverrides, saveAmountOverride, loadPaymentLinks, savePaymentLink } from './lib/payments.js'
+import { useCalendarData } from './hooks/useCalendarData.js'
+import { normalizeStudentName, currentMonthKey } from './lib/calendarPayments.js'
+import { loadAmountOverrides, saveAmountOverride, loadPaymentLinks, savePaymentLink, loadReviewResolutions, saveReviewResolution } from './lib/payments.js'
 import { AuthScreen } from './components/AuthScreen.jsx'
 import { Sidebar } from './components/Sidebar.jsx'
 import { CalculatorPage } from './components/CalculatorPage.jsx'
@@ -14,10 +16,17 @@ export default function App() {
   const { settings, saveSettings, isReady } = useUserSettings(userEmail)
   const [page, setPage] = useState('calculator')
   const [config, setConfig] = useState(null)
-  const [knownStudents, setKnownStudents] = useState([])
   const [dirty, setDirty] = useState(false)
   const [amountOverrides, setAmountOverrides] = useState({})
   const [paymentLinks, setPaymentLinks] = useState({})
+  const [reviewResolutions, setReviewResolutions] = useState({})
+  const [month, setMonth] = useState(currentMonthKey)
+  // Payment-link progress per student; kept here (not in CalculatorPage) so a
+  // run that is still in flight when you change pages stays visible.
+  const [preparing, setPreparing] = useState(false)
+  const [prepareStatus, setPrepareStatus] = useState({})
+  // The account the in-memory state belongs to (see resetForAccount).
+  const lastEmailRef = useRef(null)
 
   // Guards navigation away from a page with unsaved changes (currently only
   // Custom Prices reports dirty state, e.g. a pending import not yet saved).
@@ -41,24 +50,42 @@ export default function App() {
     if (!userEmail) return
     loadAmountOverrides(userEmail).then(setAmountOverrides).catch(err => console.error('Failed to load amount overrides:', err))
     loadPaymentLinks(userEmail).then(setPaymentLinks).catch(err => console.error('Failed to load payment links:', err))
+    loadReviewResolutions(userEmail).then(setReviewResolutions).catch(err => console.error('Failed to load review answers:', err))
   }, [userEmail])
 
+  // A Prepare-all run that finishes after a switch to another account must not
+  // write the previous account's links or progress into this one's state.
+  const sameAccount = (email) => lastEmailRef.current === email
+  const handlePaymentLinkChange = async (month, student, link, amount, inputs) => {
+    const email = userEmail
+    const next = await savePaymentLink(email, month, student, link, amount, inputs)
+    if (sameAccount(email)) setPaymentLinks(next)
+  }
+  const handlePrepareStatusChange = (update) => {
+    if (sameAccount(userEmail)) setPrepareStatus(update)
+  }
+  const handlePreparingChange = (value) => {
+    if (sameAccount(userEmail)) setPreparing(value)
+  }
+
   const handleAmountOverrideChange = async (month, student, amount) => {
-    const next = await saveAmountOverride(userEmail, month, student, amount)
-    setAmountOverrides(next)
+    const email = userEmail
+    const next = await saveAmountOverride(email, month, student, amount)
+    if (sameAccount(email)) setAmountOverrides(next)
   }
 
-  const handlePaymentLinkChange = async (month, student, link, amount) => {
-    const next = await savePaymentLink(userEmail, month, student, link, amount)
-    setPaymentLinks(next)
+  const handleReviewResolutionChange = async (itemKey, resolution) => {
+    const email = userEmail
+    const next = await saveReviewResolution(email, itemKey, resolution)
+    if (sameAccount(email)) setReviewResolutions(next)
   }
 
-  const handleCustomPriceChange = async (student, prices) => {
-    const next = {
-      ...settings,
-      custom_prices: { ...settings.custom_prices, [student]: prices },
-    }
-    await saveSettings(next)
+  // `students` is every saved spelling the new rate applies to; one save, so
+  // the spellings can't overwrite each other through a stale `settings`.
+  const handleCustomPriceChange = async (students, prices) => {
+    const custom_prices = { ...settings.custom_prices }
+    for (const student of [].concat(students)) custom_prices[student] = prices
+    await saveSettings({ ...settings, custom_prices })
   }
 
   const handleCustomerDetailChange = async (student, details) => {
@@ -77,14 +104,46 @@ export default function App() {
     const hasCustomDefaults = settings.default_prices?.regular && settings.default_prices?.non_regular
     const hasCustomPhrases = settings.paid_cancellation_phrases != null
     const hasCustomKeywords = settings.cancelled_keywords != null
-    if (!hasCustomDefaults && !hasCustomPhrases && !hasCustomKeywords) return config
+    const hasLessonKeywords = settings.lesson_keywords != null
+    const hasMakeupPhrases = settings.makeup_phrases != null
+    if (!hasCustomDefaults && !hasCustomPhrases && !hasCustomKeywords && !hasLessonKeywords && !hasMakeupPhrases) return config
     return {
       ...config,
       ...(hasCustomDefaults ? { prices: settings.default_prices } : {}),
       ...(hasCustomPhrases ? { paid_cancellation_phrases: settings.paid_cancellation_phrases } : {}),
       ...(hasCustomKeywords ? { cancelled_keywords: settings.cancelled_keywords } : {}),
+      ...(hasLessonKeywords ? { lesson_keywords: settings.lesson_keywords } : {}),
+      ...(hasMakeupPhrases ? { makeup_phrases: settings.makeup_phrases } : {}),
     }
-  }, [config, settings.default_prices, settings.paid_cancellation_phrases, settings.cancelled_keywords])
+  }, [config, settings.default_prices, settings.paid_cancellation_phrases, settings.cancelled_keywords, settings.lesson_keywords, settings.makeup_phrases])
+
+  // The calculation lives here, not in CalculatorPage, so it survives both
+  // navigating to Settings / Custom Prices and a forced re-authentication
+  // (App stays mounted behind the AuthScreen gate). Amounts are re-derived
+  // from live prices on render, so edits made elsewhere still show up.
+  const calcConfig = useMemo(() => effectiveConfig && {
+    ...effectiveConfig,
+    custom_prices: settings.custom_prices,
+    customer_details: settings.customer_details,
+  }, [effectiveConfig, settings.custom_prices, settings.customer_details])
+  const calendar = useCalendarData(getValidAccessToken, calcConfig)
+  const { reset: resetCalculation } = calendar
+  // Every spelling a row answers to, so an imported price under the plain
+  // calendar name (no notes or ages) isn't reported as unmatched.
+  const knownStudents = useMemo(() => [...new Set((calendar.rows ?? []).flatMap(r => [r.student, normalizeStudentName(r.student), ...(r.aliases ?? [])]))], [calendar.rows])
+
+  // A re-auth signs the same account back in and keeps the table; a different
+  // account must never see the previous one's students.
+  const resetForAccount = useCallback(() => {
+    resetCalculation()
+    setPrepareStatus({})
+    setPreparing(false)
+  }, [resetCalculation])
+  useEffect(() => {
+    if (!userEmail) return
+    if (lastEmailRef.current && lastEmailRef.current !== userEmail) resetForAccount()
+    lastEmailRef.current = userEmail
+  }, [userEmail, resetForAccount])
 
   if (!accessToken) {
     return <AuthScreen onSignIn={signIn} error={authError} />
@@ -107,9 +166,11 @@ export default function App() {
           <CalculatorPage
             getAccessToken={getValidAccessToken}
             config={effectiveConfig}
+            calendar={calendar}
+            month={month}
+            onMonthChange={setMonth}
             customPrices={settings.custom_prices}
             onCustomPriceChange={handleCustomPriceChange}
-            onStudentsChange={setKnownStudents}
             customerDetails={settings.customer_details}
             onCustomerDetailChange={handleCustomerDetailChange}
             defaultMessage={settings.default_message}
@@ -117,6 +178,12 @@ export default function App() {
             onAmountOverrideChange={handleAmountOverrideChange}
             paymentLinks={paymentLinks}
             onPaymentLinkChange={handlePaymentLinkChange}
+            preparing={preparing}
+            onPreparingChange={handlePreparingChange}
+            prepareStatus={prepareStatus}
+            onPrepareStatusChange={handlePrepareStatusChange}
+            reviewResolutions={reviewResolutions}
+            onReviewResolutionChange={handleReviewResolutionChange}
           />
         )}
         {page === 'custom-prices' && (

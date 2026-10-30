@@ -7,6 +7,7 @@ import {
   renderMessageTemplate,
   applyPaymentLink,
   HEBREW_MONTHS,
+  DEFAULT_MESSAGE_TEMPLATE,
 } from '../src/lib/whatsapp.js'
 
 // ── validateIsraeliPhone ──────────────────────────────────────────────────────
@@ -125,32 +126,32 @@ Deno.test('formatPhoneForWhatsApp: empty string yields 972 with empty suffix', (
 
 Deno.test('renderMessageTemplate: substitutes all three tokens', () => {
   const msg = renderMessageTemplate('Hi {student}, you owe ₪{amount} for {month}', {
-    studentName: 'Alice', amount: 250, monthName: 'June',
+    payerName: 'Alice', amount: 250, monthName: 'June',
   })
   assertEquals(msg, 'Hi Alice, you owe ₪250 for June')
 })
 
 Deno.test('renderMessageTemplate: repeated tokens all get replaced', () => {
   const msg = renderMessageTemplate('{student}! {student}, pay ₪{amount}', {
-    studentName: 'Bob', amount: 100, monthName: 'July',
+    payerName: 'Bob', amount: 100, monthName: 'July',
   })
   assertEquals(msg, 'Bob! Bob, pay ₪100')
 })
 
 Deno.test('renderMessageTemplate: sanitizes newlines in student name', () => {
-  const msg = renderMessageTemplate('{student}', { studentName: 'Alice\nEvil', amount: 1, monthName: 'July' })
+  const msg = renderMessageTemplate('{student}', { payerName: 'Alice\nEvil', amount: 1, monthName: 'July' })
   assertEquals(msg, 'Alice Evil')
 })
 
 Deno.test('renderMessageTemplate: substitutes {lessons}', () => {
   const msg = renderMessageTemplate('{student} had {lessons} lessons', {
-    studentName: 'Alice', amount: 100, monthName: 'July', lessons: 6,
+    payerName: 'Alice', amount: 100, monthName: 'July', lessons: 6,
   })
   assertEquals(msg, 'Alice had 6 lessons')
 })
 
 Deno.test('renderMessageTemplate: missing lessons renders as empty string, not "undefined"', () => {
-  const msg = renderMessageTemplate('lessons: {lessons}', { studentName: 'Alice', amount: 1, monthName: 'July' })
+  const msg = renderMessageTemplate('lessons: {lessons}', { payerName: 'Alice', amount: 1, monthName: 'July' })
   assertEquals(msg, 'lessons: ')
 })
 
@@ -173,6 +174,17 @@ Deno.test('buildPaymentMessage: passes lessons count through to the template', (
 Deno.test('buildPaymentMessage: DEFAULT_MESSAGE_TEMPLATE includes the lesson count', () => {
   const msg = buildPaymentMessage('Alice', 250, '2026-06', undefined, 7)
   assertMatch(msg, /7/)
+})
+
+// ── {payer} and {student} ────────────────────────────────────────────────────
+
+// Value: protects=the WhatsApp message always addresses who pays (the saved full name, else the student), and a template that says {student} or {payer} gets that same name; fails_when={student} is filled with the lesson student again, so a parent is greeted with the child's name; why_new={student} briefly meant the child; seam=none
+Deno.test('buildPaymentMessage: {student} and {payer} both name who pays', () => {
+  assertEquals(buildPaymentMessage('עינת שמש', 230, '2026-10', 'שלום {payer}, השיעורים של {student}', 4), 'שלום עינת שמש, השיעורים של עינת שמש')
+  assertEquals(buildPaymentMessage('עינת שמש', 230, '2026-10', 'היי {student}', 4), 'היי עינת שמש')
+  assertMatch(buildPaymentMessage('עינת שמש', 230, '2026-10', undefined, 4), /^ שלום עינת שמש :\)/)
+  // A default message saved before {payer} existed still greets the payer.
+  assertMatch(buildPaymentMessage('עינת שמש', 230, '2026-10', DEFAULT_MESSAGE_TEMPLATE.replace('{payer}', '{student}'), 4), /^ שלום עינת שמש :\)/)
 })
 
 // ── HEBREW_MONTHS ─────────────────────────────────────────────────────────

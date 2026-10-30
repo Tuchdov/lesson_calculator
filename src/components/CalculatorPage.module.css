@@ -64,7 +64,8 @@
   transition: background 0.15s;
 }
 
-.btnSecondary:hover { background: var(--md-blue-tonal); }
+.btnSecondary:hover:not(:disabled) { background: var(--md-blue-tonal); }
+.btnSecondary:disabled { opacity: 0.5; cursor: default; }
 
 .error {
   background: var(--md-red-tonal);
@@ -98,4 +99,22 @@
   text-align: center;
   padding: 48px;
   font-size: 15px;
+}
+
+.reviewNote {
+  background: var(--md-amber-tonal);
+  color: var(--md-amber);
+  border-radius: var(--radius-pill);
+  padding: 2px 10px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.staleNote {
+  background: var(--md-amber-tonal);
+  color: var(--md-text);
+  border: 1px solid color-mix(in srgb, var(--md-amber) 35%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  font-size: 14px;
 }

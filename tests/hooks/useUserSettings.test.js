@@ -4,14 +4,15 @@ import { useUserSettings } from '../../src/hooks/useUserSettings.js'
 import { loadUserSettings, saveUserSettings } from '../../src/lib/userSettings.js'
 import { deferred } from './deferred.js'
 
-vi.mock('../../src/lib/userSettings.js', () => ({
+vi.mock('../../src/lib/userSettings.js', async importOriginal => ({
+  DEFAULT_SETTINGS: (await importOriginal()).DEFAULT_SETTINGS,
   loadUserSettings: vi.fn(),
   saveUserSettings: vi.fn(),
 }))
 
 const defaults = {
   custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '',
-  paid_cancellation_phrases: null, cancelled_keywords: null,
+  paid_cancellation_phrases: null, cancelled_keywords: null, lesson_keywords: null, makeup_phrases: null,
 }
 const saved = { ...defaults, default_message: 'Hello {student}' }
 const next = { ...defaults, default_message: 'New message', cancelled_keywords: [] }

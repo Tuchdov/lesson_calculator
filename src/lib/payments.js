@@ -1,14 +1,66 @@
 import { sha256Hex } from './userSettings.js'
 import { monthNameFromKey } from './whatsapp.js'
+import { normalizeStudentName } from './calendarPayments.js'
 
 const LINKS_KEY_PREFIX = 'vocalCalc:paymentLinks:'
 const OVERRIDES_KEY_PREFIX = 'vocalCalc:amountOverrides:'
+const REVIEW_KEY_PREFIX = 'vocalCalc:reviewResolutions:'
 
 // One invoice = one student for one month. Both the link store and the
 // amount-override store are keyed this way so neither carries a value into
 // a different month for the same student.
 export function invoiceKey(month, student) {
   return `${month}:${student}`
+}
+
+// A row is keyed by the student's canonical saved name, which can change when
+// saved spellings change (calendarPayments.js resolveSavedStudent). So a
+// per-invoice record may sit under the row's own key, one of its other
+// spellings, or a name from an older parse that normalizes the same way.
+// Returns every name the month's record is stored under, the row's own key
+// first, so a reset can clear all of them. A row whose spellings conflict
+// owns only its own key. `suffix` addresses sub-records (review answers).
+export function invoiceRecordNames(record, month, row, suffix = '') {
+  if (!record) return []
+  const has = name => record[invoiceKey(month, name) + suffix] != null
+  if (row.name_conflicts?.length) return has(row.student) ? [row.student] : []
+  const names = [row.student, ...(row.aliases ?? [])].filter(has)
+  const base = normalizeStudentName(row.student)
+  for (const entry of monthEntries(record, month, suffix)) {
+    if (entry.base === base && !names.includes(entry.name)) names.push(entry.name)
+  }
+  return names
+}
+
+// The names a month's record is stored under, with their normalized form.
+// Every row asks for this on every render, and each save produces a new
+// record object (withRecord), so the scan is kept per record object.
+const entriesCache = new WeakMap()
+function monthEntries(record, month, suffix) {
+  let byMonth = entriesCache.get(record)
+  if (!byMonth) entriesCache.set(record, byMonth = new Map())
+  const id = `${month}\u0000${suffix}`
+  let entries = byMonth.get(id)
+  if (!entries) {
+    entries = []
+    const prefix = `${month}:`
+    for (const [key, value] of Object.entries(record)) {
+      if (value == null || !key.startsWith(prefix) || !key.endsWith(suffix)) continue
+      const name = key.slice(prefix.length, key.length - suffix.length)
+      if (name) entries.push({ name, base: normalizeStudentName(name) })
+    }
+    byMonth.set(id, entries)
+  }
+  return entries
+}
+
+export function invoiceRecordName(record, month, row, suffix = '') {
+  return invoiceRecordNames(record, month, row, suffix)[0] ?? null
+}
+
+export function invoiceRecord(record, month, row, suffix = '') {
+  const name = invoiceRecordName(record, month, row, suffix)
+  return name == null ? null : record[invoiceKey(month, name) + suffix]
 }
 
 // --- Phone ------------------------------------------------------------
@@ -43,11 +95,36 @@ export function amountChanged(storedAmount, currentAmount) {
   return Math.round(storedAmount * 100) !== Math.round(currentAmount * 100)
 }
 
+// --- Make payment profile ------------------------------------------------------
+
+// What the Make scenario's Router treats as the default route; shared by the
+// server (paymentLinkService.js) and the Custom Prices suggestions.
+export const DEFAULT_PAYMENT_PROFILE = 'standard'
+// Grow's product line; the server rejects longer rendered invoice text.
+export const MAX_INVOICE_DESCRIPTION = 200
+
+// Profile names are what the Router matches on, so they stay short single
+// tokens (Hebrew allowed). Checked on the Custom Prices page and the server.
+const PAYMENT_PROFILE_PATTERN = /^[\p{L}\p{N}_-]{1,40}$/u
+
+export function isValidPaymentProfile(profile) {
+  return PAYMENT_PROFILE_PATTERN.test(profile)
+}
+
 // --- Grow payment description ---------------------------------------------
 
 // A short Hebrew description naming the month, shown on Grow's payment page.
-export function buildGrowDescription(studentName, monthStr) {
-  return `תשלום עבור שיעורי שירה - ${studentName} - ${monthNameFromKey(monthStr)}`
+// A per-student template (e.g. "ייעוץ קולי - {student} - {month}") replaces
+// the default wording; it is collapsed to one line for Grow's field.
+export function buildGrowDescription(studentName, monthStr, template) {
+  const monthName = monthNameFromKey(monthStr)
+  if (!template) return `תשלום עבור שיעורי שירה - ${studentName} - ${monthName}`
+  // One pass, so a name that itself contains "{month}" is not substituted again.
+  const values = { student: studentName ?? '', month: monthName ?? '' }
+  return template
+    .replace(/\{(student|month)\}/g, (_, token) => values[token])
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 // --- Shared hashed-record storage ------------------------------------------
@@ -94,22 +171,48 @@ export async function loadPaymentLinks(email, storage = globalThis.localStorage)
   return readRecord(key, storage)
 }
 
-export async function savePaymentLink(email, month, student, link, amount, storage = globalThis.localStorage) {
+// `inputs` is linkInputs() for what the link was minted with, so a later change
+// to the payer, phone, profile or invoice text makes it stale.
+export async function savePaymentLink(email, month, student, link, amount, inputs, storage = globalThis.localStorage) {
   const key = LINKS_KEY_PREFIX + await sha256Hex(email)
   return withRecord(key, storage, (all) => {
-    all[invoiceKey(month, student)] = { link, amount }
+    all[invoiceKey(month, student)] = inputs ? { link, amount, inputs } : { link, amount }
   })
 }
 
-export function getStoredLink(links, month, student) {
-  return links?.[invoiceKey(month, student)] ?? null
+// Everything besides the amount that shapes a minted link. Blank optional
+// fields are dropped, so a link from before fingerprints existed (minted with
+// the defaults) still matches a student who uses the defaults.
+export function linkInputs({ payerName, phone, lessonStudent, paymentProfile, invoiceDescription }) {
+  const fields = {
+    payer: (payerName ?? '').trim(),
+    phone: normalizePhoneForGrow(phone),
+    student: (lessonStudent ?? '').trim(),
+    profile: (paymentProfile ?? '').trim(),
+    invoice: (invoiceDescription ?? '').trim(),
+  }
+  if (!fields.profile || fields.profile === DEFAULT_PAYMENT_PROFILE) delete fields.profile
+  if (!fields.invoice) delete fields.invoice
+  return JSON.stringify(fields)
 }
 
 // A stored link is reusable only if it was minted for the amount currently
-// due (decision 5, amount-only invalidation).
-export function isLinkUsable(links, month, student, currentAmount) {
-  const entry = getStoredLink(links, month, student)
-  return !!entry && !amountChanged(entry.amount, currentAmount)
+// due (decision 5) and with the same payer, phone, profile and invoice text.
+// Looked up under every spelling of the row's student (invoiceRecord). A link
+// saved before fingerprints existed stays usable while the student still uses
+// the default profile and invoice text. Its payer is unknown (main minted it
+// with the saved full name, else the student), and treating that as stale
+// would mint a second live link for an invoice that may already be sent.
+export function isEntryUsable(entry, currentAmount, currentInputs) {
+  if (!entry || amountChanged(entry.amount, currentAmount)) return false
+  if (!currentInputs) return true
+  if (entry.inputs) return entry.inputs === currentInputs
+  const { profile, invoice } = JSON.parse(currentInputs)
+  return !profile && !invoice
+}
+
+export function isLinkUsable(links, month, row, currentAmount, currentInputs) {
+  return isEntryUsable(invoiceRecord(links, month, row), currentAmount, currentInputs)
 }
 
 // --- Amount override store -------------------------------------------------
@@ -133,6 +236,20 @@ export async function saveAmountOverride(email, month, student, amount, storage 
   })
 }
 
-export function getStoredOverride(overrides, month, student) {
-  return overrides?.[invoiceKey(month, student)] ?? null
+// --- Review resolution store ------------------------------------------------
+// vocalCalc:reviewResolutions:<hash>, keyed by {month}:{student}:{eventId}
+// (rowPricing.js reviewKey). Value is { mode: 'prorata' | 'base' | 'fixed' |
+// 'free', amount? }; null clears it.
+
+export async function loadReviewResolutions(email, storage = globalThis.localStorage) {
+  const key = REVIEW_KEY_PREFIX + await sha256Hex(email)
+  return readRecord(key, storage)
+}
+
+export async function saveReviewResolution(email, itemKey, resolution, storage = globalThis.localStorage) {
+  const key = REVIEW_KEY_PREFIX + await sha256Hex(email)
+  return withRecord(key, storage, (all) => {
+    if (resolution == null) delete all[itemKey]
+    else all[itemKey] = resolution
+  })
 }
