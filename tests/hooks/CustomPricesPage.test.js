@@ -84,6 +84,8 @@ describe('CustomPricesPage payment profile', () => {
     render(createElement(CustomPricesPage, { settings, onSave }))
     const select = profileFor('Dana Levy')
     expect(optionValues(select)).toEqual(['standard', 'extended'])
+    expect(select.options[1].textContent).toContain('all methods')
+    expect(select.options[1].textContent).toContain('Bit and Paybox')
     expect(select.value).toBe('standard')
 
     fireEvent.change(select, { target: { value: 'extended' } })
