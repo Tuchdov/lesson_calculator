@@ -105,7 +105,7 @@ export const DEFAULT_PAYMENT_PROFILE = 'standard'
 // Grow methods each route's module is set up with in Make.
 export const PAYMENT_PROFILES = [
   { id: DEFAULT_PAYMENT_PROFILE, label: 'Standard: card, Apple Pay, Google Pay, bank transfer' },
-  { id: 'extended', label: 'Extended: all methods, including Bit' },
+  { id: 'extended', label: 'Extended: all methods, including Bit and Paybox' },
 ]
 // Grow's product line; the server rejects longer rendered invoice text.
 export const MAX_INVOICE_DESCRIPTION = 200
