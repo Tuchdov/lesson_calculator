@@ -73,3 +73,44 @@ describe('CustomPricesPage remove and undo', () => {
     expect(screen.queryByText('Undo')).toBeNull()
   })
 })
+
+describe('CustomPricesPage payment profile', () => {
+  const profileFor = name => within(card(name)).getByLabelText('💳 Payment profile')
+  const optionValues = select => [...select.options].map(o => o.value)
+
+  // Value: protects=the teacher picks from exactly the Make Router's two routes, defaulting to standard; fails_when=the field goes back to free text or a typed profile leaks into other cards' choices; why_new=bug report, extended was never offered and typos spread as suggestions; seam=none
+  it('offers only the two Make routes and saves the chosen one', async () => {
+    const onSave = vi.fn().mockResolvedValue()
+    render(createElement(CustomPricesPage, { settings, onSave }))
+    const select = profileFor('Dana Levy')
+    expect(optionValues(select)).toEqual(['standard', 'extended'])
+    expect(select.options[1].textContent).toContain('all methods')
+    expect(select.options[1].textContent).toContain('Bit and Paybox')
+    expect(select.value).toBe('standard')
+
+    fireEvent.change(select, { target: { value: 'extended' } })
+    expect(optionValues(profileFor(PLAIN))).toEqual(['standard', 'extended'])
+
+    const next = await save(onSave)
+    expect(next.customer_details['Dana Levy'].payment_profile).toBe('extended')
+  })
+
+  // Value: protects=saved profiles map onto the Router's case-insensitive match, and an unknown one is shown as falling back to standard instead of vanishing; fails_when='Extended' shows as a separate or unselected option, or a legacy value is silently replaced; why_new=the select must round-trip values saved by the old free-text field; seam=none
+  it('selects a differently cased route and flags an unrecognized saved value', () => {
+    render(createElement(CustomPricesPage, {
+      settings: {
+        customer_details: {
+          'Dana Levy': { phone: '050-2222222', payment_profile: 'Extended' },
+          'Noa Cohen': { phone: '050-3333333', payment_profile: 'vip' },
+        },
+      },
+      onSave: vi.fn(),
+    }))
+    expect(profileFor('Dana Levy').value).toBe('extended')
+    expect(optionValues(profileFor('Dana Levy'))).toEqual(['standard', 'extended'])
+
+    const legacy = profileFor('Noa Cohen')
+    expect(legacy.value).toBe('vip')
+    expect(legacy.selectedOptions[0].textContent).toBe('vip (not recognized: gets Standard)')
+  })
+})

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { validateIsraeliPhone } from '../lib/whatsapp.js'
-import { DEFAULT_PAYMENT_PROFILE, isValidPaymentProfile, buildGrowDescription, MAX_INVOICE_DESCRIPTION } from '../lib/payments.js'
+import { PAYMENT_PROFILES, DEFAULT_PAYMENT_PROFILE, isValidPaymentProfile, buildGrowDescription, MAX_INVOICE_DESCRIPTION } from '../lib/payments.js'
 import { DURATION_LABELS, TYPES, TYPE_LABEL } from '../lib/priceConstants.js'
 import { normalizeStudentName, hasSavedPrice } from '../lib/calendarPayments.js'
 import { ImportPricesPanel } from './ImportPricesPanel.jsx'
@@ -21,6 +21,13 @@ const EXTRA_FIELDS = ['full_name', 'payment_profile', 'invoice_description', 'me
 // Month names don't depend on the year, so any year lists the 12 of them.
 const ALL_MONTHS = Array.from({ length: 12 }, (_, i) => `${new Date().getFullYear()}-${String(i + 1).padStart(2, '0')}`)
 const EMPTY_TIERS = { regular: { '60': '', '45': '', '30': '' }, non_regular: { '60': '', '45': '', '30': '' } }
+
+// The saved profile as a dropdown value: blank is the default route, and the
+// Router ignores case, so 'Extended' selects the extended option. Anything else
+// stays selectable as itself so a legacy value is visible, not silently dropped.
+const findProfile = saved => PAYMENT_PROFILES.find(p => p.id === (saved ?? '').trim().toLowerCase())
+const isKnownProfile = saved => !(saved ?? '').trim() || Boolean(findProfile(saved))
+const profileChoice = saved => (saved ?? '').trim() ? (findProfile(saved)?.id ?? saved) : DEFAULT_PAYMENT_PROFILE
 
 function initialExtras(settings) {
   const e = {}
@@ -267,7 +274,6 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
       .filter(s => s !== student && normalizeStudentName(s) === name && hasSavedPrice(customPrices[s]))
       .sort((a, b) => (b === name) - (a === name) || a.localeCompare(b, 'he'))[0] ?? null
   }
-  const knownProfiles = [...new Set([DEFAULT_PAYMENT_PROFILE, ...Object.values(extras).map(e => e?.payment_profile?.trim()).filter(Boolean)])]
 
   return (
     <div className={styles.page}>
@@ -313,9 +319,6 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
           dir="auto"
         />
       )}
-      <datalist id="payment-profiles">
-        {knownProfiles.map(p => <option key={p} value={p} />)}
-      </datalist>
 
       {students.length === 0 && Object.keys(removed).length === 0 && (
         <div className={styles.empty}>No saved students yet. Add a student above.</div>
@@ -384,20 +387,21 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
             </div>
             <div className={styles.phoneRow}>
               <label className={styles.phoneLabel} htmlFor={fieldId('profile')}>💳 Payment profile</label>
-              <div className={styles.phoneInputWrap}>
-                <input
+              <div className={`${styles.phoneInputWrap} ${styles.wideInput}`}>
+                <select
                   id={fieldId('profile')}
                   aria-invalid={profileErrors[student] ? true : undefined}
                   aria-describedby={profileErrors[student] ? fieldId('profile-error') : undefined}
-                  className={`${styles.input} ${styles.phoneInput} ${profileErrors[student] ? styles.phoneInputError : ''}`}
-                  list="payment-profiles"
-                  placeholder={DEFAULT_PAYMENT_PROFILE}
-                  title="Sent to Make as payment_profile — the scenario's router picks which payment options this student gets"
-                  value={extra.payment_profile ?? ''}
+                  className={`${styles.input} ${profileErrors[student] ? styles.phoneInputError : ''}`}
+                  value={profileChoice(extra.payment_profile)}
                   onChange={e => handleExtra(student, 'payment_profile', e.target.value)}
-                  dir="auto"
-                />
-                {profileErrors[student] && <span id={fieldId('profile-error')} className={styles.phoneError}>One word: letters, digits, - or _ (e.g. extended)</span>}
+                >
+                  {PAYMENT_PROFILES.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                  {!isKnownProfile(extra.payment_profile) && (
+                    <option value={extra.payment_profile}>{`${extra.payment_profile.trim()} (not recognized: gets Standard)`}</option>
+                  )}
+                </select>
+                {profileErrors[student] && <span id={fieldId('profile-error')} className={styles.phoneError}>Not a valid profile: pick Standard or Extended</span>}
               </div>
             </div>
             <div className={styles.phoneRow}>
