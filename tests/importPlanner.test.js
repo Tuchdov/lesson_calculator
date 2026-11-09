@@ -84,6 +84,27 @@ Deno.test('suggestMapping: recognizes Hebrew synonyms', () => {
   assertEquals(mapping.phone, 4)
 })
 
+Deno.test('suggestMapping: never suggests a percentage column as a price', () => {
+  const mapping = suggestMapping(['Name', 'Discount %', 'Regular price', 'Full price'])
+  assertEquals(mapping.regular, 2)
+  assertEquals(mapping.nonRegular, 3)
+})
+
+Deno.test('suggestMapping: skips Hebrew and spelled-out percentage headers', () => {
+  assertEquals(suggestMapping(['שם', 'אחוז הנחה', 'מחיר']).regular, 2)
+  assertEquals(suggestMapping(['Name', 'Discount percent', 'Discount pct']).regular, -1)
+})
+
+Deno.test('suggestMapping: prefers an explicit price header over a bare tier name', () => {
+  const mapping = suggestMapping(['Name', 'Discount', 'Discount price', 'Full', 'Full price'])
+  assertEquals(mapping.regular, 2)
+  assertEquals(mapping.nonRegular, 4)
+})
+
+Deno.test('suggestMapping: a bare tier name is still suggested when no price header exists', () => {
+  assertEquals(suggestMapping(['Name', 'Discount', 'Minutes']).regular, 1)
+})
+
 Deno.test('suggestMapping: unmatched headers return -1', () => {
   const mapping = suggestMapping(['Column A', 'Column B'])
   assertEquals(mapping.name, -1)
