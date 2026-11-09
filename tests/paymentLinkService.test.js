@@ -1,5 +1,6 @@
 import { assertEquals, assertRejects } from '@std/assert'
 import { createPaymentLink, ServiceError } from '../src/api/paymentLinkService.js'
+import { readPaymentLink } from '../src/lib/payRedirect.js'
 
 const ALLOWED_EMAIL = 'teacher@example.com'
 const CLIENT_ID = 'client-123.apps.googleusercontent.com'
@@ -384,4 +385,31 @@ Deno.test('createPaymentLink: without lessonStudent, student_name falls back to 
   await createPaymentLink(baseArgs({ fetchImpl }))
   assertEquals(captured.body.student_name, 'רחל כהן')
   assertEquals(captured.body.description.includes('רחל כהן'), true)
+})
+
+// ── WhatsApp preview link ────────────────────────────────────────────────
+
+// Value: protects=the student gets our /api/pay link whose title is the invoice text; fails_when=the raw Grow link is returned or the title isn't the custom invoice text; why_new=new feature; seam=none
+Deno.test('createPaymentLink: with a link secret, returns a signed /api/pay link carrying the invoice text', async () => {
+  const fetchImpl = queueFetch([tokeninfoOk(), makeOk('https://pay.grow.link/abc~123')])
+  const { link } = await createPaymentLink(baseArgs({
+    fetchImpl,
+    lessonStudent: 'ענבר',
+    invoiceDescription: 'ייעוץ - {student} - {month}',
+    linkSecret: 'secret',
+    baseUrl: 'https://calc.example.com',
+  }))
+  assertEquals(link.startsWith('https://calc.example.com/api/pay?'), true)
+  const params = Object.fromEntries(new URL(link).searchParams)
+  assertEquals(await readPaymentLink(params, 'secret'), {
+    growUrl: 'https://pay.grow.link/abc~123',
+    title: 'ייעוץ - ענבר - אוגוסט',
+  })
+})
+
+// Value: protects=sending keeps working before PAY_LINK_SECRET is set in Vercel; fails_when=a missing secret throws or returns a broken link; why_new=new feature; seam=none
+Deno.test('createPaymentLink: without a link secret, returns the raw Grow link', async () => {
+  const fetchImpl = queueFetch([tokeninfoOk(), makeOk('https://pay.grow.link/xyz')])
+  const { link } = await createPaymentLink(baseArgs({ fetchImpl, baseUrl: 'https://calc.example.com' }))
+  assertEquals(link, 'https://pay.grow.link/xyz')
 })
