@@ -3,7 +3,7 @@ import { useAuth } from './hooks/useAuth.js'
 import { useUserSettings } from './hooks/useUserSettings.js'
 import { useCalendarData } from './hooks/useCalendarData.js'
 import { normalizeStudentName, currentMonthKey } from './lib/calendarPayments.js'
-import { loadAmountOverrides, saveAmountOverride, loadPaymentLinks, savePaymentLink, loadReviewResolutions, saveReviewResolution } from './lib/payments.js'
+import { loadAmountOverrides, saveAmountOverride, loadLessonOverrides, saveLessonOverride, loadPaymentLinks, savePaymentLink, loadReviewResolutions, saveReviewResolution } from './lib/payments.js'
 import { AuthScreen } from './components/AuthScreen.jsx'
 import { Sidebar } from './components/Sidebar.jsx'
 import { CalculatorPage } from './components/CalculatorPage.jsx'
@@ -18,6 +18,7 @@ export default function App() {
   const [config, setConfig] = useState(null)
   const [dirty, setDirty] = useState(false)
   const [amountOverrides, setAmountOverrides] = useState({})
+  const [lessonOverrides, setLessonOverrides] = useState({})
   const [paymentLinks, setPaymentLinks] = useState({})
   const [reviewResolutions, setReviewResolutions] = useState({})
   const [month, setMonth] = useState(currentMonthKey)
@@ -49,6 +50,7 @@ export default function App() {
   useEffect(() => {
     if (!userEmail) return
     loadAmountOverrides(userEmail).then(setAmountOverrides).catch(err => console.error('Failed to load amount overrides:', err))
+    loadLessonOverrides(userEmail).then(setLessonOverrides).catch(err => console.error('Failed to load lesson overrides:', err))
     loadPaymentLinks(userEmail).then(setPaymentLinks).catch(err => console.error('Failed to load payment links:', err))
     loadReviewResolutions(userEmail).then(setReviewResolutions).catch(err => console.error('Failed to load review answers:', err))
   }, [userEmail])
@@ -72,6 +74,12 @@ export default function App() {
     const email = userEmail
     const next = await saveAmountOverride(email, month, student, amount)
     if (sameAccount(email)) setAmountOverrides(next)
+  }
+
+  const handleLessonOverrideChange = async (month, student, counts) => {
+    const email = userEmail
+    const next = await saveLessonOverride(email, month, student, counts)
+    if (sameAccount(email)) setLessonOverrides(next)
   }
 
   const handleReviewResolutionChange = async (itemKey, resolution) => {
@@ -177,6 +185,8 @@ export default function App() {
             defaultInvoiceDescription={settings.default_invoice_description}
             amountOverrides={amountOverrides}
             onAmountOverrideChange={handleAmountOverrideChange}
+            lessonOverrides={lessonOverrides}
+            onLessonOverrideChange={handleLessonOverrideChange}
             paymentLinks={paymentLinks}
             onPaymentLinkChange={handlePaymentLinkChange}
             preparing={preparing}

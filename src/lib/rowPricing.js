@@ -107,6 +107,21 @@ export function detailsFor(customerDetails, row) {
   return merged
 }
 
+// The row with the teacher's lesson counts in place of the calendar's, so the
+// amount, the invoice/WhatsApp lesson count and the CSV all follow them. The
+// calendar's counts stay on `calendar_lessons` for display and reset.
+export function applyLessonOverride(row, override) {
+  if (!override) return row
+  const count = d => Math.max(0, Math.floor(Number(override[d]) || 0))
+  return {
+    ...row,
+    lessons_60: count('60'),
+    lessons_45: count('45'),
+    lessons_30: count('30'),
+    calendar_lessons: { '60': row.lessons_60, '45': row.lessons_45, '30': row.lessons_30 },
+  }
+}
+
 export function totalLessons(row) {
   return row.lessons_60 + row.lessons_45 + row.lessons_30
 }

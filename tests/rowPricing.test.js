@@ -12,6 +12,7 @@ import {
   billedLessonCount,
   payerName,
   lessonStudentName,
+  applyLessonOverride,
 } from '../src/lib/rowPricing.js'
 import { invoiceRecord, invoiceRecordName } from '../src/lib/payments.js'
 
@@ -216,4 +217,17 @@ Deno.test('billedLessonCount: regular lessons plus items charged as a standard l
   }
   assertEquals(billedLessonCount(row, resolutions, '2026-10'), 4)
   assertEquals(billedLessonCount({ ...row, review_items: undefined }, {}, '2026-10'), 3)
+})
+
+// ── applyLessonOverride ──────────────────────────────────────────────────────
+
+// Value: protects=the teacher's lesson count replaces the calendar's for the amount and the billed count, and the calendar's is kept for display/reset; fails_when=the override only changes the display, or bad input yields NaN amounts; why_new=new feature; seam=none
+Deno.test('applyLessonOverride: replaces the counts, keeps the calendar ones, and the amount follows', () => {
+  const row = { student: 'Alice', student_type: 'regular', lessons_60: 3, lessons_45: 1, lessons_30: 0 }
+  assertEquals(applyLessonOverride(row, null), row)
+  const edited = applyLessonOverride(row, { '60': 4, '45': '', '30': -2 })
+  assertEquals([edited.lessons_60, edited.lessons_45, edited.lessons_30], [4, 0, 0])
+  assertEquals(edited.calendar_lessons, { '60': 3, '45': 1, '30': 0 })
+  assertEquals(billedLessonCount(edited, {}, '2026-08'), 4)
+  assertEquals(computeRowAmount(edited, CONFIG.prices.regular, {}, '2026-08').amount, 4 * 260)
 })
