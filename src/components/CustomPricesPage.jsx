@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { validateIsraeliPhone } from '../lib/whatsapp.js'
-import { PAYMENT_PROFILES, DEFAULT_PAYMENT_PROFILE, isValidPaymentProfile, buildGrowDescription, MAX_INVOICE_DESCRIPTION } from '../lib/payments.js'
+import { PAYMENT_PROFILES, DEFAULT_PAYMENT_PROFILE, isValidPaymentProfile, fitsInvoiceLimit, MAX_INVOICE_DESCRIPTION } from '../lib/payments.js'
 import { DURATION_LABELS, TYPES, TYPE_LABEL } from '../lib/priceConstants.js'
 import { normalizeStudentName, hasSavedPrice } from '../lib/calendarPayments.js'
 import { ImportPricesPanel } from './ImportPricesPanel.jsx'
@@ -18,8 +18,7 @@ function initialPhones(settings) {
 // default", so students without them behave exactly as before. full_name is
 // the payer (a child's parent) shown on the payment page and invoice.
 const EXTRA_FIELDS = ['full_name', 'payment_profile', 'invoice_description', 'message']
-// Month names don't depend on the year, so any year lists the 12 of them.
-const ALL_MONTHS = Array.from({ length: 12 }, (_, i) => `${new Date().getFullYear()}-${String(i + 1).padStart(2, '0')}`)
+const DEFAULT_INVOICE_PLACEHOLDER = 'תשלום עבור שיעורי שירה - {student} - {month}'
 const EMPTY_TIERS = { regular: { '60': '', '45': '', '30': '' }, non_regular: { '60': '', '45': '', '30': '' } }
 
 // The saved profile as a dropdown value: blank is the default route, and the
@@ -168,13 +167,11 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
       const profile = (extras[student]?.payment_profile ?? '').trim()
       if (profile && !isValidPaymentProfile(profile)) badProfiles[student] = true
     }
-    // The server checks the rendered text, so try every month and keep the longest.
     const badInvoices = {}
     for (const student of students) {
       const template = (extras[student]?.invoice_description ?? '').trim()
       // {student} in invoice text is the student's calendar name.
-      const longest = template && Math.max(...ALL_MONTHS.map(m => buildGrowDescription(normalizeStudentName(student), m, template).length))
-      if (template && longest > MAX_INVOICE_DESCRIPTION) badInvoices[student] = true
+      if (template && !fitsInvoiceLimit(normalizeStudentName(student), template)) badInvoices[student] = true
     }
     const invalid = [...new Set([...Object.keys(errors), ...Object.keys(badProfiles), ...Object.keys(badInvoices)])]
     if (invalid.length > 0) {
@@ -412,8 +409,8 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
                   aria-invalid={invoiceErrors[student] ? true : undefined}
                   aria-describedby={invoiceErrors[student] ? fieldId('invoice-error') : undefined}
                   className={`${styles.input} ${invoiceErrors[student] ? styles.phoneInputError : ''}`}
-                  placeholder="תשלום עבור שיעורי שירה - {student} - {month}"
-                  title="Replaces the default payment/invoice description. {student} (the student) and {month} are filled in."
+                  placeholder={settings?.default_invoice_description?.trim() || DEFAULT_INVOICE_PLACEHOLDER}
+                  title="Replaces the default invoice text from Settings. {student} (the student) and {month} are filled in."
                   value={extra.invoice_description ?? ''}
                   onChange={e => handleExtra(student, 'invoice_description', e.target.value)}
                   dir="rtl"

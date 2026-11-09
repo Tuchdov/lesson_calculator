@@ -6,8 +6,8 @@ const ACCEPTED_EXTENSIONS = ['.xlsx', '.xls', '.csv']
 const MAPPING_FIELDS = [
   { key: 'name', label: 'Student name', required: true },
   { key: 'minutes', label: 'Minutes', required: true },
-  { key: 'regular', label: 'Regular price', required: false },
-  { key: 'nonRegular', label: 'Non-regular price', required: false },
+  { key: 'regular', label: 'Discount price', required: false },
+  { key: 'nonRegular', label: 'Full price', required: false },
   { key: 'phone', label: 'Phone', required: false },
 ]
 const FIELD_LABEL = Object.fromEntries(MAPPING_FIELDS.map(f => [f.key, f.label]))
@@ -251,8 +251,8 @@ export function ImportPricesPanel({ existingKeys, availableStudents, onImport, o
                   <thead>
                     <tr>
                       <th></th>
-                      <th className={styles.grpReg} colSpan={3}>Regular</th>
-                      <th className={styles.grpNon} colSpan={3}>Non-regular</th>
+                      <th className={styles.grpReg} colSpan={3}>Discount</th>
+                      <th className={styles.grpNon} colSpan={3}>Full price</th>
                       <th></th>
                     </tr>
                     <tr>

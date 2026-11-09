@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { EditableTable } from './EditableTable.jsx'
 import { resolveRowPrices, computeRowAmount, detailsFor, billedLessonCount, payerName, lessonStudentName } from '../lib/rowPricing.js'
 import { safeTotalsCsvBytes } from '../lib/csvExport.js'
-import { invoiceRecord, invoiceKey, isValidAmount, isLinkUsable, hasFullName, linkInputs } from '../lib/payments.js'
+import { invoiceRecord, invoiceKey, isValidAmount, isLinkUsable, hasFullName, linkInputs, invoiceTemplateFor } from '../lib/payments.js'
 import { rowNeedsRecalc, DEFAULT_LESSON_KEYWORDS, DEFAULT_CANCELLED_KEYWORDS, DEFAULT_PAID_CANCELLATION_PHRASES, DEFAULT_MAKEUP_PHRASES } from '../lib/calendarPayments.js'
 import { requestPaymentLink } from '../lib/paymentLinkClient.js'
 import styles from './CalculatorPage.module.css'
@@ -45,7 +45,7 @@ async function runWithConcurrency(items, limit, worker) {
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, next))
 }
 
-export function CalculatorPage({ getAccessToken, config, calendar, month, onMonthChange, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, defaultMessage, amountOverrides, onAmountOverrideChange, paymentLinks, onPaymentLinkChange, reviewResolutions, onReviewResolutionChange, preparing, onPreparingChange, prepareStatus, onPrepareStatusChange }) {
+export function CalculatorPage({ getAccessToken, config, calendar, month, onMonthChange, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, defaultMessage, defaultInvoiceDescription, amountOverrides, onAmountOverrideChange, paymentLinks, onPaymentLinkChange, reviewResolutions, onReviewResolutionChange, preparing, onPreparingChange, prepareStatus, onPrepareStatusChange }) {
   const { rows, summary, loading, error, calculate, calculatedWith } = calendar
   // Link progress is owned by App so leaving the page mid-run can't make
   // finished-looking rows mint a second link when you come back. It is keyed
@@ -82,8 +82,9 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
   const rowLink = (row, details) => {
     const name = payerName(details, row)
     const lessonStudent = lessonStudentName(row)
-    const inputs = linkInputs({ payerName: name, phone: details.phone, lessonStudent, paymentProfile: details.payment_profile, invoiceDescription: details.invoice_description })
-    return { name, lessonStudent, inputs }
+    const invoiceDescription = invoiceTemplateFor(details, defaultInvoiceDescription)
+    const inputs = linkInputs({ payerName: name, phone: details.phone, lessonStudent, paymentProfile: details.payment_profile, invoiceDescription })
+    return { name, lessonStudent, invoiceDescription, inputs }
   }
 
   const handlePrepareAll = async () => {
@@ -106,7 +107,7 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
       return next
     })
 
-    await runWithConcurrency(eligible, PREPARE_CONCURRENCY, async ({ row, details, phone, name, lessonStudent, inputs, amount }) => {
+    await runWithConcurrency(eligible, PREPARE_CONCURRENCY, async ({ row, details, phone, name, lessonStudent, invoiceDescription, inputs, amount }) => {
       try {
         const link = await requestPaymentLink(getAccessToken, {
           studentName: name,
@@ -116,7 +117,7 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
           month: summary.month,
           numberOfLessons: billedLessonCount(row, reviewResolutions, summary.month),
           paymentProfile: details.payment_profile,
-          invoiceDescription: details.invoice_description,
+          invoiceDescription,
         })
         await onPaymentLinkChange?.(summary.month, row.student, link, amount, inputs)
         setRowStatus(row.student, null)
@@ -202,6 +203,7 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
           onCustomerDetailChange={onCustomerDetailChange}
           month={summary?.month ?? month}
           defaultMessage={defaultMessage}
+          defaultInvoiceDescription={defaultInvoiceDescription}
           amountOverrides={amountOverrides}
           onAmountOverrideChange={onAmountOverrideChange}
           paymentLinks={paymentLinks}

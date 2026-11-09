@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { buildPaymentMessage, DEFAULT_MESSAGE_TEMPLATE } from '../lib/whatsapp.js'
 import { DEFAULT_CANCELLED_KEYWORDS, DEFAULT_PAID_CANCELLATION_PHRASES, DEFAULT_LESSON_KEYWORDS, DEFAULT_MAKEUP_PHRASES, MAKEUP_AUTO_MIN, MAKEUP_AUTO_MAX, currentMonthKey } from '../lib/calendarPayments.js'
+import { TYPES, TYPE_LABEL } from '../lib/priceConstants.js'
+import { buildGrowDescription, fitsInvoiceLimit, MAX_INVOICE_DESCRIPTION } from '../lib/payments.js'
 import styles from './SettingsPage.module.css'
 
 const DURATION_LABELS = { '60': '60 min', '45': '45 min', '30': '30 min' }
-const TYPES = ['regular', 'non_regular']
-const TYPE_LABEL = { regular: 'Regular', non_regular: 'Non-regular' }
+// Sample student for the invoice preview and its length check.
+const SAMPLE_STUDENT = 'דנה לוי'
 
 function initialPrices(settings, config) {
   const saved = settings?.default_prices
@@ -23,6 +25,8 @@ export function SettingsPage({ config, settings, onSave }) {
   const [messageTemplate, setMessageTemplate] = useState(
     () => settings?.default_message || DEFAULT_MESSAGE_TEMPLATE
   )
+  const [invoiceTemplate, setInvoiceTemplate] = useState(() => settings?.default_invoice_description ?? '')
+  const [invoiceTooLong, setInvoiceTooLong] = useState(false)
   const [paidCancelPhrases, setPaidCancelPhrases] = useState(() => initialList(settings?.paid_cancellation_phrases, DEFAULT_PAID_CANCELLATION_PHRASES))
   const [keywords, setKeywords] = useState(() => initialList(settings?.cancelled_keywords, config?.cancelled_keywords ?? DEFAULT_CANCELLED_KEYWORDS))
   const [lessonKeywords, setLessonKeywords] = useState(() => initialList(settings?.lesson_keywords, DEFAULT_LESSON_KEYWORDS))
@@ -53,6 +57,11 @@ export function SettingsPage({ config, settings, onSave }) {
   }
 
   const handleSave = async () => {
+    const invoice = invoiceTemplate.trim()
+    if (invoice && !fitsInvoiceLimit(SAMPLE_STUDENT, invoice)) {
+      setInvoiceTooLong(true)
+      return
+    }
     const cleaned = {}
     for (const type of TYPES) {
       cleaned[type] = {}
@@ -65,6 +74,7 @@ export function SettingsPage({ config, settings, onSave }) {
       ...settings,
       default_prices: cleaned,
       default_message: messageTemplate,
+      default_invoice_description: invoice,
       paid_cancellation_phrases: paidCancelPhrases,
       cancelled_keywords: keywords,
       lesson_keywords: lessonKeywords,
@@ -73,14 +83,15 @@ export function SettingsPage({ config, settings, onSave }) {
     setSaved(true)
   }
 
-  const preview = buildPaymentMessage('דנה לוי', 300, currentMonthKey(), messageTemplate, 4)
+  const preview = buildPaymentMessage(SAMPLE_STUDENT, 300, currentMonthKey(), messageTemplate, 4)
+  const invoicePreview = buildGrowDescription(SAMPLE_STUDENT, currentMonthKey(), invoiceTemplate.trim() || undefined)
 
   return (
     <div className={styles.page}>
       <h2 className={styles.heading}>Settings</h2>
       <p className={styles.hint}>
-        Default prices and the WhatsApp message template used for every student
-        unless overridden on the Custom Prices page.
+        Default prices, invoice text and WhatsApp message template used for
+        every student unless overridden on the Custom Prices page.
       </p>
 
       <div className={styles.card}>
@@ -136,6 +147,38 @@ export function SettingsPage({ config, settings, onSave }) {
         <div className={styles.previewWrap}>
           <span className={styles.previewLabel}>Preview</span>
           <pre className={styles.preview} dir="rtl">{preview}</pre>
+        </div>
+      </div>
+
+      <div className={styles.card}>
+        <div className={styles.cardHeader}>
+          <h3 className={styles.cardTitle}>Default invoice text</h3>
+          <button className={styles.resetBtn} onClick={() => { setInvoiceTemplate(''); setInvoiceTooLong(false); setSaved(false) }}>
+            Reset to original
+          </button>
+        </div>
+        <p className={styles.tokenHint}>
+          The description on the payment page and invoice. Use{' '}
+          <code>{'{student}'}</code> and <code>{'{month}'}</code> — they're
+          replaced automatically per student. Leave empty for the built-in
+          wording. A student's own invoice text on the Custom Prices page
+          replaces this.
+        </p>
+        <input
+          type="text"
+          className={`${styles.input} ${styles.fullInput} ${invoiceTooLong ? styles.inputError : ''}`}
+          dir="rtl"
+          aria-label="Default invoice text"
+          aria-invalid={invoiceTooLong ? true : undefined}
+          aria-describedby={invoiceTooLong ? 'default-invoice-error' : undefined}
+          placeholder="תשלום עבור שיעורי שירה - {student} - {month}"
+          value={invoiceTemplate}
+          onChange={e => { setInvoiceTemplate(e.target.value); setInvoiceTooLong(false); setSaved(false) }}
+        />
+        {invoiceTooLong && <span id="default-invoice-error" className={styles.fieldError}>Too long: at most {MAX_INVOICE_DESCRIPTION} characters once the name and month are filled in</span>}
+        <div className={styles.previewWrap}>
+          <span className={styles.previewLabel}>Preview</span>
+          <pre className={styles.preview} dir="rtl">{invoicePreview}</pre>
         </div>
       </div>
 

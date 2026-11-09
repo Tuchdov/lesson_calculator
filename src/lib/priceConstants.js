@@ -3,7 +3,9 @@
 export const DURATIONS = ['60', '45', '30']
 export const TYPES = ['regular', 'non_regular']
 export const DURATION_LABELS = { '60': '60 min', '45': '45 min', '30': '30 min' }
-export const TYPE_LABEL = { regular: 'Regular', non_regular: 'Non-regular' }
+// Stored keys stay regular/non_regular so saved prices keep loading; only the
+// labels changed: a regular student pays the discount price.
+export const TYPE_LABEL = { regular: 'Discount', non_regular: 'Full price' }
 
 // Names that would silently rewire an object's prototype if used as a
 // custom_prices key (e.g. `{ __proto__: {...} }`). Rows with these names are
@@ -12,9 +14,9 @@ export const RESERVED_NAMES = new Set(['__proto__', 'constructor', 'prototype'])
 
 // Column-header auto-suggest, matched as a case-insensitive substring.
 // Order matters: non-regular is matched before regular, since headers like
-// "non_regular_60" or "לא רגיל" also contain the regular substring.
+// "non_regular_60", "לא רגיל" or "מחיר מלא" also contain a regular substring.
 export const NAME_SYNONYMS = ['name', 'student', 'שם', 'תלמיד']
 export const MINUTES_SYNONYMS = ['minutes', 'min', 'duration', 'length', 'דקות', 'דקה', 'זמן', 'משך']
-export const NON_REGULAR_SYNONYMS = ['non-regular', 'non_regular', 'חד פעמי', 'חד"פ', 'לא רגיל']
-export const REGULAR_SYNONYMS = ['regular', 'price', 'מחיר', 'רגיל']
+export const NON_REGULAR_SYNONYMS = ['non-regular', 'non_regular', 'full price', 'full_price', 'fullprice', 'חד פעמי', 'חד"פ', 'לא רגיל', 'מחיר מלא']
+export const REGULAR_SYNONYMS = ['regular', 'discount', 'price', 'הנחה', 'מחיר', 'רגיל']
 export const PHONE_SYNONYMS = ['phone', 'tel', 'mobile', 'טלפון', 'נייד', 'פלאפון']

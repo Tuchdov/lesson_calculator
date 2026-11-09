@@ -6,6 +6,8 @@ import {
   isValidAmount,
   amountChanged,
   buildGrowDescription,
+  invoiceTemplateFor,
+  fitsInvoiceLimit,
   loadPaymentLinks,
   savePaymentLink,
   isLinkUsable,
@@ -124,6 +126,35 @@ Deno.test('buildGrowDescription: includes the student name', () => {
 Deno.test('buildGrowDescription: includes the Hebrew month name', () => {
   const desc = buildGrowDescription('רחל כהן', '2026-08')
   assertEquals(desc.includes('אוגוסט'), true)
+})
+
+// ── invoiceTemplateFor ───────────────────────────────────────────────────────
+
+Deno.test("invoiceTemplateFor: a student's own text wins over the default", () => {
+  assertEquals(invoiceTemplateFor({ invoice_description: 'שלי {month}' }, 'ברירת מחדל {month}'), 'שלי {month}')
+})
+
+Deno.test('invoiceTemplateFor: falls back to the Settings default', () => {
+  assertEquals(invoiceTemplateFor({ invoice_description: '   ' }, ' ברירת מחדל {month} '), 'ברירת מחדל {month}')
+  assertEquals(invoiceTemplateFor({}, 'ברירת מחדל'), 'ברירת מחדל')
+})
+
+Deno.test('invoiceTemplateFor: empty when neither is set', () => {
+  assertEquals(invoiceTemplateFor(undefined, undefined), '')
+})
+
+// ── fitsInvoiceLimit ─────────────────────────────────────────────────────────
+
+Deno.test('fitsInvoiceLimit: a short template fits', () => {
+  assertEquals(fitsInvoiceLimit('רחל כהן', 'שיעורים - {student} - {month}'), true)
+})
+
+Deno.test('fitsInvoiceLimit: checks the longest month name, not just one', () => {
+  // "ספטמבר"/"אוקטובר"/"נובמבר" are 6–7 letters, "מאי" is 3: a template at the
+  // limit in May overflows in October.
+  const template = 'x'.repeat(197) + '{month}'
+  assertEquals(buildGrowDescription('', '2026-05', template).length <= 200, true)
+  assertEquals(fitsInvoiceLimit('', template), false)
 })
 
 // ── payment link store ───────────────────────────────────────────────────────
