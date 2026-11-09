@@ -131,7 +131,8 @@ export function SettingsPage({ config, settings, onSave }) {
         </div>
         <p className={styles.tokenHint}>
           Use <code>{'{payer}'}</code> or <code>{'{student}'}</code> (both are
-          who pays: a parent, else the student),{' '}
+          who pays: a parent, else the student), <code>{'{first_name}'}</code>{' '}
+          (their first name),{' '}
           <code>{'{amount}'}</code>, <code>{'{month}'}</code>,{' '}
           <code>{'{lessons}'}</code>, and <code>{'{link}'}</code> — they're
           replaced automatically per student. If <code>{'{link}'}</code> isn't in the template, the
