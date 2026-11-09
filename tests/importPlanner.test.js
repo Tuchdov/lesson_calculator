@@ -109,6 +109,17 @@ Deno.test('suggestMapping: a bare tier name is still suggested when no price hea
   assertEquals(suggestMapping(['Name', 'Regular', 'Minutes']).regular, 1)
 })
 
+Deno.test('suggestMapping: a tier-named column beats an earlier generic price column', () => {
+  const mapping = suggestMapping(['Name', 'List price', 'Discounted price', 'Full price'])
+  assertEquals(mapping.regular, 2)
+  assertEquals(mapping.nonRegular, 3)
+  assertEquals(suggestMapping(['שם', 'מחיר מחירון', 'מחיר עם הנחה', 'מחיר מלא']).regular, 2)
+})
+
+Deno.test('suggestMapping: a lone generic price column is still the discounted price', () => {
+  assertEquals(suggestMapping(['Name', 'Minutes', 'Price']).regular, 2)
+})
+
 Deno.test('suggestMapping: unmatched headers return -1', () => {
   const mapping = suggestMapping(['Column A', 'Column B'])
   assertEquals(mapping.name, -1)
