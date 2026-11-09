@@ -278,6 +278,14 @@ both handling and a test requirement.
   Webhooks → "Webhook response" module as its last step — without one, Make always replies
   `"Accepted"` immediately and runs the rest of the scenario asynchronously, so the caller
   never sees the link.
+- **WhatsApp preview title (2026-11-09).** Grow's page always sets `og:title` to the
+  business name, so the link title set in Make never reaches WhatsApp's preview. With
+  `PAY_LINK_SECRET` set in Vercel, the student is sent
+  `/api/pay?g=<Grow link id>&t=<title, base64url>&s=<HMAC>` instead (`src/lib/payRedirect.js`).
+  That page serves `og:title` = the invoice text and forwards the browser to Grow by script
+  (not a 302 or meta refresh, which WhatsApp would follow). It only forwards to
+  `pay.grow.link`, and the signature covers both the id and the title. Without the secret
+  the raw Grow link is sent, as before. Links are stateless, hence long (~200 characters).
 
 ## Success Criteria
 
