@@ -174,6 +174,7 @@ export default function App() {
             customerDetails={settings.customer_details}
             onCustomerDetailChange={handleCustomerDetailChange}
             defaultMessage={settings.default_message}
+            defaultInvoiceDescription={settings.default_invoice_description}
             amountOverrides={amountOverrides}
             onAmountOverrideChange={handleAmountOverrideChange}
             paymentLinks={paymentLinks}

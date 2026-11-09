@@ -134,6 +134,21 @@ export function buildGrowDescription(studentName, monthStr, template) {
     .trim()
 }
 
+// The invoice text a student's link is minted with: their own text, else the
+// Settings default, else '' (the server's built-in wording).
+export function invoiceTemplateFor(details, defaultTemplate) {
+  return details?.invoice_description?.trim() || defaultTemplate?.trim() || ''
+}
+
+// Month names don't depend on the year, so any year lists the 12 of them.
+const ALL_MONTHS = Array.from({ length: 12 }, (_, i) => `2000-${String(i + 1).padStart(2, '0')}`)
+
+// The server checks the rendered text, so a template only fits Grow's field
+// if it fits in the month with the longest name.
+export function fitsInvoiceLimit(studentName, template) {
+  return ALL_MONTHS.every(m => buildGrowDescription(studentName, m, template).length <= MAX_INVOICE_DESCRIPTION)
+}
+
 // --- Shared hashed-record storage ------------------------------------------
 // Both stores below are "prefix + sha256Hex(email) -> JSON blob", the same
 // shape as userSettings.js. Reads are a plain parse; writes go through

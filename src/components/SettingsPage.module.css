@@ -236,3 +236,12 @@
 }
 
 .addPhraseRow .input { flex: 1; width: auto; }
+
+.fullInput { width: 100%; box-sizing: border-box; }
+.inputError { border-color: var(--md-red); }
+.fieldError {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--md-red);
+}

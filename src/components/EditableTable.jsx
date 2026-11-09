@@ -1,18 +1,18 @@
 import { useState } from 'react'
 import { validateIsraeliPhone, buildPaymentMessage, buildWhatsAppUrl } from '../lib/whatsapp.js'
-import { hasFullName, invoiceRecord, invoiceRecordNames, isEntryUsable, isValidAmount, linkInputs } from '../lib/payments.js'
+import { hasFullName, invoiceRecord, invoiceRecordNames, invoiceTemplateFor, isEntryUsable, isValidAmount, linkInputs } from '../lib/payments.js'
 import { requestPaymentLink } from '../lib/paymentLinkClient.js'
+import { TYPE_LABEL } from '../lib/priceConstants.js'
 import { resolveRowPrices, computeRowAmount, detailsFor, billedLessonCount, reviewKey, reviewResolution, storedReviewResolution, storedReviewNames, reviewItemAmount, baseLessonPrice, proRataPrice, defaultReviewMode, payerName, lessonStudentName } from '../lib/rowPricing.js'
 import styles from './EditableTable.module.css'
 
 const DURATION_COLS = ['60', '45', '30']
-const TYPE_LABEL = { regular: 'Regular', non_regular: 'Non-regular' }
 const TYPE_CHIP = { regular: styles.chipGreen, non_regular: styles.chipAmber }
 const STALE_HINT = 'Press Calculate again first'
 const CONFLICT_LABEL = { phone: 'phone', full_name: 'full name', price: 'prices' }
 const CONFLICT_HINT = 'These saved spellings disagree, so this is probably two students. Give their calendar events distinct names (e.g. add a surname), or remove the wrong spelling on Custom Prices, then press Calculate again.'
 
-export function EditableTable({ rows, config, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, month, defaultMessage, amountOverrides, onAmountOverrideChange, paymentLinks, onPaymentLinkChange, getAccessToken, prepareStatus, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange }) {
+export function EditableTable({ rows, config, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, month, defaultMessage, defaultInvoiceDescription, amountOverrides, onAmountOverrideChange, paymentLinks, onPaymentLinkChange, getAccessToken, prepareStatus, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange }) {
   const grouped = groupByType(rows)
   const [expandedRow, setExpandedRow] = useState(null)
 
@@ -47,6 +47,7 @@ export function EditableTable({ rows, config, customPrices, onCustomPriceChange,
                   onCustomerDetailChange={onCustomerDetailChange}
                   month={month}
                   defaultMessage={defaultMessage}
+                  defaultInvoiceDescription={defaultInvoiceDescription}
                   expandedRow={expandedRow}
                   setExpandedRow={setExpandedRow}
                   amountOverride={invoiceRecord(amountOverrides, month, row)}
@@ -86,7 +87,7 @@ function GroupHeader({ type }) {
  * @param {object} props Student data, pricing, payment state, and callbacks.
  * @returns {import('react').ReactNode} The invoice row and optional details rows.
  */
-function StudentRow({ row, config, customPrices, onCustomPriceChange, details, onCustomerDetailChange, month, defaultMessage, expandedRow, setExpandedRow, amountOverride, amountOverrideNames, onAmountOverrideChange, linkEntry, onPaymentLinkChange, getAccessToken, batchState, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange }) {
+function StudentRow({ row, config, customPrices, onCustomPriceChange, details, onCustomerDetailChange, month, defaultMessage, defaultInvoiceDescription, expandedRow, setExpandedRow, amountOverride, amountOverrideNames, onAmountOverrideChange, linkEntry, onPaymentLinkChange, getAccessToken, batchState, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange }) {
   const { phone, full_name: fullName } = details
   const custom = customPrices?.[row.student]
   const prices = resolveRowPrices(row.student, row.student_type === 'regular', config, custom)
@@ -121,7 +122,8 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
   const lessonStudent = lessonStudentName(row)
   const nameOk = hasFullName(effectiveName)
   const needsDetails = !phone || !nameOk
-  const inputs = linkInputs({ payerName: effectiveName, phone, lessonStudent, paymentProfile: details.payment_profile, invoiceDescription: details.invoice_description })
+  const invoiceDescription = invoiceTemplateFor(details, defaultInvoiceDescription)
+  const inputs = linkInputs({ payerName: effectiveName, phone, lessonStudent, paymentProfile: details.payment_profile, invoiceDescription })
   const linkUsable = isEntryUsable(linkEntry, roundedAmount, inputs)
   // Mint progress lives in App (prepareStatus), so it survives page switches.
   const busy = batchState === 'loading'
@@ -250,7 +252,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
         month,
         numberOfLessons: lessonCount,
         paymentProfile: details.payment_profile,
-        invoiceDescription: details.invoice_description,
+        invoiceDescription,
       })
       await onPaymentLinkChange?.(month, row.student, link, roundedAmount, inputs)
       onRowStatusChange?.(row.student, null)
