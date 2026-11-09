@@ -18,7 +18,7 @@ export const RESERVED_NAMES = new Set(['__proto__', 'constructor', 'prototype'])
 export const NAME_SYNONYMS = ['name', 'student', 'שם', 'תלמיד']
 export const MINUTES_SYNONYMS = ['minutes', 'min', 'duration', 'length', 'דקות', 'דקה', 'זמן', 'משך']
 export const NON_REGULAR_SYNONYMS = ['non-regular', 'non_regular', 'full price', 'full_price', 'fullprice', 'חד פעמי', 'חד"פ', 'לא רגיל', 'מחיר מלא']
-export const REGULAR_SYNONYMS = ['regular', 'discount', 'price', 'הנחה', 'מחיר', 'רגיל']
+export const REGULAR_SYNONYMS = ['regular', 'discounted price', 'discounted_price', 'price', 'מחיר עם הנחה', 'מחיר', 'רגיל']
 // A price column's header never names a percentage; one that names a price
 // outright is preferred over one that only names the tier.
 export const PERCENT_MARKERS = ['%', 'percent', 'pct', 'אחוז']
