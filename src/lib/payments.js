@@ -5,6 +5,7 @@ import { normalizeStudentName } from './calendarPayments.js'
 const LINKS_KEY_PREFIX = 'vocalCalc:paymentLinks:'
 const OVERRIDES_KEY_PREFIX = 'vocalCalc:amountOverrides:'
 const REVIEW_KEY_PREFIX = 'vocalCalc:reviewResolutions:'
+const LESSON_OVERRIDES_KEY_PREFIX = 'vocalCalc:lessonOverrides:'
 
 // One invoice = one student for one month. Both the link store and the
 // amount-override store are keyed this way so neither carries a value into
@@ -273,5 +274,25 @@ export async function saveReviewResolution(email, itemKey, resolution, storage =
   return withRecord(key, storage, (all) => {
     if (resolution == null) delete all[itemKey]
     else all[itemKey] = resolution
+  })
+}
+
+// --- Lesson count override store --------------------------------------------
+// vocalCalc:lessonOverrides:<hash>, keyed by {month}:{student} like the amount
+// overrides. Value is { '60': n, '45': n, '30': n }, the counts that replace
+// the calendar's for that invoice (rowPricing.js applyLessonOverride); null
+// clears it.
+
+export async function loadLessonOverrides(email, storage = globalThis.localStorage) {
+  const key = LESSON_OVERRIDES_KEY_PREFIX + await sha256Hex(email)
+  return readRecord(key, storage)
+}
+
+export async function saveLessonOverride(email, month, student, counts, storage = globalThis.localStorage) {
+  const key = LESSON_OVERRIDES_KEY_PREFIX + await sha256Hex(email)
+  return withRecord(key, storage, (all) => {
+    const k = invoiceKey(month, student)
+    if (counts == null) delete all[k]
+    else all[k] = counts
   })
 }

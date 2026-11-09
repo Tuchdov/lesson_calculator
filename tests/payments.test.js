@@ -16,6 +16,8 @@ import {
   linkInputs,
   loadAmountOverrides,
   saveAmountOverride,
+  loadLessonOverrides,
+  saveLessonOverride,
   invoiceRecord,
   loadReviewResolutions,
   saveReviewResolution,
@@ -395,4 +397,16 @@ Deno.test('invoiceRecordNames: cached scan matches a fresh scan after the record
   const answers = { '2026-10:ענבר:e1': { mode: 'free' } }
   assertEquals(invoiceRecordNames(answers, '2026-10', row, ':e1'), ['ענבר'])
   assertEquals(invoiceRecordNames(answers, '2026-10', row, ':e2'), [])
+})
+
+// ── lesson count override store ──────────────────────────────────────────────
+
+// Value: protects=a manual lesson count is kept per invoice and can be cleared; fails_when=counts are saved without the month or null doesn't delete; why_new=new store; seam=none
+Deno.test('saveLessonOverride + loadLessonOverrides: round-trips, stays in its month, null clears', async () => {
+  const stub = makeStub()
+  assertEquals(await loadLessonOverrides('user@example.com', stub), {})
+  await saveLessonOverride('user@example.com', '2026-08', 'Alice', { '60': 5, '45': 0, '30': 0 }, stub)
+  assertEquals(await loadLessonOverrides('user@example.com', stub), { '2026-08:Alice': { '60': 5, '45': 0, '30': 0 } })
+  await saveLessonOverride('user@example.com', '2026-08', 'Alice', null, stub)
+  assertEquals(await loadLessonOverrides('user@example.com', stub), {})
 })

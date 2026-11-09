@@ -71,3 +71,35 @@ describe('EditableTable price editing across spellings', () => {
     expect(onCustomPriceChange.mock.calls[0][0]).toEqual(['Alice'])
   })
 })
+
+describe('EditableTable lesson count editing', () => {
+  const COUNT_HINT = 'Double-click to change the number of lessons this month'
+
+  // Value: protects=the teacher can change a month's lesson count and it is saved for that invoice only; fails_when=the count isn't editable or saves under the wrong month/student; why_new=new feature; seam=none
+  it('saves edited counts for the month, and adds lessons in an empty duration', async () => {
+    const onLessonOverrideChange = vi.fn()
+    render(createElement(EditableTable, { rows: [row], config, month: '2026-03', onLessonOverrideChange }))
+    fireEvent.doubleClick(screen.getByTitle(COUNT_HINT))
+    fireEvent.change(screen.getByLabelText('60-min lessons'), { target: { value: '3' } })
+    fireEvent.change(screen.getByLabelText('30-min lessons'), { target: { value: '1' } })
+    fireEvent.click(screen.getByTitle('Save lesson count'))
+    await vi.waitFor(() => expect(onLessonOverrideChange).toHaveBeenCalledWith('2026-03', 'Alice', { '60': 3, '45': 0, '30': 1 }))
+  })
+
+  // Value: protects=typing the calendar's numbers back is a reset, and bad input never saves; fails_when=an override equal to the calendar is stored (row stays "lessons edited") or "1.5" is saved; why_new=new feature; seam=none
+  it('treats the calendar counts as a reset and rejects non-whole numbers', async () => {
+    const onLessonOverrideChange = vi.fn()
+    const edited = { ...row, lessons_60: 3, calendar_lessons: { '60': 1, '45': 0, '30': 0 } }
+    const lessonOverrides = { '2026-03:Alice': { '60': 3, '45': 0, '30': 0 } }
+    render(createElement(EditableTable, { rows: [edited], config, month: '2026-03', lessonOverrides, onLessonOverrideChange }))
+    expect(screen.getByText('lessons edited')).toBeTruthy()
+    fireEvent.doubleClick(screen.getByTitle(COUNT_HINT))
+    fireEvent.change(screen.getByLabelText('60-min lessons'), { target: { value: '1.5' } })
+    fireEvent.click(screen.getByTitle('Save lesson count'))
+    expect(screen.getByText('Enter whole numbers (0 or more)')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('60-min lessons'), { target: { value: '1' } })
+    fireEvent.click(screen.getByTitle('Save lesson count'))
+    await vi.waitFor(() => expect(onLessonOverrideChange).toHaveBeenCalledWith('2026-03', 'Alice', null))
+    expect(onLessonOverrideChange).toHaveBeenCalledTimes(1)
+  })
+})

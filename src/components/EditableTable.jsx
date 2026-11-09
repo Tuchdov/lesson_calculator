@@ -12,7 +12,7 @@ const STALE_HINT = 'Press Calculate again first'
 const CONFLICT_LABEL = { phone: 'phone', full_name: 'full name', price: 'prices' }
 const CONFLICT_HINT = 'These saved spellings disagree, so this is probably two students. Give their calendar events distinct names (e.g. add a surname), or remove the wrong spelling on Custom Prices, then press Calculate again.'
 
-export function EditableTable({ rows, config, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, month, defaultMessage, defaultInvoiceDescription, amountOverrides, onAmountOverrideChange, paymentLinks, onPaymentLinkChange, getAccessToken, prepareStatus, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange }) {
+export function EditableTable({ rows, config, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, month, defaultMessage, defaultInvoiceDescription, amountOverrides, onAmountOverrideChange, lessonOverrides, onLessonOverrideChange, paymentLinks, onPaymentLinkChange, getAccessToken, prepareStatus, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange }) {
   const grouped = groupByType(rows)
   const [expandedRow, setExpandedRow] = useState(null)
 
@@ -53,6 +53,8 @@ export function EditableTable({ rows, config, customPrices, onCustomPriceChange,
                   amountOverride={invoiceRecord(amountOverrides, month, row)}
                   amountOverrideNames={invoiceRecordNames(amountOverrides, month, row)}
                   onAmountOverrideChange={onAmountOverrideChange}
+                  lessonOverrideNames={invoiceRecordNames(lessonOverrides, month, row)}
+                  onLessonOverrideChange={onLessonOverrideChange}
                   linkEntry={invoiceRecord(paymentLinks, month, row)}
                   onPaymentLinkChange={onPaymentLinkChange}
                   getAccessToken={getAccessToken}
@@ -87,7 +89,7 @@ function GroupHeader({ type }) {
  * @param {object} props Student data, pricing, payment state, and callbacks.
  * @returns {import('react').ReactNode} The invoice row and optional details rows.
  */
-function StudentRow({ row, config, customPrices, onCustomPriceChange, details, onCustomerDetailChange, month, defaultMessage, defaultInvoiceDescription, expandedRow, setExpandedRow, amountOverride, amountOverrideNames, onAmountOverrideChange, linkEntry, onPaymentLinkChange, getAccessToken, batchState, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange }) {
+function StudentRow({ row, config, customPrices, onCustomPriceChange, details, onCustomerDetailChange, month, defaultMessage, defaultInvoiceDescription, expandedRow, setExpandedRow, amountOverride, amountOverrideNames, onAmountOverrideChange, lessonOverrideNames, onLessonOverrideChange, linkEntry, onPaymentLinkChange, getAccessToken, batchState, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange }) {
   const { phone, full_name: fullName } = details
   const custom = customPrices?.[row.student]
   const prices = resolveRowPrices(row.student, row.student_type === 'regular', config, custom)
@@ -102,6 +104,9 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
   const [editingAmount, setEditingAmount] = useState(false)
   const [amountDraft, setAmountDraft] = useState('')
   const [amountSaveError, setAmountSaveError] = useState(null)
+  const [editingCounts, setEditingCounts] = useState(false)
+  const [countDraft, setCountDraft] = useState({})
+  const [countSaveError, setCountSaveError] = useState(null)
 
   if (previousCustom !== custom) {
     setPreviousCustom(custom)
@@ -170,6 +175,66 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
       setAmountSaveError(null)
     } catch (err) {
       setAmountSaveError(err.message ?? 'Failed to save. Try again.')
+    }
+  }
+
+  // The calendar's counts, before any manual change (applyLessonOverride).
+  const calendarCounts = row.calendar_lessons ?? { '60': row.lessons_60, '45': row.lessons_45, '30': row.lessons_30 }
+
+  // The count input that takes focus: the first duration with lessons.
+  const firstCountCol = DURATION_COLS.find(d => row[`lessons_${d}`] > 0) ?? DURATION_COLS[0]
+
+  const handleStartCountEdit = () => {
+    if (editLocked || editing || editingAmount) return
+    setCountDraft(Object.fromEntries(DURATION_COLS.map(d => [d, String(row[`lessons_${d}`])])))
+    setCountSaveError(null)
+    setEditingCounts(true)
+  }
+
+  // Clears the counts under every spelling they were saved under, so an
+  // older one can't reappear after a reset.
+  const clearCounts = async () => {
+    for (const name of new Set([row.student, ...(lessonOverrideNames ?? [])])) {
+      await onLessonOverrideChange?.(month, name, null)
+    }
+  }
+
+  const handleSaveCounts = async () => {
+    if (editLocked) return
+    const counts = {}
+    for (const d of DURATION_COLS) {
+      const raw = (countDraft[d] ?? '').trim()
+      const v = raw === '' ? 0 : Number(raw)
+      if (!Number.isInteger(v) || v < 0) {
+        setCountSaveError('Enter whole numbers (0 or more)')
+        return
+      }
+      counts[d] = v
+    }
+    try {
+      // Back to the calendar's counts is a reset, not an override.
+      if (DURATION_COLS.every(d => counts[d] === calendarCounts[d])) await clearCounts()
+      else {
+        await onLessonOverrideChange?.(month, row.student, counts)
+        for (const name of (lessonOverrideNames ?? []).filter(n => n !== row.student)) {
+          await onLessonOverrideChange?.(month, name, null)
+        }
+      }
+      setEditingCounts(false)
+      setCountSaveError(null)
+    } catch (err) {
+      setCountSaveError(err.message ?? 'Failed to save. Try again.')
+    }
+  }
+
+  const handleResetCounts = async () => {
+    if (editLocked) return
+    try {
+      await clearCounts()
+      setEditingCounts(false)
+      setCountSaveError(null)
+    } catch (err) {
+      setCountSaveError(err.message ?? 'Failed to save. Try again.')
     }
   }
 
@@ -285,6 +350,14 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
           <span className={styles.studentCell}>
             {row.student}
             {custom && <span className={styles.customBadge}>custom</span>}
+            {row.calendar_lessons && (
+              <span
+                className={styles.customBadge}
+                title={`Lesson count changed manually. Calendar: ${DURATION_COLS.map(d => `${calendarCounts[d]}×${d}`).join(', ')} min`}
+              >
+                lessons edited
+              </span>
+            )}
           </span>
           {nameConflict && (
             <span className={styles.conflictChip} title={`${CONFLICT_HINT} Saved as: ${[row.student, ...(row.aliases ?? [])].join(' / ')}`}>
@@ -309,10 +382,33 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
           </span>
         </td>
         {DURATION_COLS.map(d => (
-          <td key={d} className={styles.center}>
-            {row[`lessons_${d}`] > 0 && (
+          <td
+            key={d}
+            className={styles.center}
+            title={row[`lessons_${d}`] > 0 || editLocked ? undefined : `Double-click to add ${d}-min lessons`}
+            onDoubleClick={row[`lessons_${d}`] > 0 || editingCounts ? undefined : handleStartCountEdit}
+          >
+            {editingCounts ? (
               <span>
-                {row[`lessons_${d}`]} × {editing
+                <input
+                  className={styles.priceInput}
+                  aria-label={`${d}-min lessons`}
+                  inputMode="numeric"
+                  value={countDraft[d] ?? ''}
+                  onChange={e => { setCountDraft(prev => ({ ...prev, [d]: e.target.value })); setCountSaveError(null) }}
+                  onKeyDown={e => e.key === 'Enter' && handleSaveCounts()}
+                  autoFocus={d === firstCountCol}
+                /> × <span className={styles.priceMuted}>₪{prices[d]}</span>
+              </span>
+            ) : row[`lessons_${d}`] > 0 && (
+              <span>
+                <span
+                  className={styles.priceEditable}
+                  title={editLocked ? STALE_HINT : 'Double-click to change the number of lessons this month'}
+                  onDoubleClick={handleStartCountEdit}
+                >
+                  {row[`lessons_${d}`]}
+                </span> × {editing
                   ? <input
                       className={styles.priceInput}
                       value={draft?.[d] ?? prices[d]}
@@ -323,7 +419,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
                       className={styles.priceEditable}
                       title={editLocked ? STALE_HINT : "Double-click to change this student's ₪/lesson rate"}
                       onDoubleClick={() => {
-                        if (editingAmount || editLocked) return
+                        if (editingAmount || editingCounts || editLocked) return
                         setDraft({ '60': prices['60'], '45': prices['45'], '30': prices['30'] })
                         setEditing(true)
                       }}
@@ -351,6 +447,16 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
               )}
               {amountSaveError && <span className={styles.phoneErrorMsg}>{amountSaveError}</span>}
             </div>
+          ) : editingCounts ? (
+            <div className={styles.amountEditRow}>
+              <span className={styles.amountValue}>₪{roundedAmount}</span>
+              <button className={styles.miniSave} onClick={handleSaveCounts} title="Save lesson count">✓</button>
+              <button className={styles.miniCancel} onClick={() => { setEditingCounts(false); setCountSaveError(null) }} title="Cancel">✕</button>
+              {row.calendar_lessons && (
+                <button className={styles.miniReset} onClick={handleResetCounts} title="Reset to the calendar's lesson count">↺</button>
+              )}
+              {countSaveError && <span className={styles.phoneErrorMsg}>{countSaveError}</span>}
+            </div>
           ) : editing ? (
             <div className={styles.amountEditRow}>
               <span className={styles.amountValue}>₪{roundedAmount}</span>
@@ -362,7 +468,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
               className={styles.amountEditable}
               title={editLocked ? STALE_HINT : 'Double-click to set a one-off amount due for this invoice'}
               onDoubleClick={() => {
-                if (editing) return
+                if (editing || editingCounts) return
                 handleStartAmountEdit()
               }}
             >
