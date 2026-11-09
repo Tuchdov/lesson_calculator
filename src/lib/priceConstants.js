@@ -4,8 +4,8 @@ export const DURATIONS = ['60', '45', '30']
 export const TYPES = ['regular', 'non_regular']
 export const DURATION_LABELS = { '60': '60 min', '45': '45 min', '30': '30 min' }
 // Stored keys stay regular/non_regular so saved prices keep loading; only the
-// labels changed: a regular student pays the discount price.
-export const TYPE_LABEL = { regular: 'Discount', non_regular: 'Full price' }
+// labels changed: a regular student pays the discounted price.
+export const TYPE_LABEL = { regular: 'Discounted price', non_regular: 'Full price' }
 
 // Names that would silently rewire an object's prototype if used as a
 // custom_prices key (e.g. `{ __proto__: {...} }`). Rows with these names are
