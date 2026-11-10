@@ -9,7 +9,7 @@ function makeStub() {
 Deno.test('loadUserSettings: returns defaults when key absent', async () => {
   const stub = makeStub()
   const settings = await loadUserSettings('user@example.com', stub)
-  assertEquals(settings, { custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '', default_invoice_description: '', paid_cancellation_phrases: null, cancelled_keywords: null, lesson_keywords: null, makeup_phrases: null })
+  assertEquals(settings, { custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '', default_invoice_description: '', preview_image: '', paid_cancellation_phrases: null, cancelled_keywords: null, lesson_keywords: null, makeup_phrases: null })
 })
 
 Deno.test('saveUserSettings + loadUserSettings: round-trip persists data', async () => {
@@ -20,6 +20,7 @@ Deno.test('saveUserSettings + loadUserSettings: round-trip persists data', async
     default_prices: { regular: { '60': 260, '45': 210, '30': 190 }, non_regular: { '60': 280, '45': 230, '30': 210 } },
     default_message: 'Hi {student}, you owe ₪{amount} for {month}',
     default_invoice_description: 'ייעוץ קולי - {student} - {month}',
+    preview_image: 'https://abc.public.blob.vercel-storage.com/preview/photo-x.jpg',
     paid_cancellation_phrases: ['ביטול בתשלום', 'cancelled - billed'],
     cancelled_keywords: ['בוטל', 'מבוטל', 'cancelled'],
     lesson_keywords: ['פיתוח קול', 'כתיבה והלחנה'],
@@ -51,7 +52,7 @@ Deno.test('loadUserSettings: returns defaults when stored JSON is corrupt', asyn
   const key = 'vocalCalc:settings:' + await sha256Hex('user@example.com')
   stub.setItem(key, '{ this is not valid JSON !!!')
   const settings = await loadUserSettings('user@example.com', stub)
-  assertEquals(settings, { custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '', default_invoice_description: '', paid_cancellation_phrases: null, cancelled_keywords: null, lesson_keywords: null, makeup_phrases: null })
+  assertEquals(settings, { custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '', default_invoice_description: '', preview_image: '', paid_cancellation_phrases: null, cancelled_keywords: null, lesson_keywords: null, makeup_phrases: null })
 })
 
 Deno.test('loadUserSettings: back-fills default_prices/default_message when loading legacy settings', async () => {

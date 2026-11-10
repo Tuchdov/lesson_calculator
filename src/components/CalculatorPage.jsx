@@ -47,7 +47,7 @@ async function runWithConcurrency(items, limit, worker) {
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, next))
 }
 
-export function CalculatorPage({ getAccessToken, config, calendar, month, onMonthChange, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, defaultMessage, defaultInvoiceDescription, amountOverrides, onAmountOverrideChange, lessonOverrides, onLessonOverrideChange, tierOverrides, onTierOverrideChange, paymentLinks, onPaymentLinkChange, reviewResolutions, onReviewResolutionChange, preparing, onPreparingChange, prepareStatus, onPrepareStatusChange }) {
+export function CalculatorPage({ getAccessToken, config, calendar, month, onMonthChange, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, defaultMessage, defaultInvoiceDescription, previewImage, amountOverrides, onAmountOverrideChange, lessonOverrides, onLessonOverrideChange, tierOverrides, onTierOverrideChange, paymentLinks, onPaymentLinkChange, reviewResolutions, onReviewResolutionChange, preparing, onPreparingChange, prepareStatus, onPrepareStatusChange }) {
   const { rows: calendarRows, summary, loading, error, calculate, calculatedWith } = calendar
   // Lesson counts the teacher changed for this month replace the calendar's
   // before anything is priced, so every amount, count and CSV line agrees.
@@ -127,6 +127,7 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
           numberOfLessons: billedLessonCount(row, reviewResolutions, summary.month),
           paymentProfile: details.payment_profile,
           invoiceDescription,
+          previewImage,
         })
         await onPaymentLinkChange?.(summary.month, row.student, link, amount, inputs)
         setRowStatus(row.student, null)
@@ -214,6 +215,7 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
           month={summary?.month ?? month}
           defaultMessage={defaultMessage}
           defaultInvoiceDescription={defaultInvoiceDescription}
+          previewImage={previewImage}
           amountOverrides={amountOverrides}
           onAmountOverrideChange={onAmountOverrideChange}
           tierOverrides={tierOverrides}

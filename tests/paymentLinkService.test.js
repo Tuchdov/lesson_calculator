@@ -413,3 +413,12 @@ Deno.test('createPaymentLink: without a link secret, returns the raw Grow link',
   const { link } = await createPaymentLink(baseArgs({ fetchImpl, baseUrl: 'https://calc.example.com' }))
   assertEquals(link, 'https://pay.grow.link/xyz')
 })
+
+// Value: protects=the Settings photo travels from the request into the signed link; fails_when=previewImage is not passed to wrapPaymentLink; why_new=new field; seam=none
+Deno.test('createPaymentLink: carries previewImage into the signed link', async () => {
+  const image = 'https://abc123xyz.public.blob.vercel-storage.com/preview/photo-Ab12Cd.jpg'
+  const fetchImpl = queueFetch([tokeninfoOk(), makeOk('https://pay.grow.link/abc')])
+  const { link } = await createPaymentLink(baseArgs({ fetchImpl, previewImage: image, linkSecret: 'secret', baseUrl: 'https://calc.example.com' }))
+  const params = Object.fromEntries(new URL(link).searchParams)
+  assertEquals((await readPaymentLink(params, 'secret')).image, image)
+})

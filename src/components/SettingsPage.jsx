@@ -3,6 +3,7 @@ import { buildPaymentMessage, DEFAULT_MESSAGE_TEMPLATE } from '../lib/whatsapp.j
 import { DEFAULT_CANCELLED_KEYWORDS, DEFAULT_PAID_CANCELLATION_PHRASES, DEFAULT_LESSON_KEYWORDS, DEFAULT_MAKEUP_PHRASES, MAKEUP_AUTO_MIN, MAKEUP_AUTO_MAX, currentMonthKey } from '../lib/calendarPayments.js'
 import { TYPES, TYPE_LABEL } from '../lib/priceConstants.js'
 import { buildGrowDescription, fitsInvoiceLimit, MAX_INVOICE_DESCRIPTION } from '../lib/payments.js'
+import { uploadPreviewImage } from '../lib/previewImageClient.js'
 import styles from './SettingsPage.module.css'
 
 const DURATION_LABELS = { '60': '60 min', '45': '45 min', '30': '30 min' }
@@ -20,7 +21,7 @@ function initialList(saved, defaults) {
   return saved != null ? [...saved] : [...defaults]
 }
 
-export function SettingsPage({ config, settings, onSave }) {
+export function SettingsPage({ config, settings, onSave, getAccessToken }) {
   const [prices, setPrices] = useState(() => initialPrices(settings, config))
   const [messageTemplate, setMessageTemplate] = useState(
     () => settings?.default_message || DEFAULT_MESSAGE_TEMPLATE
@@ -31,6 +32,9 @@ export function SettingsPage({ config, settings, onSave }) {
   const [keywords, setKeywords] = useState(() => initialList(settings?.cancelled_keywords, config?.cancelled_keywords ?? DEFAULT_CANCELLED_KEYWORDS))
   const [lessonKeywords, setLessonKeywords] = useState(() => initialList(settings?.lesson_keywords, DEFAULT_LESSON_KEYWORDS))
   const [makeupPhrases, setMakeupPhrases] = useState(() => initialList(settings?.makeup_phrases, DEFAULT_MAKEUP_PHRASES))
+  const [previewImage, setPreviewImage] = useState(() => settings?.preview_image ?? '')
+  const [imageUploading, setImageUploading] = useState(false)
+  const [imageError, setImageError] = useState('')
   const [saved, setSaved] = useState(false)
 
   const handlePrice = (type, duration, value) => {
@@ -49,6 +53,22 @@ export function SettingsPage({ config, settings, onSave }) {
   const handleResetMessage = () => {
     setMessageTemplate(DEFAULT_MESSAGE_TEMPLATE)
     setSaved(false)
+  }
+
+  const handleImageFile = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setImageUploading(true)
+    setImageError('')
+    try {
+      setPreviewImage(await uploadPreviewImage(getAccessToken, file))
+      setSaved(false)
+    } catch (err) {
+      setImageError(err.message || 'Could not upload the photo. Try again.')
+    } finally {
+      setImageUploading(false)
+    }
   }
 
   const listChanger = (setter) => (next) => {
@@ -75,6 +95,7 @@ export function SettingsPage({ config, settings, onSave }) {
       default_prices: cleaned,
       default_message: messageTemplate,
       default_invoice_description: invoice,
+      preview_image: previewImage,
       paid_cancellation_phrases: paidCancelPhrases,
       cancelled_keywords: keywords,
       lesson_keywords: lessonKeywords,
@@ -181,6 +202,38 @@ export function SettingsPage({ config, settings, onSave }) {
           <span className={styles.previewLabel}>Preview</span>
           <pre className={styles.preview} dir="rtl">{invoicePreview}</pre>
         </div>
+      </div>
+
+      <div className={styles.card}>
+        <div className={styles.cardHeader}>
+          <h3 className={styles.cardTitle}>Payment link photo</h3>
+          {previewImage && (
+            <button className={styles.resetBtn} onClick={() => { setPreviewImage(''); setImageError(''); setSaved(false) }}>
+              Remove photo
+            </button>
+          )}
+        </div>
+        <p className={styles.tokenHint}>
+          Shown in the WhatsApp preview of the payment link. Applies to links
+          created after you save; links already prepared keep their old preview.
+        </p>
+        {previewImage && (
+          <img className={styles.previewImage} src={previewImage} alt="Payment link photo" />
+        )}
+        <label className={styles.uploadRow}>
+          <span className={styles.btnPrimary} aria-disabled={imageUploading || undefined}>
+            {imageUploading ? 'Uploading…' : previewImage ? 'Replace photo' : 'Upload photo'}
+          </span>
+          <input
+            type="file"
+            accept="image/*"
+            className={styles.fileInput}
+            aria-label="Payment link photo"
+            disabled={imageUploading}
+            onChange={handleImageFile}
+          />
+        </label>
+        {imageError && <span className={styles.fieldError} role="alert">{imageError}</span>}
       </div>
 
       <PhraseListCard

@@ -205,6 +205,7 @@ export default function App() {
             onCustomerDetailChange={handleCustomerDetailChange}
             defaultMessage={settings.default_message}
             defaultInvoiceDescription={settings.default_invoice_description}
+            previewImage={settings.preview_image}
             amountOverrides={amountOverrides}
             onAmountOverrideChange={handleAmountOverrideChange}
             tierOverrides={tierOverrides}
@@ -234,6 +235,7 @@ export default function App() {
             config={config}
             settings={settings}
             onSave={saveSettings}
+            getAccessToken={getValidAccessToken}
           />
         )}
       </main>

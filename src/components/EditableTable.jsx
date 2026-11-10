@@ -12,7 +12,7 @@ const STALE_HINT = 'Press Calculate again first'
 const CONFLICT_LABEL = { phone: 'phone', full_name: 'full name', price: 'prices' }
 const CONFLICT_HINT = 'These saved spellings disagree, so this is probably two students. Give their calendar events distinct names (e.g. add a surname), or remove the wrong spelling on Custom Prices, then press Calculate again.'
 
-export function EditableTable({ rows, config, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, month, defaultMessage, defaultInvoiceDescription, amountOverrides, onAmountOverrideChange, lessonOverrides, onLessonOverrideChange, tierOverrides, onTierOverrideChange, paymentLinks, onPaymentLinkChange, getAccessToken, prepareStatus, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange }) {
+export function EditableTable({ rows, config, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, month, defaultMessage, defaultInvoiceDescription, previewImage, amountOverrides, onAmountOverrideChange, lessonOverrides, onLessonOverrideChange, tierOverrides, onTierOverrideChange, paymentLinks, onPaymentLinkChange, getAccessToken, prepareStatus, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange }) {
   const grouped = groupByType(rows)
   const [expandedRow, setExpandedRow] = useState(null)
 
@@ -48,6 +48,7 @@ export function EditableTable({ rows, config, customPrices, onCustomPriceChange,
                   month={month}
                   defaultMessage={defaultMessage}
                   defaultInvoiceDescription={defaultInvoiceDescription}
+                  previewImage={previewImage}
                   expandedRow={expandedRow}
                   setExpandedRow={setExpandedRow}
                   amountOverride={invoiceRecord(amountOverrides, month, row)}
@@ -92,7 +93,7 @@ function GroupHeader({ type }) {
  * @param {object} props Student data, pricing, payment state, and callbacks.
  * @returns {import('react').ReactNode} The invoice row and optional details rows.
  */
-function StudentRow({ row, config, customPrices, onCustomPriceChange, details, onCustomerDetailChange, month, defaultMessage, defaultInvoiceDescription, expandedRow, setExpandedRow, amountOverride, amountOverrideNames, onAmountOverrideChange, lessonOverrideNames, onLessonOverrideChange, studentType, tierOverrideNames, onTierOverrideChange, linkEntry, onPaymentLinkChange, getAccessToken, batchState, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange }) {
+function StudentRow({ row, config, customPrices, onCustomPriceChange, details, onCustomerDetailChange, month, defaultMessage, defaultInvoiceDescription, previewImage, expandedRow, setExpandedRow, amountOverride, amountOverrideNames, onAmountOverrideChange, lessonOverrideNames, onLessonOverrideChange, studentType, tierOverrideNames, onTierOverrideChange, linkEntry, onPaymentLinkChange, getAccessToken, batchState, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange }) {
   const { phone, full_name: fullName } = details
   const custom = customPrices?.[row.student]
   // A full-price student can be given the discounted price for this month.
@@ -350,6 +351,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
         numberOfLessons: lessonCount,
         paymentProfile: details.payment_profile,
         invoiceDescription,
+        previewImage,
       })
       await onPaymentLinkChange?.(month, row.student, link, roundedAmount, inputs)
       onRowStatusChange?.(row.student, null)
