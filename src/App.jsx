@@ -48,13 +48,27 @@ export default function App() {
       .catch(() => {})
   }, [])
 
+  // Each account's stores replace the previous account's, which are cleared
+  // first so none of its discounts, amounts or links apply meanwhile. A load
+  // that finishes after the account changed is discarded, so a slow load for
+  // an earlier account can't overwrite the current one's.
   useEffect(() => {
     if (!userEmail) return
-    loadAmountOverrides(userEmail).then(setAmountOverrides).catch(err => console.error('Failed to load amount overrides:', err))
-    loadLessonOverrides(userEmail).then(setLessonOverrides).catch(err => console.error('Failed to load lesson overrides:', err))
-    loadPaymentLinks(userEmail).then(setPaymentLinks).catch(err => console.error('Failed to load payment links:', err))
-    loadReviewResolutions(userEmail).then(setReviewResolutions).catch(err => console.error('Failed to load review answers:', err))
-    loadTierOverrides(userEmail).then(setTierOverrides).catch(err => console.error('Failed to load price tier overrides:', err))
+    let current = true
+    const stores = [
+      [loadAmountOverrides, setAmountOverrides, 'amount overrides'],
+      [loadLessonOverrides, setLessonOverrides, 'lesson overrides'],
+      [loadPaymentLinks, setPaymentLinks, 'payment links'],
+      [loadReviewResolutions, setReviewResolutions, 'review answers'],
+      [loadTierOverrides, setTierOverrides, 'price tier overrides'],
+    ]
+    for (const [load, set, label] of stores) {
+      set({})
+      load(userEmail)
+        .then(value => { if (current) set(value) })
+        .catch(err => console.error(`Failed to load ${label}:`, err))
+    }
+    return () => { current = false }
   }, [userEmail])
 
   // A Prepare-all run that finishes after a switch to another account must not
