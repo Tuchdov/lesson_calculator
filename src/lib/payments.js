@@ -7,6 +7,7 @@ const OVERRIDES_KEY_PREFIX = 'vocalCalc:amountOverrides:'
 const REVIEW_KEY_PREFIX = 'vocalCalc:reviewResolutions:'
 const TIER_KEY_PREFIX = 'vocalCalc:tierOverrides:'
 const LESSON_OVERRIDES_KEY_PREFIX = 'vocalCalc:lessonOverrides:'
+const EXCLUDED_KEY_PREFIX = 'vocalCalc:excludedStudents:'
 
 // One invoice = one student for one month. Both the link store and the
 // amount-override store are keyed this way so neither carries a value into
@@ -316,5 +317,24 @@ export async function saveLessonOverride(email, month, student, counts, storage 
     const k = invoiceKey(month, student)
     if (counts == null) delete all[k]
     else all[k] = counts
+  })
+}
+
+// --- Excluded student store --------------------------------------------------
+// vocalCalc:excludedStudents:<hash>, keyed by {month}:{student}. A student
+// left out of one month's invoices (table, total, CSV, Prepare all) without
+// touching anything saved for them; true excludes, null restores.
+
+export async function loadExcludedStudents(email, storage = globalThis.localStorage) {
+  const key = EXCLUDED_KEY_PREFIX + await sha256Hex(email)
+  return readRecord(key, storage)
+}
+
+export async function saveExcludedStudent(email, month, student, excluded, storage = globalThis.localStorage) {
+  const key = EXCLUDED_KEY_PREFIX + await sha256Hex(email)
+  return withRecord(key, storage, (all) => {
+    const k = invoiceKey(month, student)
+    if (!excluded) delete all[k]
+    else all[k] = true
   })
 }
