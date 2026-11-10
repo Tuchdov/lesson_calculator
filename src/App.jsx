@@ -3,7 +3,7 @@ import { useAuth } from './hooks/useAuth.js'
 import { useUserSettings } from './hooks/useUserSettings.js'
 import { useCalendarData } from './hooks/useCalendarData.js'
 import { normalizeStudentName, currentMonthKey } from './lib/calendarPayments.js'
-import { loadAmountOverrides, saveAmountOverride, loadLessonOverrides, saveLessonOverride, loadPaymentLinks, savePaymentLink, loadReviewResolutions, saveReviewResolution, loadTierOverrides, saveTierOverride } from './lib/payments.js'
+import { loadAmountOverrides, saveAmountOverride, loadLessonOverrides, saveLessonOverride, loadPaymentLinks, savePaymentLink, loadReviewResolutions, saveReviewResolution, loadTierOverrides, saveTierOverride, loadExcludedStudents, saveExcludedStudent } from './lib/payments.js'
 import { AuthScreen } from './components/AuthScreen.jsx'
 import { Sidebar } from './components/Sidebar.jsx'
 import { CalculatorPage } from './components/CalculatorPage.jsx'
@@ -22,6 +22,7 @@ export default function App() {
   const [paymentLinks, setPaymentLinks] = useState({})
   const [reviewResolutions, setReviewResolutions] = useState({})
   const [tierOverrides, setTierOverrides] = useState({})
+  const [excludedStudents, setExcludedStudents] = useState({})
   const [month, setMonth] = useState(currentMonthKey)
   // Payment-link progress per student; kept here (not in CalculatorPage) so a
   // run that is still in flight when you change pages stays visible.
@@ -61,6 +62,7 @@ export default function App() {
       [loadPaymentLinks, setPaymentLinks, 'payment links'],
       [loadReviewResolutions, setReviewResolutions, 'review answers'],
       [loadTierOverrides, setTierOverrides, 'price tier overrides'],
+      [loadExcludedStudents, setExcludedStudents, 'removed students'],
     ]
     for (const [load, set, label] of stores) {
       set({})
@@ -96,6 +98,12 @@ export default function App() {
     const email = userEmail
     const next = await saveTierOverride(email, month, student, tier)
     if (sameAccount(email)) setTierOverrides(next)
+  }
+
+  const handleExcludedStudentChange = async (month, student, excluded) => {
+    const email = userEmail
+    const next = await saveExcludedStudent(email, month, student, excluded)
+    if (sameAccount(email)) setExcludedStudents(next)
   }
 
   const handleLessonOverrideChange = async (month, student, counts) => {
@@ -211,6 +219,8 @@ export default function App() {
             onTierOverrideChange={handleTierOverrideChange}
             lessonOverrides={lessonOverrides}
             onLessonOverrideChange={handleLessonOverrideChange}
+            excludedStudents={excludedStudents}
+            onExcludedStudentChange={handleExcludedStudentChange}
             paymentLinks={paymentLinks}
             onPaymentLinkChange={handlePaymentLinkChange}
             preparing={preparing}

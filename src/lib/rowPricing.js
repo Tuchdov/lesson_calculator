@@ -165,3 +165,12 @@ export function lessonStudentName(row) {
 export function payerName(details, row) {
   return details?.full_name || lessonStudentName(row)
 }
+
+// Splits the month's rows into the ones billed and the ones the teacher left
+// out of this month (payments.js saveExcludedStudent), under any spelling.
+export function splitExcluded(rows, excluded, month) {
+  const kept = []
+  const removed = []
+  for (const row of rows ?? []) (invoiceRecord(excluded, month, row) ? removed : kept).push(row)
+  return { kept, removed }
+}

@@ -12,7 +12,7 @@ const STALE_HINT = 'Press Calculate again first'
 const CONFLICT_LABEL = { phone: 'phone', full_name: 'full name', price: 'prices' }
 const CONFLICT_HINT = 'These saved spellings disagree, so this is probably two students. Give their calendar events distinct names (e.g. add a surname), or remove the wrong spelling on Custom Prices, then press Calculate again.'
 
-export function EditableTable({ rows, config, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, month, defaultMessage, defaultInvoiceDescription, amountOverrides, onAmountOverrideChange, lessonOverrides, onLessonOverrideChange, tierOverrides, onTierOverrideChange, paymentLinks, onPaymentLinkChange, getAccessToken, prepareStatus, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange }) {
+export function EditableTable({ rows, config, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, month, defaultMessage, defaultInvoiceDescription, amountOverrides, onAmountOverrideChange, lessonOverrides, onLessonOverrideChange, tierOverrides, onTierOverrideChange, paymentLinks, onPaymentLinkChange, getAccessToken, prepareStatus, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange, onRemoveRow }) {
   const grouped = groupByType(rows)
   const [expandedRow, setExpandedRow] = useState(null)
 
@@ -66,6 +66,7 @@ export function EditableTable({ rows, config, customPrices, onCustomPriceChange,
                   sendBlocked={sendBlocked}
                   reviewResolutions={reviewResolutions}
                   onReviewResolutionChange={onReviewResolutionChange}
+                  onRemove={onRemoveRow}
                 />
               )),
             ]
@@ -92,7 +93,7 @@ function GroupHeader({ type }) {
  * @param {object} props Student data, pricing, payment state, and callbacks.
  * @returns {import('react').ReactNode} The invoice row and optional details rows.
  */
-function StudentRow({ row, config, customPrices, onCustomPriceChange, details, onCustomerDetailChange, month, defaultMessage, defaultInvoiceDescription, expandedRow, setExpandedRow, amountOverride, amountOverrideNames, onAmountOverrideChange, lessonOverrideNames, onLessonOverrideChange, studentType, tierOverrideNames, onTierOverrideChange, linkEntry, onPaymentLinkChange, getAccessToken, batchState, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange }) {
+function StudentRow({ row, config, customPrices, onCustomPriceChange, details, onCustomerDetailChange, month, defaultMessage, defaultInvoiceDescription, expandedRow, setExpandedRow, amountOverride, amountOverrideNames, onAmountOverrideChange, lessonOverrideNames, onLessonOverrideChange, studentType, tierOverrideNames, onTierOverrideChange, linkEntry, onPaymentLinkChange, getAccessToken, batchState, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange, onRemove }) {
   const { phone, full_name: fullName } = details
   const custom = customPrices?.[row.student]
   // A full-price student can be given the discounted price for this month.
@@ -114,6 +115,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
   const [editingCounts, setEditingCounts] = useState(false)
   const [countDraft, setCountDraft] = useState({})
   const [countSaveError, setCountSaveError] = useState(null)
+  const [removeError, setRemoveError] = useState(null)
 
   if (previousCustom !== custom) {
     setPreviousCustom(custom)
@@ -182,6 +184,16 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
       setAmountSaveError(null)
     } catch (err) {
       setAmountSaveError(err.message ?? 'Failed to save. Try again.')
+    }
+  }
+
+  const handleRemove = async () => {
+    if (editLocked || busy) return
+    setRemoveError(null)
+    try {
+      await onRemove?.(row)
+    } catch (err) {
+      setRemoveError(err.message ?? 'Failed to save. Try again.')
     }
   }
 
@@ -380,6 +392,17 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
       <tr className={styles.row}>
         <td>
           <span className={styles.studentCell}>
+            {onRemove && (
+              <button
+                className={styles.removeBtn}
+                onClick={handleRemove}
+                disabled={editLocked || busy}
+                aria-label={`Remove ${row.student} from ${month}`}
+                title={editLocked ? STALE_HINT : `Remove from ${month} only — nothing saved for this student is deleted`}
+              >
+                ✕
+              </button>
+            )}
             {row.student}
             {custom && <span className={styles.customBadge}>custom</span>}
             {row.calendar_lessons && (
@@ -391,6 +414,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
               </span>
             )}
           </span>
+          {removeError && <div className={styles.phoneErrorMsg} role="alert">{removeError}</div>}
           {nameConflict && (
             <span className={styles.conflictChip} title={`${CONFLICT_HINT} Saved as: ${[row.student, ...(row.aliases ?? [])].join(' / ')}`}>
               ⚠️ two students? different {row.name_conflicts.map(f => CONFLICT_LABEL[f] ?? f).join(' / ')}
