@@ -12,6 +12,11 @@ const STALE_HINT = 'Press Calculate again first'
 const CONFLICT_LABEL = { phone: 'phone', full_name: 'full name', price: 'prices' }
 const CONFLICT_HINT = 'These saved spellings disagree, so this is probably two students. Give their calendar events distinct names (e.g. add a surname), or remove the wrong spelling on Custom Prices, then press Calculate again.'
 
+/**
+ * The invoice table, grouped by student type, with one editable StudentRow each.
+ * @param {object} props Rows plus pricing, override and payment-link state and callbacks.
+ * @returns {import('react').ReactNode} The grouped table.
+ */
 export function EditableTable({ rows, config, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, month, defaultMessage, defaultInvoiceDescription, amountOverrides, onAmountOverrideChange, lessonOverrides, onLessonOverrideChange, paymentLinks, onPaymentLinkChange, getAccessToken, prepareStatus, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange }) {
   const grouped = groupByType(rows)
   const [expandedRow, setExpandedRow] = useState(null)
@@ -184,6 +189,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
   // The count input that takes focus: the first duration with lessons.
   const firstCountCol = DURATION_COLS.find(d => row[`lessons_${d}`] > 0) ?? DURATION_COLS[0]
 
+  /** Opens the lesson-count editor, seeded with the row's current counts; a no-op while another edit is open or the row is stale. */
   const handleStartCountEdit = () => {
     if (editLocked || editing || editingAmount) return
     setCountDraft(Object.fromEntries(DURATION_COLS.map(d => [d, String(row[`lessons_${d}`])])))
@@ -191,14 +197,23 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
     setEditingCounts(true)
   }
 
-  // Clears the counts under every spelling they were saved under, so an
-  // older one can't reappear after a reset.
+  /**
+   * Clears the counts under every spelling they were saved under, so an
+   * older one can't reappear after a reset.
+   * @returns {Promise<void>}
+   */
   const clearCounts = async () => {
     for (const name of new Set([row.student, ...(lessonOverrideNames ?? [])])) {
       await onLessonOverrideChange?.(month, name, null)
     }
   }
 
+  /**
+   * Validates the draft (whole numbers, 0 or more) and saves it. Counts equal to
+   * the calendar's are treated as a reset; other spellings' overrides are cleared.
+   * Failures are shown through `countSaveError`.
+   * @returns {Promise<void>}
+   */
   const handleSaveCounts = async () => {
     if (editLocked) return
     const counts = {}
@@ -227,6 +242,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
     }
   }
 
+  /** Drops the manual lesson counts and closes the editor, restoring the calendar's counts. */
   const handleResetCounts = async () => {
     if (editLocked) return
     try {

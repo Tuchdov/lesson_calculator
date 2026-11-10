@@ -107,9 +107,16 @@ export function detailsFor(customerDetails, row) {
   return merged
 }
 
-// The row with the teacher's lesson counts in place of the calendar's, so the
-// amount, the invoice/WhatsApp lesson count and the CSV all follow them. The
-// calendar's counts stay on `calendar_lessons` for display and reset.
+/**
+ * The row with the teacher's lesson counts in place of the calendar's, so the
+ * amount, the invoice/WhatsApp lesson count and the CSV all follow them. The
+ * calendar's counts stay on `calendar_lessons` for display and reset.
+ * @param {object} row A calculated student row with `lessons_60/45/30`.
+ * @param {{ '60': number, '45': number, '30': number }} [override] Saved counts;
+ *   each is floored and clamped to 0 or more.
+ * @returns {object} The same row when there is no override, else a copy with the
+ *   overridden counts and `calendar_lessons` holding the originals.
+ */
 export function applyLessonOverride(row, override) {
   if (!override) return row
   const count = d => Math.max(0, Math.floor(Number(override[d]) || 0))

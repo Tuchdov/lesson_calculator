@@ -283,11 +283,28 @@ export async function saveReviewResolution(email, itemKey, resolution, storage =
 // the calendar's for that invoice (rowPricing.js applyLessonOverride); null
 // clears it.
 
+/**
+ * Load every saved lesson-count override for an account.
+ * @param {string} email The signed-in user's email, hashed into the storage key.
+ * @param {Storage} [storage] Defaults to localStorage.
+ * @returns {Promise<Record<string, { '60': number, '45': number, '30': number }>>}
+ *   Overrides keyed by `{month}:{student}`.
+ */
 export async function loadLessonOverrides(email, storage = globalThis.localStorage) {
   const key = LESSON_OVERRIDES_KEY_PREFIX + await sha256Hex(email)
   return readRecord(key, storage)
 }
 
+/**
+ * Save, or clear, the lesson counts for one student's invoice in a month.
+ * @param {string} email The signed-in user's email, hashed into the storage key.
+ * @param {string} month Month key of the invoice.
+ * @param {string} student Student name the override is saved under.
+ * @param {{ '60': number, '45': number, '30': number } | null} counts The
+ *   replacement counts, or null/undefined to remove the override.
+ * @param {Storage} [storage] Defaults to localStorage.
+ * @returns {Promise<Record<string, object>>} All overrides after the change.
+ */
 export async function saveLessonOverride(email, month, student, counts, storage = globalThis.localStorage) {
   const key = LESSON_OVERRIDES_KEY_PREFIX + await sha256Hex(email)
   return withRecord(key, storage, (all) => {

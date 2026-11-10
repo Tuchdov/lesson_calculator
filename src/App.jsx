@@ -11,6 +11,11 @@ import { CustomPricesPage } from './components/CustomPricesPage.jsx'
 import { SettingsPage } from './components/SettingsPage.jsx'
 import styles from './App.module.css'
 
+/**
+ * Root component: owns auth, settings and the per-account override stores, and
+ * routes between the calculator, custom prices and settings pages.
+ * @returns {import('react').ReactNode} The signed-in app, or the sign-in screen.
+ */
 export default function App() {
   const { accessToken, userEmail, signIn, signOut, error: authError, getValidAccessToken } = useAuth()
   const { settings, saveSettings, isReady } = useUserSettings(userEmail)
@@ -76,6 +81,14 @@ export default function App() {
     if (sameAccount(email)) setAmountOverrides(next)
   }
 
+  /**
+   * Persists a lesson-count override (or clears it with null) and, if the same
+   * account is still signed in, refreshes the in-memory copy.
+   * @param {string} month Month key of the invoice.
+   * @param {string} student Student name the override is saved under.
+   * @param {object | null} counts Replacement lesson counts, or null to clear.
+   * @returns {Promise<void>}
+   */
   const handleLessonOverrideChange = async (month, student, counts) => {
     const email = userEmail
     const next = await saveLessonOverride(email, month, student, counts)
