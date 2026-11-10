@@ -3,7 +3,7 @@ import { useAuth } from './hooks/useAuth.js'
 import { useUserSettings } from './hooks/useUserSettings.js'
 import { useCalendarData } from './hooks/useCalendarData.js'
 import { normalizeStudentName, currentMonthKey } from './lib/calendarPayments.js'
-import { loadAmountOverrides, saveAmountOverride, loadLessonOverrides, saveLessonOverride, loadPaymentLinks, savePaymentLink, loadReviewResolutions, saveReviewResolution } from './lib/payments.js'
+import { loadAmountOverrides, saveAmountOverride, loadLessonOverrides, saveLessonOverride, loadPaymentLinks, savePaymentLink, loadReviewResolutions, saveReviewResolution, loadTierOverrides, saveTierOverride } from './lib/payments.js'
 import { AuthScreen } from './components/AuthScreen.jsx'
 import { Sidebar } from './components/Sidebar.jsx'
 import { CalculatorPage } from './components/CalculatorPage.jsx'
@@ -21,6 +21,7 @@ export default function App() {
   const [lessonOverrides, setLessonOverrides] = useState({})
   const [paymentLinks, setPaymentLinks] = useState({})
   const [reviewResolutions, setReviewResolutions] = useState({})
+  const [tierOverrides, setTierOverrides] = useState({})
   const [month, setMonth] = useState(currentMonthKey)
   // Payment-link progress per student; kept here (not in CalculatorPage) so a
   // run that is still in flight when you change pages stays visible.
@@ -47,12 +48,27 @@ export default function App() {
       .catch(() => {})
   }, [])
 
+  // Each account's stores replace the previous account's, which are cleared
+  // first so none of its discounts, amounts or links apply meanwhile. A load
+  // that finishes after the account changed is discarded, so a slow load for
+  // an earlier account can't overwrite the current one's.
   useEffect(() => {
     if (!userEmail) return
-    loadAmountOverrides(userEmail).then(setAmountOverrides).catch(err => console.error('Failed to load amount overrides:', err))
-    loadLessonOverrides(userEmail).then(setLessonOverrides).catch(err => console.error('Failed to load lesson overrides:', err))
-    loadPaymentLinks(userEmail).then(setPaymentLinks).catch(err => console.error('Failed to load payment links:', err))
-    loadReviewResolutions(userEmail).then(setReviewResolutions).catch(err => console.error('Failed to load review answers:', err))
+    let current = true
+    const stores = [
+      [loadAmountOverrides, setAmountOverrides, 'amount overrides'],
+      [loadLessonOverrides, setLessonOverrides, 'lesson overrides'],
+      [loadPaymentLinks, setPaymentLinks, 'payment links'],
+      [loadReviewResolutions, setReviewResolutions, 'review answers'],
+      [loadTierOverrides, setTierOverrides, 'price tier overrides'],
+    ]
+    for (const [load, set, label] of stores) {
+      set({})
+      load(userEmail)
+        .then(value => { if (current) set(value) })
+        .catch(err => console.error(`Failed to load ${label}:`, err))
+    }
+    return () => { current = false }
   }, [userEmail])
 
   // A Prepare-all run that finishes after a switch to another account must not
@@ -74,6 +90,12 @@ export default function App() {
     const email = userEmail
     const next = await saveAmountOverride(email, month, student, amount)
     if (sameAccount(email)) setAmountOverrides(next)
+  }
+
+  const handleTierOverrideChange = async (month, student, tier) => {
+    const email = userEmail
+    const next = await saveTierOverride(email, month, student, tier)
+    if (sameAccount(email)) setTierOverrides(next)
   }
 
   const handleLessonOverrideChange = async (month, student, counts) => {
@@ -185,6 +207,8 @@ export default function App() {
             defaultInvoiceDescription={settings.default_invoice_description}
             amountOverrides={amountOverrides}
             onAmountOverrideChange={handleAmountOverrideChange}
+            tierOverrides={tierOverrides}
+            onTierOverrideChange={handleTierOverrideChange}
             lessonOverrides={lessonOverrides}
             onLessonOverrideChange={handleLessonOverrideChange}
             paymentLinks={paymentLinks}

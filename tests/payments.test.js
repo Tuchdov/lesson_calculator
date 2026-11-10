@@ -20,6 +20,8 @@ import {
   saveLessonOverride,
   invoiceRecord,
   loadReviewResolutions,
+  saveTierOverride,
+  loadTierOverrides,
   saveReviewResolution,
 } from '../src/lib/payments.js'
 import { sha256Hex } from '../src/lib/userSettings.js'
@@ -397,6 +399,18 @@ Deno.test('invoiceRecordNames: cached scan matches a fresh scan after the record
   const answers = { '2026-10:ענבר:e1': { mode: 'free' } }
   assertEquals(invoiceRecordNames(answers, '2026-10', row, ':e1'), ['ענבר'])
   assertEquals(invoiceRecordNames(answers, '2026-10', row, ':e2'), [])
+})
+
+// ── price tier override store ───────────────────────────────────────────────
+
+Deno.test('saveTierOverride: a granted discount stays in its month and null clears it', async () => {
+  const stub = makeStub()
+  await saveTierOverride('user@example.com', '2026-03', 'Alice', 'regular', stub)
+  const overrides = await loadTierOverrides('user@example.com', stub)
+  assertEquals(invoiceRecord(overrides, '2026-03', { student: 'Alice' }), 'regular')
+  assertEquals(invoiceRecord(overrides, '2026-04', { student: 'Alice' }), null)
+  await saveTierOverride('user@example.com', '2026-03', 'Alice', null, stub)
+  assertEquals(await loadTierOverrides('user@example.com', stub), {})
 })
 
 // ── lesson count override store ──────────────────────────────────────────────
