@@ -278,7 +278,10 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
     if (custom && ('regular' in custom || 'non_regular' in custom)) {
       update = { ...custom, [studentType]: parsed }
     } else {
-      update = { regular: parsed, non_regular: parsed }
+      // A granted row edits only the discounted tier; the full price stays as
+      // it is, so it isn't lowered once the grant is cleared or next month.
+      const fullPrices = discountGranted ? resolveRowPrices(row.student, false, config, custom) : parsed
+      update = { regular: parsed, non_regular: fullPrices }
     }
     // A rate saved under other spellings of this student moves with it, so the
     // spellings don't end up with two different prices (a name conflict).

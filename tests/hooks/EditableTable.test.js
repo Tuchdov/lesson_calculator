@@ -115,6 +115,25 @@ describe('EditableTable discount toggle', () => {
     expect(onTierOverrideChange.mock.calls.map(c => c[1])).toEqual(['Alice', 'Alice Cohen'])
   })
 
+  // Value: protects=editing a granted row's rate never lowers the student's full price; fails_when=the edit is saved to both tiers, so clearing the grant (or next month) still bills the discounted rate; why_new=granted rows edit the discounted tier; seam=none
+  it.each([
+    ['no custom price', undefined, { '60': 250, '45': 180, '30': 120 }],
+    ['a flat custom price', { '60': 240, '45': 170, '30': 110 }, { '60': 240, '45': 170, '30': 110 }],
+  ])('editing the rate of a granted row with %s keeps the full price', (_, custom, fullPrices) => {
+    const onCustomPriceChange = vi.fn()
+    render(createElement(EditableTable, {
+      rows: [fullPrice], config, month: '2026-03', tierOverrides: { '2026-03:Alice': 'regular' },
+      customPrices: custom ? { Alice: custom } : undefined, onCustomPriceChange,
+    }))
+    const rate = screen.getByTitle("Double-click to change this student's ₪/lesson rate")
+    fireEvent.doubleClick(rate)
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '190' } })
+    fireEvent.click(screen.getByTitle('Save price'))
+    const [, update] = onCustomPriceChange.mock.calls[0]
+    expect(update.regular['60']).toBe(190)
+    expect(update.non_regular).toEqual(fullPrices)
+  })
+
   it('offers no toggle on a row that already qualifies for the discount', () => {
     render(createElement(EditableTable, { rows: [row], config, month: '2026-03' }))
     expect(screen.queryByRole('button', { name: /Discounted price/ })).toBeNull()
