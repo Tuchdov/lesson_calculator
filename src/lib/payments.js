@@ -5,6 +5,7 @@ import { normalizeStudentName } from './calendarPayments.js'
 const LINKS_KEY_PREFIX = 'vocalCalc:paymentLinks:'
 const OVERRIDES_KEY_PREFIX = 'vocalCalc:amountOverrides:'
 const REVIEW_KEY_PREFIX = 'vocalCalc:reviewResolutions:'
+const TIER_KEY_PREFIX = 'vocalCalc:tierOverrides:'
 
 // One invoice = one student for one month. Both the link store and the
 // amount-override store are keyed this way so neither carries a value into
@@ -273,5 +274,26 @@ export async function saveReviewResolution(email, itemKey, resolution, storage =
   return withRecord(key, storage, (all) => {
     if (resolution == null) delete all[itemKey]
     else all[itemKey] = resolution
+  })
+}
+
+// --- Price tier override store ----------------------------------------------
+// vocalCalc:tierOverrides:<hash>, keyed by {month}:{student}. Value is the
+// tier the teacher chose for that invoice ('regular' = discounted price),
+// e.g. a discount granted although the student didn't qualify this month.
+// Per month like the amount overrides, so it never carries into a later one.
+
+export async function loadTierOverrides(email, storage = globalThis.localStorage) {
+  const key = TIER_KEY_PREFIX + await sha256Hex(email)
+  return readRecord(key, storage)
+}
+
+// Passing tier = null clears the override (back to the calculated tier).
+export async function saveTierOverride(email, month, student, tier, storage = globalThis.localStorage) {
+  const key = TIER_KEY_PREFIX + await sha256Hex(email)
+  return withRecord(key, storage, (all) => {
+    const k = invoiceKey(month, student)
+    if (tier == null) delete all[k]
+    else all[k] = tier
   })
 }

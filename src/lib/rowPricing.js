@@ -22,6 +22,13 @@ export function resolveRowPrices(student, regular, config, custom) {
   )
 }
 
+// The tier the row is billed at: the teacher's per-month choice (e.g. a
+// discount granted to a student who didn't qualify) wins over the calculated
+// one.
+export function effectiveStudentType(row, tierOverrides, month) {
+  return invoiceRecord(tierOverrides, month, row) ?? row.student_type
+}
+
 export function computeLessonAmount(row, prices) {
   const amount = row.lessons_60 * Number(prices['60'])
     + row.lessons_45 * Number(prices['45'])

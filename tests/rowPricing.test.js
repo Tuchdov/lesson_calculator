@@ -1,6 +1,7 @@
 import { assertEquals } from '@std/assert'
 import {
   resolveRowPrices,
+  effectiveStudentType,
   computeLessonAmount,
   baseLessonPrice,
   proRataPrice,
@@ -216,4 +217,12 @@ Deno.test('billedLessonCount: regular lessons plus items charged as a standard l
   }
   assertEquals(billedLessonCount(row, resolutions, '2026-10'), 4)
   assertEquals(billedLessonCount({ ...row, review_items: undefined }, {}, '2026-10'), 3)
+})
+
+Deno.test('effectiveStudentType: a granted discount wins for its month only', () => {
+  const row = { student: 'Alice', student_type: 'non_regular' }
+  const overrides = { '2026-03:Alice': 'regular' }
+  assertEquals(effectiveStudentType(row, overrides, '2026-03'), 'regular')
+  assertEquals(effectiveStudentType(row, overrides, '2026-04'), 'non_regular')
+  assertEquals(effectiveStudentType(row, undefined, '2026-03'), 'non_regular')
 })

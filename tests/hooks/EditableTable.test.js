@@ -71,3 +71,27 @@ describe('EditableTable price editing across spellings', () => {
     expect(onCustomPriceChange.mock.calls[0][0]).toEqual(['Alice'])
   })
 })
+
+describe('EditableTable discount toggle', () => {
+  const fullPrice = { ...row, student_type: 'non_regular', amount_due: 250 }
+
+  it('grants the discounted price for the month on a full-price row', () => {
+    const onTierOverrideChange = vi.fn()
+    render(createElement(EditableTable, { rows: [fullPrice], config, month: '2026-03', onTierOverrideChange }))
+    fireEvent.click(screen.getByTitle('Click to give the discounted price this month'))
+    expect(onTierOverrideChange).toHaveBeenCalledWith('2026-03', 'Alice', 'regular')
+  })
+
+  it('bills a granted row at the discounted price and can switch it back', async () => {
+    const onTierOverrideChange = vi.fn()
+    render(createElement(EditableTable, { rows: [fullPrice], config, month: '2026-03', tierOverrides: { '2026-03:Alice': 'regular' }, onTierOverrideChange }))
+    expect(screen.getByTitle('Double-click to set a one-off amount due for this invoice').textContent).toBe('₪200')
+    fireEvent.click(screen.getByTitle('Discount granted for this month — click to charge the full price'))
+    await vi.waitFor(() => expect(onTierOverrideChange).toHaveBeenCalledWith('2026-03', 'Alice', null))
+  })
+
+  it('offers no toggle on a row that already qualifies for the discount', () => {
+    render(createElement(EditableTable, { rows: [row], config, month: '2026-03' }))
+    expect(screen.queryByRole('button', { name: /Discounted price/ })).toBeNull()
+  })
+})

@@ -3,7 +3,7 @@ import { useAuth } from './hooks/useAuth.js'
 import { useUserSettings } from './hooks/useUserSettings.js'
 import { useCalendarData } from './hooks/useCalendarData.js'
 import { normalizeStudentName, currentMonthKey } from './lib/calendarPayments.js'
-import { loadAmountOverrides, saveAmountOverride, loadPaymentLinks, savePaymentLink, loadReviewResolutions, saveReviewResolution } from './lib/payments.js'
+import { loadAmountOverrides, saveAmountOverride, loadPaymentLinks, savePaymentLink, loadReviewResolutions, saveReviewResolution, loadTierOverrides, saveTierOverride } from './lib/payments.js'
 import { AuthScreen } from './components/AuthScreen.jsx'
 import { Sidebar } from './components/Sidebar.jsx'
 import { CalculatorPage } from './components/CalculatorPage.jsx'
@@ -20,6 +20,7 @@ export default function App() {
   const [amountOverrides, setAmountOverrides] = useState({})
   const [paymentLinks, setPaymentLinks] = useState({})
   const [reviewResolutions, setReviewResolutions] = useState({})
+  const [tierOverrides, setTierOverrides] = useState({})
   const [month, setMonth] = useState(currentMonthKey)
   // Payment-link progress per student; kept here (not in CalculatorPage) so a
   // run that is still in flight when you change pages stays visible.
@@ -51,6 +52,7 @@ export default function App() {
     loadAmountOverrides(userEmail).then(setAmountOverrides).catch(err => console.error('Failed to load amount overrides:', err))
     loadPaymentLinks(userEmail).then(setPaymentLinks).catch(err => console.error('Failed to load payment links:', err))
     loadReviewResolutions(userEmail).then(setReviewResolutions).catch(err => console.error('Failed to load review answers:', err))
+    loadTierOverrides(userEmail).then(setTierOverrides).catch(err => console.error('Failed to load price tier overrides:', err))
   }, [userEmail])
 
   // A Prepare-all run that finishes after a switch to another account must not
@@ -72,6 +74,12 @@ export default function App() {
     const email = userEmail
     const next = await saveAmountOverride(email, month, student, amount)
     if (sameAccount(email)) setAmountOverrides(next)
+  }
+
+  const handleTierOverrideChange = async (month, student, tier) => {
+    const email = userEmail
+    const next = await saveTierOverride(email, month, student, tier)
+    if (sameAccount(email)) setTierOverrides(next)
   }
 
   const handleReviewResolutionChange = async (itemKey, resolution) => {
@@ -177,6 +185,8 @@ export default function App() {
             defaultInvoiceDescription={settings.default_invoice_description}
             amountOverrides={amountOverrides}
             onAmountOverrideChange={handleAmountOverrideChange}
+            tierOverrides={tierOverrides}
+            onTierOverrideChange={handleTierOverrideChange}
             paymentLinks={paymentLinks}
             onPaymentLinkChange={handlePaymentLinkChange}
             preparing={preparing}

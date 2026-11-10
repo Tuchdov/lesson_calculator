@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { EditableTable } from './EditableTable.jsx'
-import { resolveRowPrices, computeRowAmount, detailsFor, billedLessonCount, payerName, lessonStudentName } from '../lib/rowPricing.js'
+import { resolveRowPrices, effectiveStudentType, computeRowAmount, detailsFor, billedLessonCount, payerName, lessonStudentName } from '../lib/rowPricing.js'
 import { safeTotalsCsvBytes } from '../lib/csvExport.js'
 import { invoiceRecord, invoiceKey, isValidAmount, isLinkUsable, hasFullName, linkInputs, invoiceTemplateFor } from '../lib/payments.js'
 import { rowNeedsRecalc, DEFAULT_LESSON_KEYWORDS, DEFAULT_CANCELLED_KEYWORDS, DEFAULT_PAID_CANCELLATION_PHRASES, DEFAULT_MAKEUP_PHRASES } from '../lib/calendarPayments.js'
@@ -22,11 +22,12 @@ const STALE_DEFAULTS = {
 const effectiveSetting = (c, k) => JSON.stringify(c?.[k] ?? STALE_DEFAULTS[k])
 
 // Marks rows whose amount isn't final yet, so a low total doesn't look settled.
-function csvStatus(row, unresolved, adjusted) {
+function csvStatus(row, unresolved, adjusted, discounted) {
   const parts = []
   if (row.name_conflicts?.length) parts.push('name conflict')
   if (unresolved > 0) parts.push('needs review')
   if (adjusted) parts.push('adjusted')
+  if (discounted) parts.push('discount granted')
   return parts.join('; ')
 }
 
@@ -45,7 +46,7 @@ async function runWithConcurrency(items, limit, worker) {
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, next))
 }
 
-export function CalculatorPage({ getAccessToken, config, calendar, month, onMonthChange, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, defaultMessage, defaultInvoiceDescription, amountOverrides, onAmountOverrideChange, paymentLinks, onPaymentLinkChange, reviewResolutions, onReviewResolutionChange, preparing, onPreparingChange, prepareStatus, onPrepareStatusChange }) {
+export function CalculatorPage({ getAccessToken, config, calendar, month, onMonthChange, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, defaultMessage, defaultInvoiceDescription, amountOverrides, onAmountOverrideChange, tierOverrides, onTierOverrideChange, paymentLinks, onPaymentLinkChange, reviewResolutions, onReviewResolutionChange, preparing, onPreparingChange, prepareStatus, onPrepareStatusChange }) {
   const { rows, summary, loading, error, calculate, calculatedWith } = calendar
   // Link progress is owned by App so leaving the page mid-run can't make
   // finished-looking rows mint a second link when you come back. It is keyed
@@ -61,11 +62,12 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
   // re-renders on every Prepare-all status update, and each row scans the
   // saved prices, answers and overrides.
   const billing = useMemo(() => (rows ?? []).map(row => {
-    const prices = resolveRowPrices(row.student, row.student_type === 'regular', config, customPrices?.[row.student])
+    const studentType = effectiveStudentType(row, tierOverrides, summary?.month)
+    const prices = resolveRowPrices(row.student, studentType === 'regular', config, customPrices?.[row.student])
     const { amount, unresolved } = computeRowAmount(row, prices, reviewResolutions, summary?.month)
     const override = invoiceRecord(amountOverrides, summary?.month, row)
-    return { row, ...(override != null ? { amount: override, unresolved: 0 } : { amount, unresolved }) }
-  }), [rows, config, customPrices, reviewResolutions, amountOverrides, summary?.month])
+    return { row, studentType, ...(override != null ? { amount: override, unresolved: 0 } : { amount, unresolved }) }
+  }), [rows, config, customPrices, reviewResolutions, amountOverrides, tierOverrides, summary?.month])
   const liveTotal = Math.round(billing.reduce((sum, b) => sum + b.amount, 0) * 100) / 100
   const needsReview = billing.filter(b => b.unresolved > 0).length
   // Names are matched to saved students at Calculate time; a saved spelling or
@@ -133,10 +135,11 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
     if (!rows?.length) return
     // The CSV carries the amounts the table shows (review answers and manual
     // adjustments included), not the bare lesson totals from calculation.
-    const bytes = safeTotalsCsvBytes(billing.map(({ row, amount, unresolved }) => ({
+    const bytes = safeTotalsCsvBytes(billing.map(({ row, studentType, amount, unresolved }) => ({
       ...row,
+      student_type: studentType,
       amount_due: amount,
-      status: csvStatus(row, unresolved, invoiceRecord(amountOverrides, summary?.month, row) != null),
+      status: csvStatus(row, unresolved, invoiceRecord(amountOverrides, summary?.month, row) != null, studentType !== row.student_type),
     })))
     const blob = new Blob([bytes], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
@@ -206,6 +209,8 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
           defaultInvoiceDescription={defaultInvoiceDescription}
           amountOverrides={amountOverrides}
           onAmountOverrideChange={onAmountOverrideChange}
+          tierOverrides={tierOverrides}
+          onTierOverrideChange={onTierOverrideChange}
           paymentLinks={paymentLinks}
           onPaymentLinkChange={onPaymentLinkChange}
           getAccessToken={getAccessToken}

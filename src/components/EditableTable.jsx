@@ -3,7 +3,7 @@ import { validateIsraeliPhone, buildPaymentMessage, buildWhatsAppUrl } from '../
 import { hasFullName, invoiceRecord, invoiceRecordNames, invoiceTemplateFor, isEntryUsable, isValidAmount, linkInputs } from '../lib/payments.js'
 import { requestPaymentLink } from '../lib/paymentLinkClient.js'
 import { TYPE_LABEL } from '../lib/priceConstants.js'
-import { resolveRowPrices, computeRowAmount, detailsFor, billedLessonCount, reviewKey, reviewResolution, storedReviewResolution, storedReviewNames, reviewItemAmount, baseLessonPrice, proRataPrice, defaultReviewMode, payerName, lessonStudentName } from '../lib/rowPricing.js'
+import { resolveRowPrices, effectiveStudentType, computeRowAmount, detailsFor, billedLessonCount, reviewKey, reviewResolution, storedReviewResolution, storedReviewNames, reviewItemAmount, baseLessonPrice, proRataPrice, defaultReviewMode, payerName, lessonStudentName } from '../lib/rowPricing.js'
 import styles from './EditableTable.module.css'
 
 const DURATION_COLS = ['60', '45', '30']
@@ -12,7 +12,7 @@ const STALE_HINT = 'Press Calculate again first'
 const CONFLICT_LABEL = { phone: 'phone', full_name: 'full name', price: 'prices' }
 const CONFLICT_HINT = 'These saved spellings disagree, so this is probably two students. Give their calendar events distinct names (e.g. add a surname), or remove the wrong spelling on Custom Prices, then press Calculate again.'
 
-export function EditableTable({ rows, config, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, month, defaultMessage, defaultInvoiceDescription, amountOverrides, onAmountOverrideChange, paymentLinks, onPaymentLinkChange, getAccessToken, prepareStatus, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange }) {
+export function EditableTable({ rows, config, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, month, defaultMessage, defaultInvoiceDescription, amountOverrides, onAmountOverrideChange, tierOverrides, onTierOverrideChange, paymentLinks, onPaymentLinkChange, getAccessToken, prepareStatus, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange }) {
   const grouped = groupByType(rows)
   const [expandedRow, setExpandedRow] = useState(null)
 
@@ -53,6 +53,9 @@ export function EditableTable({ rows, config, customPrices, onCustomPriceChange,
                   amountOverride={invoiceRecord(amountOverrides, month, row)}
                   amountOverrideNames={invoiceRecordNames(amountOverrides, month, row)}
                   onAmountOverrideChange={onAmountOverrideChange}
+                  studentType={effectiveStudentType(row, tierOverrides, month)}
+                  tierOverrideNames={invoiceRecordNames(tierOverrides, month, row)}
+                  onTierOverrideChange={onTierOverrideChange}
                   linkEntry={invoiceRecord(paymentLinks, month, row)}
                   onPaymentLinkChange={onPaymentLinkChange}
                   getAccessToken={getAccessToken}
@@ -87,10 +90,12 @@ function GroupHeader({ type }) {
  * @param {object} props Student data, pricing, payment state, and callbacks.
  * @returns {import('react').ReactNode} The invoice row and optional details rows.
  */
-function StudentRow({ row, config, customPrices, onCustomPriceChange, details, onCustomerDetailChange, month, defaultMessage, defaultInvoiceDescription, expandedRow, setExpandedRow, amountOverride, amountOverrideNames, onAmountOverrideChange, linkEntry, onPaymentLinkChange, getAccessToken, batchState, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange }) {
+function StudentRow({ row, config, customPrices, onCustomPriceChange, details, onCustomerDetailChange, month, defaultMessage, defaultInvoiceDescription, expandedRow, setExpandedRow, amountOverride, amountOverrideNames, onAmountOverrideChange, studentType, tierOverrideNames, onTierOverrideChange, linkEntry, onPaymentLinkChange, getAccessToken, batchState, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange }) {
   const { phone, full_name: fullName } = details
   const custom = customPrices?.[row.student]
-  const prices = resolveRowPrices(row.student, row.student_type === 'regular', config, custom)
+  // A full-price student can be given the discounted price for this month.
+  const discountGranted = studentType !== row.student_type
+  const prices = resolveRowPrices(row.student, studentType === 'regular', config, custom)
 
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(custom ? { ...custom } : null)
@@ -102,6 +107,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
   const [editingAmount, setEditingAmount] = useState(false)
   const [amountDraft, setAmountDraft] = useState('')
   const [amountSaveError, setAmountSaveError] = useState(null)
+  const [tierSaving, setTierSaving] = useState(false)
 
   if (previousCustom !== custom) {
     setPreviousCustom(custom)
@@ -173,6 +179,23 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
     }
   }
 
+  const handleToggleTier = async () => {
+    if (editLocked || tierSaving) return
+    setTierSaving(true)
+    try {
+      if (discountGranted) {
+        // Clear it under every spelling, so an older one can't reappear.
+        for (const name of new Set([row.student, ...(tierOverrideNames ?? [])])) {
+          await onTierOverrideChange?.(month, name, null)
+        }
+      } else {
+        await onTierOverrideChange?.(month, row.student, 'regular')
+      }
+    } finally {
+      setTierSaving(false)
+    }
+  }
+
   const handleSave = () => {
     if (editLocked) return
     const parsed = {}
@@ -182,7 +205,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
     }
     let update
     if (custom && ('regular' in custom || 'non_regular' in custom)) {
-      update = { ...custom, [row.student_type]: parsed }
+      update = { ...custom, [studentType]: parsed }
     } else {
       update = { regular: parsed, non_regular: parsed }
     }
@@ -304,9 +327,24 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
           )}
         </td>
         <td>
-          <span className={`${styles.chip} ${TYPE_CHIP[row.student_type]}`}>
-            {TYPE_LABEL[row.student_type]}
-          </span>
+          {row.student_type === 'non_regular' ? (
+            <button
+              className={`${styles.chip} ${styles.chipToggle} ${TYPE_CHIP[studentType]}`}
+              onClick={handleToggleTier}
+              disabled={editLocked || tierSaving}
+              aria-pressed={discountGranted}
+              title={editLocked ? STALE_HINT : discountGranted
+                ? 'Discount granted for this month — click to charge the full price'
+                : 'Click to give the discounted price this month'}
+            >
+              {TYPE_LABEL[studentType]}
+              {discountGranted && <span className={styles.grantedBadge}>granted</span>}
+            </button>
+          ) : (
+            <span className={`${styles.chip} ${TYPE_CHIP[studentType]}`}>
+              {TYPE_LABEL[studentType]}
+            </span>
+          )}
         </td>
         {DURATION_COLS.map(d => (
           <td key={d} className={styles.center}>
