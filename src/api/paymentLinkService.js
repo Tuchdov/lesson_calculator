@@ -1,5 +1,6 @@
 import { isValidAmount, normalizePhoneForGrow, buildGrowDescription, DEFAULT_PAYMENT_PROFILE, isValidPaymentProfile, MAX_INVOICE_DESCRIPTION } from '../lib/payments.js'
 import { validateIsraeliPhone } from '../lib/whatsapp.js'
+import { buildInvoiceTitle, wrapPaymentLink } from '../lib/payRedirect.js'
 
 const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo'
 const MAX_STUDENT_NAME = 80
@@ -101,6 +102,10 @@ function validNumberOfLessons(value) {
 // which branch of the Make scenario runs (e.g. a student paying with Bit);
 // invoiceDescription is a per-student {student}/{month} template replacing the
 // default description. All optional so a cached older tab keeps working.
+//
+// With linkSecret and baseUrl set, the returned link is our /api/pay page
+// (see payRedirect.js) so WhatsApp's preview shows the invoice text; without
+// them it is the raw Grow link.
 export async function createPaymentLink({
   accessToken,
   studentName,
@@ -115,6 +120,8 @@ export async function createPaymentLink({
   clientId,
   webhookUrl,
   apiKey,
+  linkSecret,
+  baseUrl,
   fetchImpl = fetch,
 }) {
   await verifyCaller(accessToken, { allowedEmail, clientId, fetchImpl })
@@ -180,5 +187,12 @@ export async function createPaymentLink({
     fetchImpl,
   })
 
-  return { link }
+  return {
+    link: await wrapPaymentLink({
+      growUrl: link,
+      title: buildInvoiceTitle(student, month, customDescription),
+      baseUrl,
+      secret: linkSecret,
+    }),
+  }
 }

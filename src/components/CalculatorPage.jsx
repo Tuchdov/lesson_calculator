@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { EditableTable } from './EditableTable.jsx'
-import { resolveRowPrices, effectiveStudentType, computeRowAmount, detailsFor, billedLessonCount, payerName, lessonStudentName } from '../lib/rowPricing.js'
+import { resolveRowPrices, effectiveStudentType, computeRowAmount, detailsFor, billedLessonCount, payerName, lessonStudentName, applyLessonOverride } from '../lib/rowPricing.js'
 import { safeTotalsCsvBytes } from '../lib/csvExport.js'
 import { invoiceRecord, invoiceKey, isValidAmount, isLinkUsable, hasFullName, linkInputs, invoiceTemplateFor } from '../lib/payments.js'
 import { rowNeedsRecalc, DEFAULT_LESSON_KEYWORDS, DEFAULT_CANCELLED_KEYWORDS, DEFAULT_PAID_CANCELLATION_PHRASES, DEFAULT_MAKEUP_PHRASES } from '../lib/calendarPayments.js'
@@ -26,6 +26,7 @@ function csvStatus(row, unresolved, adjusted, discounted) {
   const parts = []
   if (row.name_conflicts?.length) parts.push('name conflict')
   if (unresolved > 0) parts.push('needs review')
+  if (row.calendar_lessons) parts.push('lessons edited')
   if (adjusted) parts.push('adjusted')
   if (discounted) parts.push('discount granted')
   return parts.join('; ')
@@ -46,8 +47,14 @@ async function runWithConcurrency(items, limit, worker) {
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, next))
 }
 
-export function CalculatorPage({ getAccessToken, config, calendar, month, onMonthChange, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, defaultMessage, defaultInvoiceDescription, amountOverrides, onAmountOverrideChange, tierOverrides, onTierOverrideChange, paymentLinks, onPaymentLinkChange, reviewResolutions, onReviewResolutionChange, preparing, onPreparingChange, prepareStatus, onPrepareStatusChange }) {
-  const { rows, summary, loading, error, calculate, calculatedWith } = calendar
+export function CalculatorPage({ getAccessToken, config, calendar, month, onMonthChange, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, defaultMessage, defaultInvoiceDescription, amountOverrides, onAmountOverrideChange, lessonOverrides, onLessonOverrideChange, tierOverrides, onTierOverrideChange, paymentLinks, onPaymentLinkChange, reviewResolutions, onReviewResolutionChange, preparing, onPreparingChange, prepareStatus, onPrepareStatusChange }) {
+  const { rows: calendarRows, summary, loading, error, calculate, calculatedWith } = calendar
+  // Lesson counts the teacher changed for this month replace the calendar's
+  // before anything is priced, so every amount, count and CSV line agrees.
+  const rows = useMemo(
+    () => calendarRows?.map(row => applyLessonOverride(row, invoiceRecord(lessonOverrides, summary?.month, row))),
+    [calendarRows, lessonOverrides, summary?.month],
+  )
   // Link progress is owned by App so leaving the page mid-run can't make
   // finished-looking rows mint a second link when you come back. It is keyed
   // by month too, so an error from one month never shows on another's table.
@@ -211,6 +218,8 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
           onAmountOverrideChange={onAmountOverrideChange}
           tierOverrides={tierOverrides}
           onTierOverrideChange={onTierOverrideChange}
+          lessonOverrides={lessonOverrides}
+          onLessonOverrideChange={onLessonOverrideChange}
           paymentLinks={paymentLinks}
           onPaymentLinkChange={onPaymentLinkChange}
           getAccessToken={getAccessToken}
