@@ -90,6 +90,31 @@ describe('EditableTable discount toggle', () => {
     await vi.waitFor(() => expect(onTierOverrideChange).toHaveBeenCalledWith('2026-03', 'Alice', null))
   })
 
+  it('shows the error and allows a retry when the save fails', async () => {
+    const onTierOverrideChange = vi.fn().mockRejectedValueOnce(new Error('Storage is full'))
+    render(createElement(EditableTable, { rows: [fullPrice], config, month: '2026-03', onTierOverrideChange }))
+    const toggle = screen.getByTitle('Click to give the discounted price this month')
+    fireEvent.click(toggle)
+    expect((await screen.findByRole('alert')).textContent).toBe('Storage is full')
+    expect(toggle.disabled).toBe(false)
+
+    fireEvent.click(toggle)
+    await vi.waitFor(() => expect(onTierOverrideChange).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+  })
+
+  it('reports a clear that stops part way through the spellings', async () => {
+    const onTierOverrideChange = vi.fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('Storage is full'))
+    const spelled = { ...fullPrice, aliases: ['Alice Cohen'], name_conflicts: [] }
+    const tierOverrides = { '2026-03:Alice': 'regular', '2026-03:Alice Cohen': 'regular' }
+    render(createElement(EditableTable, { rows: [spelled], config, month: '2026-03', tierOverrides, onTierOverrideChange }))
+    fireEvent.click(screen.getByTitle('Discount granted for this month — click to charge the full price'))
+    expect((await screen.findByRole('alert')).textContent).toBe('Storage is full')
+    expect(onTierOverrideChange.mock.calls.map(c => c[1])).toEqual(['Alice', 'Alice Cohen'])
+  })
+
   it('offers no toggle on a row that already qualifies for the discount', () => {
     render(createElement(EditableTable, { rows: [row], config, month: '2026-03' }))
     expect(screen.queryByRole('button', { name: /Discounted price/ })).toBeNull()

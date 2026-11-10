@@ -108,6 +108,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
   const [amountDraft, setAmountDraft] = useState('')
   const [amountSaveError, setAmountSaveError] = useState(null)
   const [tierSaving, setTierSaving] = useState(false)
+  const [tierSaveError, setTierSaveError] = useState(null)
 
   if (previousCustom !== custom) {
     setPreviousCustom(custom)
@@ -182,15 +183,20 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
   const handleToggleTier = async () => {
     if (editLocked || tierSaving) return
     setTierSaving(true)
+    setTierSaveError(null)
     try {
       if (discountGranted) {
-        // Clear it under every spelling, so an older one can't reappear.
+        // Clear it under every spelling, so an older one can't reappear. If
+        // this stops part way, the spellings still saved keep the row showing
+        // "granted", so clicking again clears the rest.
         for (const name of new Set([row.student, ...(tierOverrideNames ?? [])])) {
           await onTierOverrideChange?.(month, name, null)
         }
       } else {
         await onTierOverrideChange?.(month, row.student, 'regular')
       }
+    } catch (err) {
+      setTierSaveError(err.message ?? 'Failed to save. Try again.')
     } finally {
       setTierSaving(false)
     }
@@ -345,6 +351,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
               {TYPE_LABEL[studentType]}
             </span>
           )}
+          {tierSaveError && <div className={styles.phoneErrorMsg} role="alert">{tierSaveError}</div>}
         </td>
         {DURATION_COLS.map(d => (
           <td key={d} className={styles.center}>
