@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { EditableTable } from './EditableTable.jsx'
 import { resolveRowPrices, effectiveStudentType, computeRowAmount, detailsFor, billedLessonCount, payerName, lessonStudentName, applyLessonOverride, splitExcluded } from '../lib/rowPricing.js'
 import { safeTotalsCsvBytes } from '../lib/csvExport.js'
@@ -73,9 +73,16 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
   // Left out of this month only: everything saved for the student stays.
   const handleRemoveRow = row => onExcludedStudentChange?.(calcMonth, row.student, true)
   // Cleared under every spelling, so an older one can't keep it hidden.
+  // A failed save leaves the student removed, so the chip stays for a retry.
+  const [restoreError, setRestoreError] = useState(null)
   const handleRestoreRow = async row => {
-    for (const name of new Set([row.student, ...invoiceRecordNames(excludedStudents, calcMonth, row)])) {
-      await onExcludedStudentChange?.(calcMonth, name, false)
+    setRestoreError(null)
+    try {
+      for (const name of new Set([row.student, ...invoiceRecordNames(excludedStudents, calcMonth, row)])) {
+        await onExcludedStudentChange?.(calcMonth, name, false)
+      }
+    } catch (err) {
+      setRestoreError(`Couldn't add ${row.student} back: ${err.message || 'failed to save'}. Try again.`)
     }
   }
 
@@ -226,6 +233,7 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
               {row.student} ↺
             </button>
           ))}
+          {restoreError && <span className={styles.removedError} role="alert">{restoreError}</span>}
         </div>
       )}
 

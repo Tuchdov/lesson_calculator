@@ -140,3 +140,8 @@
 
 .removedChip:hover:not(:disabled) { background: var(--md-blue-tonal); color: var(--md-blue); }
 .removedChip:disabled { opacity: 0.5; cursor: default; }
+
+.removedError {
+  color: var(--md-red);
+  width: 100%;
+}

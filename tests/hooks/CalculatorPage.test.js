@@ -157,4 +157,16 @@ describe('CalculatorPage removed students', () => {
     await act(async () => { fireEvent.click(screen.getByText('Omer Paz ↺')) })
     expect(props.onExcludedStudentChange).toHaveBeenCalledWith(month, 'Omer Paz', false)
   })
+
+  // Value: protects=a failed restore save is reported next to the chips and the student stays removed for a retry; fails_when=the rejection from the store goes unhandled and the chip click fails silently; why_new=restore had no error path; seam=onExcludedStudentChange
+  it('shows an error when adding a student back fails', async () => {
+    const props = pageProps({
+      excludedStudents: { [`${month}:Omer Paz`]: true },
+      onExcludedStudentChange: vi.fn(async () => { throw new Error('storage is full') }),
+    })
+    render(createElement(CalculatorPage, props))
+    await act(async () => { fireEvent.click(screen.getByText('Omer Paz ↺')) })
+    expect(screen.getByRole('alert').textContent).toBe("Couldn't add Omer Paz back: storage is full. Try again.")
+    expect(screen.getByText('Omer Paz ↺')).toBeTruthy()
+  })
 })
