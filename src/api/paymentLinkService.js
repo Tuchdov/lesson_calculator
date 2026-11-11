@@ -17,7 +17,7 @@ export class ServiceError extends Error {
 
 // Identity is read from Google's answer, never from the request body — the
 // caller cannot claim to be anyone by changing what it sends.
-async function verifyCaller(accessToken, { allowedEmail, clientId, fetchImpl }) {
+export async function verifyCaller(accessToken, { allowedEmail, clientId, fetchImpl }) {
   if (!accessToken) throw new ServiceError(401, 'Sign in again.')
 
   let res
@@ -101,7 +101,9 @@ function validNumberOfLessons(value) {
 // the product line and the description's {student}. paymentProfile picks
 // which branch of the Make scenario runs (e.g. a student paying with Bit);
 // invoiceDescription is a per-student {student}/{month} template replacing the
-// default description. All optional so a cached older tab keeps working.
+// default description. previewImage is the Settings photo shown in WhatsApp's
+// preview; one that isn't ours is dropped. All optional so a cached older tab
+// keeps working.
 //
 // With linkSecret and baseUrl set, the returned link is our /api/pay page
 // (see payRedirect.js) so WhatsApp's preview shows the invoice text; without
@@ -116,6 +118,7 @@ export async function createPaymentLink({
   paymentProfile,
   invoiceDescription,
   lessonStudent,
+  previewImage,
   allowedEmail,
   clientId,
   webhookUrl,
@@ -191,6 +194,7 @@ export async function createPaymentLink({
     link: await wrapPaymentLink({
       growUrl: link,
       title: buildInvoiceTitle(student, month, customDescription),
+      image: previewImage,
       baseUrl,
       secret: linkSecret,
     }),

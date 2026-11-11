@@ -69,3 +69,27 @@ Deno.test('renderPaymentPage: sets og:title to the escaped title and forwards to
   assertEquals(html.includes('location.replace("https://pay.grow.link/abc")'), true)
   assertEquals(html.includes('http-equiv="refresh"'), false)
 })
+
+// ── preview photo ─────────────────────────────────────────────────────────
+
+const PHOTO = 'https://abc123xyz.public.blob.vercel-storage.com/preview/photo-Ab12Cd.jpg'
+
+// Value: protects=the Settings photo reaches WhatsApp's preview and can't be swapped; fails_when=the image isn't carried, isn't signed, or old links stop verifying; why_new=new feature; seam=none
+Deno.test('wrapPaymentLink → readPaymentLink carries a signed preview photo', async () => {
+  const p = await paramsOf(await wrapPaymentLink({ growUrl: 'https://pay.grow.link/abc', title: 'שיעורים', image: PHOTO, baseUrl: BASE, secret: SECRET }))
+  assertEquals(await readPaymentLink(p, SECRET), { growUrl: 'https://pay.grow.link/abc', title: 'שיעורים', image: PHOTO })
+  const other = await paramsOf(await wrapPaymentLink({ growUrl: 'https://pay.grow.link/abc', title: 'שיעורים', image: PHOTO.replace('Ab12Cd', 'Zz99Zz'), baseUrl: BASE, secret: SECRET }))
+  assertEquals(await readPaymentLink({ ...p, i: other.i }, SECRET), null)
+  assertEquals(await readPaymentLink({ ...p, i: undefined }, SECRET), null)
+})
+
+Deno.test('wrapPaymentLink: drops an image that is not a preview-photo URL', async () => {
+  const link = await wrapPaymentLink({ growUrl: 'https://pay.grow.link/abc', title: 't', image: 'https://evil.example/x.jpg', baseUrl: BASE, secret: SECRET })
+  assertEquals((await paramsOf(link)).i, undefined)
+  assertEquals(await readPaymentLink(await paramsOf(link), SECRET), { growUrl: 'https://pay.grow.link/abc', title: 't' })
+})
+
+Deno.test('renderPaymentPage: sets og:image only when there is a photo', () => {
+  assertEquals(renderPaymentPage({ growUrl: 'https://pay.grow.link/abc', title: 't', image: PHOTO }).includes(`<meta property="og:image" content="${PHOTO}">`), true)
+  assertEquals(renderPaymentPage({ growUrl: 'https://pay.grow.link/abc', title: 't' }).includes('og:image'), false)
+})

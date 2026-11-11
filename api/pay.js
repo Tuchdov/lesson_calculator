@@ -2,9 +2,10 @@ import { readPaymentLink, renderPaymentPage, renderNotFoundPage } from '../src/l
 
 // Public on purpose: students and WhatsApp's preview bot open this without
 // signing in. The signature, not a login, is what makes a link genuine.
-export default async function handler(req, res) {
-  const { g, t, s } = req.query ?? {}
-  const link = await readPaymentLink({ g, t, s }, process.env.PAY_LINK_SECRET)
+// `secret` is only passed by tests; Vercel calls this with (req, res).
+export default async function handler(req, res, secret = process.env.PAY_LINK_SECRET) {
+  const { g, t, i, s } = req.query ?? {}
+  const link = await readPaymentLink({ g, t, i, s }, secret)
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8')
   res.setHeader('X-Robots-Tag', 'noindex')
