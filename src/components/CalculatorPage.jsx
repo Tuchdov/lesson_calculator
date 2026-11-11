@@ -21,7 +21,14 @@ const STALE_DEFAULTS = {
 }
 const effectiveSetting = (c, k) => JSON.stringify(c?.[k] ?? STALE_DEFAULTS[k])
 
-// Marks rows whose amount isn't final yet, so a low total doesn't look settled.
+/**
+ * Marks rows whose amount isn't final yet, so a low total doesn't look settled.
+ * @param {object} row The student row; name conflicts and edited lesson counts are flagged.
+ * @param {number} unresolved How many review items are still open.
+ * @param {boolean} adjusted Whether the amount was manually overridden.
+ * @param {boolean} discounted Whether the student was moved to the discounted price for the month.
+ * @returns {string} Status labels joined by "; ", or '' when the row is settled.
+ */
 function csvStatus(row, unresolved, adjusted, discounted) {
   const parts = []
   if (row.name_conflicts?.length) parts.push('name conflict')
@@ -47,6 +54,13 @@ async function runWithConcurrency(items, limit, worker) {
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, next))
 }
 
+/**
+ * The calculator screen: month picker, Calculate, prepare-all, CSV export and
+ * the editable invoice table. Lesson-count overrides are applied to the
+ * calendar's rows before anything is priced.
+ * @param {object} props Calendar state, pricing/override stores, and their change callbacks.
+ * @returns {import('react').ReactNode} The calculator page.
+ */
 export function CalculatorPage({ getAccessToken, config, calendar, month, onMonthChange, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, defaultMessage, defaultInvoiceDescription, amountOverrides, onAmountOverrideChange, lessonOverrides, onLessonOverrideChange, excludedStudents, onExcludedStudentChange, tierOverrides, onTierOverrideChange, paymentLinks, onPaymentLinkChange, reviewResolutions, onReviewResolutionChange, preparing, onPreparingChange, prepareStatus, onPrepareStatusChange }) {
   const { rows: calendarRows, summary, loading, error, calculate, calculatedWith } = calendar
   // The calendar's students, less the ones left out of this month. Lesson
