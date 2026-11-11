@@ -5,6 +5,10 @@
 // WhatsApp shows the photo as a wide card and skips images that are too big.
 const MAX_SIDE = 1200
 const JPEG_QUALITY = 0.85
+// Mirrors MAX_PREVIEW_IMAGE_BYTES in src/api/previewImageService.js, so a photo
+// the server would refuse is turned away here with a clear message instead.
+const MAX_JPEG_BYTES = 1024 * 1024
+class TooLargeError extends Error {}
 
 async function toJpegBase64(file) {
   const bitmap = await createImageBitmap(file)
@@ -19,15 +23,18 @@ async function toJpegBase64(file) {
   ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
   bitmap.close?.()
   const dataUrl = canvas.toDataURL('image/jpeg', JPEG_QUALITY)
-  return dataUrl.slice(dataUrl.indexOf(',') + 1)
+  const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1)
+  if (base64.length * 3 / 4 > MAX_JPEG_BYTES) throw new TooLargeError()
+  return base64
 }
 
 export async function uploadPreviewImage(getAccessToken, file) {
   let image
   try {
     image = await toJpegBase64(file)
-  } catch {
-    throw new Error('Could not read that file as an image.')
+  } catch (err) {
+    if (err instanceof TooLargeError) throw new Error('That photo is too large. Choose a smaller or simpler one.', { cause: err })
+    throw new Error('Could not read that file as an image.', { cause: err })
   }
   const token = await getAccessToken()
   const res = await fetch('/api/upload-preview-image', {
