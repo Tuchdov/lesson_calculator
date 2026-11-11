@@ -6,6 +6,7 @@ import { deferred } from './deferred.js'
 
 vi.mock('../../src/lib/userSettings.js', async importOriginal => ({
   DEFAULT_SETTINGS: (await importOriginal()).DEFAULT_SETTINGS,
+  SETTINGS_KEY_PREFIX: (await importOriginal()).SETTINGS_KEY_PREFIX,
   loadUserSettings: vi.fn(),
   saveUserSettings: vi.fn(),
 }))
@@ -167,5 +168,30 @@ describe('useUserSettings', () => {
 
     await act(async () => { await result.current.saveSettings(next) })
     expect(result.current.settings).toEqual(next)
+  })
+
+  // Regression: a custom message saved in one tab was erased when an older tab,
+  // still holding the settings from before, saved a price.
+  it('reloads settings when another tab saves them, so later saves build on them', async () => {
+    const { result } = renderHook(() => useUserSettings('alice@example.com'))
+    await act(async () => {})
+    const fromOtherTab = { ...saved, default_message: 'Saved in another tab' }
+    loadUserSettings.mockResolvedValueOnce(fromOtherTab)
+
+    await act(async () => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'vocalCalc:settings:abc' }))
+    })
+    expect(result.current.settings).toEqual(fromOtherTab)
+  })
+
+  it('ignores storage changes to unrelated keys', async () => {
+    renderHook(() => useUserSettings('alice@example.com'))
+    await act(async () => {})
+    const loads = loadUserSettings.mock.calls.length
+
+    await act(async () => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'gis_access_token' }))
+    })
+    expect(loadUserSettings).toHaveBeenCalledTimes(loads)
   })
 })

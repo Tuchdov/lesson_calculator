@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { loadUserSettings, saveUserSettings, DEFAULT_SETTINGS } from '../lib/userSettings.js'
+import { loadUserSettings, saveUserSettings, DEFAULT_SETTINGS, SETTINGS_KEY_PREFIX } from '../lib/userSettings.js'
 
 /**
  * Load and save settings for the signed-in user, ignoring stale async results
@@ -28,6 +28,22 @@ export function useUserSettings(userEmail) {
       setIsReady(true)
     })
     return () => { generationRef.current++ }
+  }, [userEmail])
+
+  // Another tab saved settings: reload, so a later save here doesn't write
+  // this tab's outdated copy back over it (e.g. erasing a just-saved
+  // default_message when a price is edited in an older tab).
+  useEffect(() => {
+    if (!userEmail) return
+    const onStorage = (e) => {
+      if (!e.key?.startsWith(SETTINGS_KEY_PREFIX)) return
+      const generation = userGeneration.current
+      loadUserSettings(userEmail).then(s => {
+        if (userGeneration.current === generation) setSettings(s)
+      })
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
   }, [userEmail])
 
   const saveSettings = useCallback(async (next) => {

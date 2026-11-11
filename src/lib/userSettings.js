@@ -1,4 +1,4 @@
-const KEY_PREFIX = 'vocalCalc:settings:'
+export const SETTINGS_KEY_PREFIX = 'vocalCalc:settings:'
 // paid_cancellation_phrases/cancelled_keywords/lesson_keywords/makeup_phrases
 // use `null` (not `[]`) to mean "never customized, fall back to the built-in
 // default list" — an explicit
@@ -12,7 +12,7 @@ export async function sha256Hex(str) {
 }
 
 export async function loadUserSettings(email, storage = globalThis.localStorage) {
-  const key = KEY_PREFIX + await sha256Hex(email)
+  const key = SETTINGS_KEY_PREFIX + await sha256Hex(email)
   const raw = storage.getItem(key)
   if (!raw) return { ...DEFAULT_SETTINGS }
   try {
@@ -23,6 +23,6 @@ export async function loadUserSettings(email, storage = globalThis.localStorage)
 }
 
 export async function saveUserSettings(email, settings, storage = globalThis.localStorage) {
-  const key = KEY_PREFIX + await sha256Hex(email)
+  const key = SETTINGS_KEY_PREFIX + await sha256Hex(email)
   storage.setItem(key, JSON.stringify(settings))
 }
