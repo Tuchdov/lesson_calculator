@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects } from '@std/assert'
-import { loadUserSettings, saveUserSettings, sha256Hex } from '../src/lib/userSettings.js'
+import { loadUserSettings, saveUserSettings, updateUserSettings, sha256Hex } from '../src/lib/userSettings.js'
 
 function makeStub() {
   const map = new Map()
@@ -111,4 +111,21 @@ Deno.test('loadUserSettings: preserves an intentionally emptied list, distinct f
   const loaded = await loadUserSettings('user@example.com', stub)
   assertEquals(loaded.paid_cancellation_phrases, [])
   assertEquals(loaded.cancelled_keywords, [])
+})
+
+// Regression: a saved default_message vanished after another tab (holding a
+// snapshot from before the save) saved a custom price, writing its stale copy
+// back whole. updateUserSettings must build on what's in storage now.
+Deno.test('updateUserSettings: applies the updater to stored settings, not a stale snapshot', async () => {
+  const stub = makeStub()
+  const staleTab = await loadUserSettings('user@example.com', stub)
+  await updateUserSettings('user@example.com', prev => ({ ...prev, default_message: 'Custom {student}' }), stub)
+  await updateUserSettings('user@example.com', prev => ({
+    ...prev,
+    custom_prices: { ...prev.custom_prices, Alice: { '60': 300 } },
+  }), stub)
+  const loaded = await loadUserSettings('user@example.com', stub)
+  assertEquals(loaded.default_message, 'Custom {student}')
+  assertEquals(loaded.custom_prices, { Alice: { '60': 300 } })
+  assertEquals(staleTab.default_message, '')
 })

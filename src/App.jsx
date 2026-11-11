@@ -54,22 +54,20 @@ export default function App() {
   }
 
   const handleCustomPriceChange = async (student, prices) => {
-    const next = {
-      ...settings,
-      custom_prices: { ...settings.custom_prices, [student]: prices },
-    }
-    await saveSettings(next)
+    await saveSettings(prev => ({
+      ...prev,
+      custom_prices: { ...prev.custom_prices, [student]: prices },
+    }))
   }
 
   const handleCustomerDetailChange = async (student, details) => {
-    const next = {
-      ...settings,
+    await saveSettings(prev => ({
+      ...prev,
       customer_details: {
-        ...settings.customer_details,
-        [student]: { ...settings.customer_details?.[student], ...details },
+        ...prev.customer_details,
+        [student]: { ...prev.customer_details?.[student], ...details },
       },
-    }
-    await saveSettings(next)
+    }))
   }
 
   const effectiveConfig = useMemo(() => {

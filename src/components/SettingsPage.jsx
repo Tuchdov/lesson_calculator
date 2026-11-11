@@ -103,13 +103,13 @@ export function SettingsPage({ config, settings, onSave }) {
         cleaned[type][d] = isNaN(v) ? config?.prices?.[type]?.[d] : v
       }
     }
-    await onSave({
-      ...settings,
+    await onSave(prev => ({
+      ...prev,
       default_prices: cleaned,
       default_message: messageTemplate,
       paid_cancellation_phrases: paidCancelPhrases,
       cancelled_keywords: keywords,
-    })
+    }))
     setSaved(true)
   }
 

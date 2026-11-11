@@ -140,19 +140,22 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
       }
     }
 
-    const updatedCustomerDetails = { ...(settings?.customer_details ?? {}) }
-    for (const student of students) {
-      const ph = (phones[student] ?? '').trim()
-      if (ph) {
-        updatedCustomerDetails[student] = {
-          ...(updatedCustomerDetails[student] ?? {}),
-          phone: ph,
+    const withPhones = (customerDetails) => {
+      const updated = { ...(customerDetails ?? {}) }
+      for (const student of students) {
+        const ph = (phones[student] ?? '').trim()
+        if (ph) {
+          updated[student] = {
+            ...(updated[student] ?? {}),
+            phone: ph,
+          }
         }
       }
+      return updated
     }
 
     try {
-      await onSave({ ...settings, custom_prices: cleaned, customer_details: updatedCustomerDetails })
+      await onSave(prev => ({ ...prev, custom_prices: cleaned, customer_details: withPhones(prev.customer_details) }))
       lastSavedRef.current = { customPrices: deepClone(customPrices), phones: deepClone(phones) }
       onDirtyChange(false)
       setSaved(true)

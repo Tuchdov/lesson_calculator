@@ -25,3 +25,17 @@ export async function saveUserSettings(email, settings, storage = globalThis.loc
   const key = KEY_PREFIX + await sha256Hex(email)
   storage.setItem(key, JSON.stringify(settings))
 }
+
+// Read-modify-write against what's in storage *now*, not a caller's in-memory
+// copy. A caller holding an old snapshot (another tab, or a page opened before
+// a save elsewhere) would otherwise write it back whole and silently revert
+// fields it never touched — e.g. a just-saved default_message.
+export async function updateUserSettings(email, updater, storage = globalThis.localStorage) {
+  const next = updater(await loadUserSettings(email, storage))
+  await saveUserSettings(email, next, storage)
+  return next
+}
+
+export async function settingsStorageKey(email) {
+  return KEY_PREFIX + await sha256Hex(email)
+}
