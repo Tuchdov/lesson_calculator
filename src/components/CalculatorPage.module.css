@@ -118,3 +118,30 @@
   padding: 12px 16px;
   font-size: 14px;
 }
+
+.removedNote {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--md-text-muted);
+}
+
+.removedChip {
+  background: var(--md-hover);
+  color: var(--md-text);
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 3px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.removedChip:hover:not(:disabled) { background: var(--md-blue-tonal); color: var(--md-blue); }
+.removedChip:disabled { opacity: 0.5; cursor: default; }
+
+.removedError {
+  color: var(--md-red);
+  width: 100%;
+}

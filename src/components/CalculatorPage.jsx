@@ -1,8 +1,8 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { EditableTable } from './EditableTable.jsx'
-import { resolveRowPrices, effectiveStudentType, computeRowAmount, detailsFor, billedLessonCount, payerName, lessonStudentName, applyLessonOverride } from '../lib/rowPricing.js'
+import { resolveRowPrices, effectiveStudentType, computeRowAmount, detailsFor, billedLessonCount, payerName, lessonStudentName, applyLessonOverride, splitExcluded } from '../lib/rowPricing.js'
 import { safeTotalsCsvBytes } from '../lib/csvExport.js'
-import { invoiceRecord, invoiceKey, isValidAmount, isLinkUsable, hasFullName, linkInputs, invoiceTemplateFor } from '../lib/payments.js'
+import { invoiceRecord, invoiceRecordNames, invoiceKey, isValidAmount, isLinkUsable, hasFullName, linkInputs, invoiceTemplateFor } from '../lib/payments.js'
 import { rowNeedsRecalc, DEFAULT_LESSON_KEYWORDS, DEFAULT_CANCELLED_KEYWORDS, DEFAULT_PAID_CANCELLATION_PHRASES, DEFAULT_MAKEUP_PHRASES } from '../lib/calendarPayments.js'
 import { requestPaymentLink } from '../lib/paymentLinkClient.js'
 import styles from './CalculatorPage.module.css'
@@ -21,7 +21,14 @@ const STALE_DEFAULTS = {
 }
 const effectiveSetting = (c, k) => JSON.stringify(c?.[k] ?? STALE_DEFAULTS[k])
 
-// Marks rows whose amount isn't final yet, so a low total doesn't look settled.
+/**
+ * Marks rows whose amount isn't final yet, so a low total doesn't look settled.
+ * @param {object} row The student row; name conflicts and edited lesson counts are flagged.
+ * @param {number} unresolved How many review items are still open.
+ * @param {boolean} adjusted Whether the amount was manually overridden.
+ * @param {boolean} discounted Whether the student was moved to the discounted price for the month.
+ * @returns {string} Status labels joined by "; ", or '' when the row is settled.
+ */
 function csvStatus(row, unresolved, adjusted, discounted) {
   const parts = []
   if (row.name_conflicts?.length) parts.push('name conflict')
@@ -47,14 +54,27 @@ async function runWithConcurrency(items, limit, worker) {
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, next))
 }
 
-export function CalculatorPage({ getAccessToken, config, calendar, month, onMonthChange, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, defaultMessage, defaultInvoiceDescription, previewImage, amountOverrides, onAmountOverrideChange, lessonOverrides, onLessonOverrideChange, tierOverrides, onTierOverrideChange, paymentLinks, onPaymentLinkChange, reviewResolutions, onReviewResolutionChange, preparing, onPreparingChange, prepareStatus, onPrepareStatusChange }) {
+/**
+ * The calculator screen: month picker, Calculate, prepare-all, CSV export and
+ * the editable invoice table. Lesson-count overrides are applied to the
+ * calendar's rows before anything is priced.
+ * @param {object} props Calendar state, pricing/override stores, and their change callbacks.
+ * @returns {import('react').ReactNode} The calculator page.
+ */
+export function CalculatorPage({ getAccessToken, config, calendar, month, onMonthChange, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, defaultMessage, defaultInvoiceDescription, previewImage, amountOverrides, onAmountOverrideChange, lessonOverrides, onLessonOverrideChange, excludedStudents, onExcludedStudentChange, tierOverrides, onTierOverrideChange, paymentLinks, onPaymentLinkChange, reviewResolutions, onReviewResolutionChange, preparing, onPreparingChange, prepareStatus, onPrepareStatusChange }) {
   const { rows: calendarRows, summary, loading, error, calculate, calculatedWith } = calendar
-  // Lesson counts the teacher changed for this month replace the calendar's
-  // before anything is priced, so every amount, count and CSV line agrees.
-  const rows = useMemo(
-    () => calendarRows?.map(row => applyLessonOverride(row, invoiceRecord(lessonOverrides, summary?.month, row))),
-    [calendarRows, lessonOverrides, summary?.month],
-  )
+  // The calendar's students, less the ones left out of this month. Lesson
+  // counts the teacher changed for this month replace the calendar's before
+  // anything is priced, so every amount, count and CSV line agrees.
+  const calcMonth = summary?.month
+  const { rows, removedRows } = useMemo(() => {
+    if (!calendarRows) return { rows: calendarRows, removedRows: [] }
+    const { kept, removed } = splitExcluded(calendarRows, excludedStudents, calcMonth)
+    return {
+      rows: kept.map(row => applyLessonOverride(row, invoiceRecord(lessonOverrides, calcMonth, row))),
+      removedRows: removed,
+    }
+  }, [calendarRows, excludedStudents, lessonOverrides, calcMonth])
   // Link progress is owned by App so leaving the page mid-run can't make
   // finished-looking rows mint a second link when you come back. It is keyed
   // by month too, so an error from one month never shows on another's table.
@@ -63,6 +83,22 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
   const monthStatus = Object.fromEntries((rows ?? []).map(r => [r.student, prepareStatus?.[invoiceKey(statusMonth, r.student)]]))
 
   const handleRun = () => calculate(month)
+
+  // Left out of this month only: everything saved for the student stays.
+  const handleRemoveRow = row => onExcludedStudentChange?.(calcMonth, row.student, true)
+  // Cleared under every spelling, so an older one can't keep it hidden.
+  // A failed save leaves the student removed, so the chip stays for a retry.
+  const [restoreError, setRestoreError] = useState(null)
+  const handleRestoreRow = async row => {
+    setRestoreError(null)
+    try {
+      for (const name of new Set([row.student, ...invoiceRecordNames(excludedStudents, calcMonth, row)])) {
+        await onExcludedStudentChange?.(calcMonth, name, false)
+      }
+    } catch (err) {
+      setRestoreError(`Couldn't add ${row.student} back: ${err.message || 'failed to save'}. Try again.`)
+    }
+  }
 
   // A manual amount override is the teacher's final number for the invoice,
   // so it also settles any review items on that row. Memoized: the page
@@ -188,7 +224,7 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
       {summary && (
         <div className={styles.summaryBar}>
           <span>{summary.month}</span>
-          <span>{summary.students} students</span>
+          <span>{rows?.length ?? 0} students</span>
           <span className={styles.total}>Total: ₪{liveTotal}</span>
           {needsReview > 0 && (
             <span className={styles.reviewNote}>
@@ -201,6 +237,18 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
       {stale && (
         <div className={styles.staleNote} role="status">
           {namesStale && settingsStale ? 'Saved students and Settings' : namesStale ? 'Saved students' : 'Settings'} changed since this calculation. Press Calculate again before sending; links and WhatsApp are paused until then.
+        </div>
+      )}
+
+      {removedRows.length > 0 && (
+        <div className={styles.removedNote}>
+          <span>Removed from {calcMonth}:</span>
+          {removedRows.map(row => (
+            <button key={row.student} className={styles.removedChip} onClick={() => handleRestoreRow(row)} disabled={stale} title={stale ? 'Press Calculate again first' : 'Add back to this month'}>
+              {row.student} ↺
+            </button>
+          ))}
+          {restoreError && <span className={styles.removedError} role="alert">{restoreError}</span>}
         </div>
       )}
 
@@ -230,10 +278,11 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
           sendBlocked={stale}
           reviewResolutions={reviewResolutions}
           onReviewResolutionChange={onReviewResolutionChange}
+          onRemoveRow={handleRemoveRow}
         />
       )}
 
-      {rows?.length === 0 && !loading && (
+      {rows?.length === 0 && !removedRows.length && !loading && (
         <div className={styles.empty}>No lessons found for {month}.</div>
       )}
     </div>

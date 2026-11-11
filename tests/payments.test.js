@@ -23,6 +23,8 @@ import {
   saveTierOverride,
   loadTierOverrides,
   saveReviewResolution,
+  saveExcludedStudent,
+  loadExcludedStudents,
 } from '../src/lib/payments.js'
 import { sha256Hex } from '../src/lib/userSettings.js'
 
@@ -423,4 +425,16 @@ Deno.test('saveLessonOverride + loadLessonOverrides: round-trips, stays in its m
   assertEquals(await loadLessonOverrides('user@example.com', stub), { '2026-08:Alice': { '60': 5, '45': 0, '30': 0 } })
   await saveLessonOverride('user@example.com', '2026-08', 'Alice', null, stub)
   assertEquals(await loadLessonOverrides('user@example.com', stub), {})
+})
+
+// ── excluded student store ──────────────────────────────────────────────────
+
+Deno.test('saveExcludedStudent: stays in its month and false restores', async () => {
+  const stub = makeStub()
+  await saveExcludedStudent('user@example.com', '2026-03', 'Bob', true, stub)
+  const excluded = await loadExcludedStudents('user@example.com', stub)
+  assertEquals(invoiceRecord(excluded, '2026-03', { student: 'Bob' }), true)
+  assertEquals(invoiceRecord(excluded, '2026-04', { student: 'Bob' }), null)
+  await saveExcludedStudent('user@example.com', '2026-03', 'Bob', false, stub)
+  assertEquals(await loadExcludedStudents('user@example.com', stub), {})
 })
