@@ -271,3 +271,5 @@
 .fileInput:disabled { cursor: default; }
 .uploadRow:focus-within .btnPrimary { outline: 2px solid var(--md-blue); outline-offset: 2px; }
 .uploadRow .btnPrimary[aria-disabled] { opacity: 0.6; }
+.resetBtn:disabled { opacity: 0.5; cursor: default; }
+.resetBtn:disabled:hover { background: none; }

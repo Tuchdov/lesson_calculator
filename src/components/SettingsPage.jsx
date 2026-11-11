@@ -208,7 +208,8 @@ export function SettingsPage({ config, settings, onSave, getAccessToken }) {
         <div className={styles.cardHeader}>
           <h3 className={styles.cardTitle}>Payment link photo</h3>
           {previewImage && (
-            <button className={styles.resetBtn} onClick={() => { setPreviewImage(''); setImageError(''); setSaved(false) }}>
+            // Disabled mid-upload: a finishing upload would bring the photo back.
+            <button className={styles.resetBtn} disabled={imageUploading} onClick={() => { setPreviewImage(''); setImageError(''); setSaved(false) }}>
               Remove photo
             </button>
           )}
