@@ -124,7 +124,10 @@ thread they already use.
    This supersedes an earlier decision to batch them into one settings write: that write
    still spread a settings snapshot captured before the batch began, wiping edits made
    during the ~15 seconds of preparing, and an interruption at student 34 lost all 34.
-5. **Invalidation is amount-only.** A stored link is reused unless the amount changed.
+5. **Invalidation is amount-only.** *(Superseded 2026-10-27: a stored link now also goes
+   stale when the payer, phone, student, profile or invoice text it was minted with
+   changes; see "Payload additions". Links stored before then keep the old rule while the
+   student uses the defaults.)* A stored link is reused unless the amount changed.
    Accepted residual: correcting a name or phone after a link was minted leaves the stored
    link carrying the old value, which is cosmetic on the payment page while the amount
    charged stays correct.
@@ -240,12 +243,49 @@ both handling and a test requirement.
   `phone` must be Grow's raw format (`normalizePhoneForGrow`, e.g. `0501234567`), and
   `description` is the Hebrew string from `buildGrowDescription` — confirmed to render
   correctly on Grow's page, month name included.
+- **Payload additions (2026-10-27).** The webhook now also receives:
+  - `number_of_lessons`: the student's 30/45/60-min lesson count for the month (a
+    double-length block counts as 2). Non-standard-length lessons priced through review
+    are in the amount but not in this count. Omitted when an older client doesn't send it.
+  - `payment_profile`: `"standard"` unless the student has a profile on the Custom
+    Prices page (e.g. `"extended"`). **Make-side:** add a Router after the webhook
+    with one route per profile, each feeding a Grow Create Payment Link module whose
+    payment options match that profile, then the Webhook response.
+  - `invoice_description`: the student's custom invoice text with `{student}`/`{month}`
+    filled in, or `""` when they use the default. When set, `description` carries the
+    same text. **Make-side:** map it into the invoice/document item if the scenario
+    issues one.
+  - `customer_name` is the payer (a young student's parent: Custom Prices "Payer name",
+    shown on Grow's payment page and invoice); `student_name` is whose lessons they are
+    (the calendar name, used in the product line, catalog number and the invoice text's
+    `{student}`). Without `student_name` (an older client) the payer is used for both.
+  - Each stored link records what it was minted with (payer, phone, student, non-default
+    profile, invoice text). A change to any of them, like an amount change, means a new
+    link; links stored before this only carry the defaults.
+  - Validation (400 before Make is called): `number_of_lessons` must be a non-negative
+    integer; `payment_profile` must match `/^[\p{L}\p{N}_-]{1,40}$/u` (blank → `standard`);
+    the rendered invoice text is capped at 200 characters; `studentName` (the payer) must be
+    a non-empty string and both names at most 80 characters.
+  - Live scenario ("Integration Webhooks", 2026-10-27): the Router sends any profile other
+    than `extended` (case-insensitive) to the standard route, so an unknown profile falls
+    back rather than failing. Both Grow modules use `invoice_description` as the product
+    name and fall back to the default line (`פיתוח קול - <student_name> - תשלום <previous month> <YY>`) when it is empty.
+  - A prepared link is reused only while the amount and what it was minted with are
+    unchanged; ↻ forces a fresh link (for example, an expired one).
 - **Getting the real response required two Make-side fixes**, not just filling in fields:
   the scenario had to be turned ON (an inactive scenario returns
   `"There is no scenario listening for this webhook"`, 410), and the trigger needed a
   Webhooks → "Webhook response" module as its last step — without one, Make always replies
   `"Accepted"` immediately and runs the rest of the scenario asynchronously, so the caller
   never sees the link.
+- **WhatsApp preview title (2026-11-09).** Grow's page always sets `og:title` to the
+  business name, so the link title set in Make never reaches WhatsApp's preview. With
+  `PAY_LINK_SECRET` set in Vercel, the student is sent
+  `/api/pay?g=<Grow link id>&t=<title, base64url>&s=<HMAC>` instead (`src/lib/payRedirect.js`).
+  That page serves `og:title` = the invoice text and forwards the browser to Grow by script
+  (not a 302 or meta refresh, which WhatsApp would follow). It only forwards to
+  `pay.grow.link`, and the signature covers both the id and the title. Without the secret
+  the raw Grow link is sent, as before. Links are stateless, hence long (~200 characters).
 
 ## Success Criteria
 

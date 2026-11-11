@@ -1,0 +1,12 @@
+import { cleanup } from '@testing-library/react'
+import { afterEach, vi } from 'vitest'
+
+afterEach(() => {
+  cleanup()
+  vi.clearAllTimers()
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+  sessionStorage.clear()
+  localStorage.clear()
+})

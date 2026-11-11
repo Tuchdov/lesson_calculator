@@ -1,0 +1,197 @@
+import { act, renderHook } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { useUserSettings } from '../../src/hooks/useUserSettings.js'
+import { loadUserSettings, saveUserSettings } from '../../src/lib/userSettings.js'
+import { deferred } from './deferred.js'
+
+vi.mock('../../src/lib/userSettings.js', async importOriginal => ({
+  DEFAULT_SETTINGS: (await importOriginal()).DEFAULT_SETTINGS,
+  SETTINGS_KEY_PREFIX: (await importOriginal()).SETTINGS_KEY_PREFIX,
+  loadUserSettings: vi.fn(),
+  saveUserSettings: vi.fn(),
+}))
+
+const defaults = {
+  custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '', default_invoice_description: '', preview_image: '',
+  paid_cancellation_phrases: null, cancelled_keywords: null, lesson_keywords: null, makeup_phrases: null,
+}
+const saved = { ...defaults, default_message: 'Hello {student}' }
+const next = { ...defaults, default_message: 'New message', cancelled_keywords: [] }
+
+beforeEach(() => {
+  loadUserSettings.mockReset().mockResolvedValue(saved)
+  saveUserSettings.mockReset().mockResolvedValue(undefined)
+})
+
+describe('useUserSettings', () => {
+  it('keeps defaults and skips loading and saving without an email', async () => {
+    const { result } = renderHook(() => useUserSettings(null))
+
+    expect(result.current.settings).toEqual(defaults)
+    expect(result.current.isReady).toBe(false)
+    await act(async () => { await result.current.saveSettings(next) })
+
+    expect(loadUserSettings).not.toHaveBeenCalled()
+    expect(saveUserSettings).not.toHaveBeenCalled()
+    expect(result.current.settings).toEqual(defaults)
+  })
+
+  it('becomes ready only after settings have loaded', async () => {
+    const load = deferred()
+    loadUserSettings.mockReturnValueOnce(load.promise)
+    const { result } = renderHook(() => useUserSettings('alice@example.com'))
+
+    expect(loadUserSettings).toHaveBeenCalledWith('alice@example.com')
+    expect(result.current.isReady).toBe(false)
+    expect(result.current.settings).toEqual(defaults)
+    await act(async () => { load.resolve(saved) })
+
+    expect(result.current.isReady).toBe(true)
+    expect(result.current.settings).toEqual(saved)
+  })
+
+  it('loads when an email becomes available and reloads for another user', async () => {
+    const { result, rerender } = renderHook(email => useUserSettings(email), {
+      initialProps: null,
+    })
+    await act(async () => { rerender('alice@example.com') })
+    expect(result.current.settings).toEqual(saved)
+    expect(result.current.isReady).toBe(true)
+
+    const load = deferred()
+    loadUserSettings.mockReturnValueOnce(load.promise)
+    rerender('bob@example.com')
+    expect(result.current.isReady).toBe(false)
+    expect(loadUserSettings).toHaveBeenLastCalledWith('bob@example.com')
+    await act(async () => { load.resolve(next) })
+    expect(result.current.settings).toEqual(next)
+    expect(result.current.isReady).toBe(true)
+
+    await act(async () => { await result.current.saveSettings(saved) })
+    expect(saveUserSettings).toHaveBeenCalledWith('bob@example.com', saved)
+  })
+
+  it('ignores a previous user’s load when it finishes after the current user’s load', async () => {
+    const alice = deferred()
+    const bob = deferred()
+    loadUserSettings.mockReturnValueOnce(alice.promise).mockReturnValueOnce(bob.promise)
+    const { result, rerender } = renderHook(email => useUserSettings(email), {
+      initialProps: 'alice@example.com',
+    })
+    rerender('bob@example.com')
+
+    await act(async () => { bob.resolve(next) })
+    expect(result.current.settings).toEqual(next)
+    expect(result.current.isReady).toBe(true)
+    await act(async () => { alice.resolve(saved) })
+    expect(result.current.settings).toEqual(next)
+    expect(result.current.isReady).toBe(true)
+  })
+
+  it('does not publish a pending load after sign-out', async () => {
+    const load = deferred()
+    loadUserSettings.mockReturnValueOnce(load.promise)
+    const { result, rerender } = renderHook(email => useUserSettings(email), {
+      initialProps: 'alice@example.com',
+    })
+    rerender(null)
+    await act(async () => { load.resolve(saved) })
+    expect(result.current.isReady).toBe(false)
+    expect(result.current.settings).toEqual(defaults)
+  })
+
+  it('returns to loading after signing back in as the same user', async () => {
+    const { result, rerender } = renderHook(email => useUserSettings(email), {
+      initialProps: 'alice@example.com',
+    })
+    await act(async () => {})
+    expect(result.current.isReady).toBe(true)
+    rerender(null)
+    expect(result.current.isReady).toBe(false)
+
+    const load = deferred()
+    loadUserSettings.mockReturnValueOnce(load.promise)
+    rerender('alice@example.com')
+    expect(result.current.isReady).toBe(false)
+    await act(async () => { load.resolve(next) })
+    expect(result.current.isReady).toBe(true)
+    expect(result.current.settings).toEqual(next)
+  })
+
+  it('does not publish a previous user’s pending save after switching users', async () => {
+    const { result, rerender } = renderHook(email => useUserSettings(email), {
+      initialProps: 'alice@example.com',
+    })
+    await act(async () => {})
+    const save = deferred()
+    saveUserSettings.mockReturnValueOnce(save.promise)
+    let saving
+    act(() => { saving = result.current.saveSettings(next) })
+    loadUserSettings.mockResolvedValueOnce(defaults)
+    await act(async () => { rerender('bob@example.com') })
+    expect(result.current.settings).toEqual(defaults)
+    await act(async () => {
+      save.resolve()
+      await saving
+    })
+    expect(result.current.settings).toEqual(defaults)
+  })
+
+  it('updates settings only after persistence succeeds', async () => {
+    const { result } = renderHook(() => useUserSettings('alice@example.com'))
+    await act(async () => {})
+    const save = deferred()
+    saveUserSettings.mockReturnValueOnce(save.promise)
+
+    let saving
+    act(() => { saving = result.current.saveSettings(next) })
+    expect(saveUserSettings).toHaveBeenCalledWith('alice@example.com', next)
+    expect(result.current.settings).toEqual(saved)
+    await act(async () => {
+      save.resolve()
+      await saving
+    })
+    expect(result.current.settings).toEqual(next)
+  })
+
+  it('preserves persisted settings on a failed save and allows a retry', async () => {
+    const { result } = renderHook(() => useUserSettings('alice@example.com'))
+    await act(async () => {})
+    const failure = new DOMException('quota exceeded', 'QuotaExceededError')
+    saveUserSettings.mockRejectedValueOnce(failure)
+
+    await act(async () => {
+      await expect(result.current.saveSettings(next)).rejects.toBe(failure)
+    })
+    expect(result.current.settings).toEqual(saved)
+    expect(result.current.isReady).toBe(true)
+
+    await act(async () => { await result.current.saveSettings(next) })
+    expect(result.current.settings).toEqual(next)
+  })
+
+  // Regression: a custom message saved in one tab was erased when an older tab,
+  // still holding the settings from before, saved a price.
+  it('reloads settings when another tab saves them, so later saves build on them', async () => {
+    const { result } = renderHook(() => useUserSettings('alice@example.com'))
+    await act(async () => {})
+    const fromOtherTab = { ...saved, default_message: 'Saved in another tab' }
+    loadUserSettings.mockResolvedValueOnce(fromOtherTab)
+
+    await act(async () => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'vocalCalc:settings:abc' }))
+    })
+    expect(result.current.settings).toEqual(fromOtherTab)
+  })
+
+  it('ignores storage changes to unrelated keys', async () => {
+    renderHook(() => useUserSettings('alice@example.com'))
+    await act(async () => {})
+    const loads = loadUserSettings.mock.calls.length
+
+    await act(async () => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'gis_access_token' }))
+    })
+    expect(loadUserSettings).toHaveBeenCalledTimes(loads)
+  })
+})

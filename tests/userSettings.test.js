@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects } from '@std/assert'
-import { loadUserSettings, saveUserSettings, updateUserSettings, sha256Hex } from '../src/lib/userSettings.js'
+import { loadUserSettings, saveUserSettings, sha256Hex } from '../src/lib/userSettings.js'
 
 function makeStub() {
   const map = new Map()
@@ -9,7 +9,7 @@ function makeStub() {
 Deno.test('loadUserSettings: returns defaults when key absent', async () => {
   const stub = makeStub()
   const settings = await loadUserSettings('user@example.com', stub)
-  assertEquals(settings, { custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '', paid_cancellation_phrases: null, cancelled_keywords: null })
+  assertEquals(settings, { custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '', default_invoice_description: '', preview_image: '', paid_cancellation_phrases: null, cancelled_keywords: null, lesson_keywords: null, makeup_phrases: null })
 })
 
 Deno.test('saveUserSettings + loadUserSettings: round-trip persists data', async () => {
@@ -19,8 +19,12 @@ Deno.test('saveUserSettings + loadUserSettings: round-trip persists data', async
     customer_details: {},
     default_prices: { regular: { '60': 260, '45': 210, '30': 190 }, non_regular: { '60': 280, '45': 230, '30': 210 } },
     default_message: 'Hi {student}, you owe ₪{amount} for {month}',
+    default_invoice_description: 'ייעוץ קולי - {student} - {month}',
+    preview_image: 'https://abc.public.blob.vercel-storage.com/preview/photo-x.jpg',
     paid_cancellation_phrases: ['ביטול בתשלום', 'cancelled - billed'],
     cancelled_keywords: ['בוטל', 'מבוטל', 'cancelled'],
+    lesson_keywords: ['פיתוח קול', 'כתיבה והלחנה'],
+    makeup_phrases: ['השלמה'],
   }
   await saveUserSettings('user@example.com', data, stub)
   const loaded = await loadUserSettings('user@example.com', stub)
@@ -48,7 +52,7 @@ Deno.test('loadUserSettings: returns defaults when stored JSON is corrupt', asyn
   const key = 'vocalCalc:settings:' + await sha256Hex('user@example.com')
   stub.setItem(key, '{ this is not valid JSON !!!')
   const settings = await loadUserSettings('user@example.com', stub)
-  assertEquals(settings, { custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '', paid_cancellation_phrases: null, cancelled_keywords: null })
+  assertEquals(settings, { custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '', default_invoice_description: '', preview_image: '', paid_cancellation_phrases: null, cancelled_keywords: null, lesson_keywords: null, makeup_phrases: null })
 })
 
 Deno.test('loadUserSettings: back-fills default_prices/default_message when loading legacy settings', async () => {
@@ -111,21 +115,4 @@ Deno.test('loadUserSettings: preserves an intentionally emptied list, distinct f
   const loaded = await loadUserSettings('user@example.com', stub)
   assertEquals(loaded.paid_cancellation_phrases, [])
   assertEquals(loaded.cancelled_keywords, [])
-})
-
-// Regression: a saved default_message vanished after another tab (holding a
-// snapshot from before the save) saved a custom price, writing its stale copy
-// back whole. updateUserSettings must build on what's in storage now.
-Deno.test('updateUserSettings: applies the updater to stored settings, not a stale snapshot', async () => {
-  const stub = makeStub()
-  const staleTab = await loadUserSettings('user@example.com', stub)
-  await updateUserSettings('user@example.com', prev => ({ ...prev, default_message: 'Custom {student}' }), stub)
-  await updateUserSettings('user@example.com', prev => ({
-    ...prev,
-    custom_prices: { ...prev.custom_prices, Alice: { '60': 300 } },
-  }), stub)
-  const loaded = await loadUserSettings('user@example.com', stub)
-  assertEquals(loaded.default_message, 'Custom {student}')
-  assertEquals(loaded.custom_prices, { Alice: { '60': 300 } })
-  assertEquals(staleTab.default_message, '')
 })

@@ -1,47 +1,60 @@
-import { useState, useEffect, useCallback } from 'react'
-import { loadUserSettings, updateUserSettings, settingsStorageKey } from '../lib/userSettings.js'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { loadUserSettings, saveUserSettings, DEFAULT_SETTINGS, SETTINGS_KEY_PREFIX } from '../lib/userSettings.js'
 
+/**
+ * Load and save settings for the signed-in user, ignoring stale async results
+ * after the user changes. A save updates state only after persistence succeeds.
+ * @param {string|null} userEmail The signed-in user's email, or null.
+ * @returns {{settings: object, saveSettings: Function, isReady: boolean}} Settings, persistence action, and loading status.
+ */
 export function useUserSettings(userEmail) {
-  const [settings, setSettings] = useState({ custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '', paid_cancellation_phrases: null, cancelled_keywords: null })
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS)
   const [isReady, setIsReady] = useState(false)
+  const [previousEmail, setPreviousEmail] = useState(userEmail)
+  const userGeneration = useRef(0)
+
+  if (previousEmail !== userEmail) {
+    setPreviousEmail(userEmail)
+    setIsReady(false)
+  }
 
   useEffect(() => {
+    const generationRef = userGeneration
+    const generation = ++generationRef.current
     if (!userEmail) return
-    setIsReady(false)
     loadUserSettings(userEmail).then(s => {
+      if (generationRef.current !== generation) return
       setSettings(s)
       setIsReady(true)
     })
+    return () => { generationRef.current++ }
   }, [userEmail])
 
-  // Another tab saved settings — pick them up so this tab's in-memory copy
-  // doesn't go stale.
+  // Another tab saved settings: reload, so a later save here doesn't write
+  // this tab's outdated copy back over it (e.g. erasing a just-saved
+  // default_message when a price is edited in an older tab).
   useEffect(() => {
     if (!userEmail) return
-    let cancelled = false
-    let key = null
-    settingsStorageKey(userEmail).then(k => { key = k })
     const onStorage = (e) => {
-      if (!key || e.key !== key) return
-      loadUserSettings(userEmail).then(s => { if (!cancelled) setSettings(s) })
+      if (!e.key?.startsWith(SETTINGS_KEY_PREFIX)) return
+      const generation = userGeneration.current
+      loadUserSettings(userEmail).then(s => {
+        if (userGeneration.current === generation) setSettings(s)
+      })
     }
     window.addEventListener('storage', onStorage)
-    return () => {
-      cancelled = true
-      window.removeEventListener('storage', onStorage)
-    }
+    return () => window.removeEventListener('storage', onStorage)
   }, [userEmail])
 
-  // `updater` receives the settings as currently stored (not this tab's
-  // possibly-stale copy) and returns the full next settings object.
-  const saveSettings = useCallback(async (updater) => {
+  const saveSettings = useCallback(async (next) => {
     if (!userEmail) return
-    // Persist BEFORE updating in-memory state. If saving throws
+    // Persist BEFORE updating in-memory state. If saveUserSettings throws
     // (e.g. localStorage quota exceeded), state must stay at the
     // last-persisted value so a caller's dirty/unsaved-changes check stays
     // truthful — setting state first would make a failed save look saved.
-    const next = await updateUserSettings(userEmail, updater)
-    setSettings(next)
+    const generation = userGeneration.current
+    await saveUserSettings(userEmail, next)
+    if (userGeneration.current === generation) setSettings(next)
   }, [userEmail])
 
   return { settings, saveSettings, isReady }

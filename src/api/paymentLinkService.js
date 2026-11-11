@@ -1,7 +1,9 @@
-import { isValidAmount, normalizePhoneForGrow, buildGrowDescription } from '../lib/payments.js'
-import { validateIsraeliPhone, monthNameFromKey } from '../lib/whatsapp.js'
+import { isValidAmount, normalizePhoneForGrow, buildGrowDescription, DEFAULT_PAYMENT_PROFILE, isValidPaymentProfile, MAX_INVOICE_DESCRIPTION } from '../lib/payments.js'
+import { validateIsraeliPhone } from '../lib/whatsapp.js'
+import { buildInvoiceTitle, wrapPaymentLink } from '../lib/payRedirect.js'
 
 const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo'
+const MAX_STUDENT_NAME = 80
 
 // Carries an HTTP status and a retryable flag through to the thin Vercel
 // adapter, so the UI can tell "sign in again" apart from "try again".
@@ -15,7 +17,7 @@ export class ServiceError extends Error {
 
 // Identity is read from Google's answer, never from the request body — the
 // caller cannot claim to be anyone by changing what it sends.
-async function verifyCaller(accessToken, { allowedEmail, clientId, fetchImpl }) {
+export async function verifyCaller(accessToken, { allowedEmail, clientId, fetchImpl }) {
   if (!accessToken) throw new ServiceError(401, 'Sign in again.')
 
   let res
@@ -51,9 +53,10 @@ async function verifyCaller(accessToken, { allowedEmail, clientId, fetchImpl }) 
 }
 
 // Confirmed against the live Make scenario (T1): the webhook expects
-// {customer_name, amount, phone, description} and, on success, returns
-// (lessons, month_name and year are extra fields for the Title and
-// Product Name mappings in Make — e.g. "3 שיעורים ספטמבר")
+// {customer_name, student_name, amount, phone, description,
+// invoice_description, payment_profile, number_of_lessons?} (see
+// createPaymentLink) and, on
+// success, returns
 // {status: 1, err: {}, data: {paymentLinkProcessId, paymentLinkProcessToken,
 // url}}. Grow's amount is shekels, sent as-is — no agorot conversion.
 async function callMakeWebhook({ webhookUrl, apiKey, payload, fetchImpl }) {
@@ -85,20 +88,43 @@ async function callMakeWebhook({ webhookUrl, apiKey, payload, fetchImpl }) {
   return link
 }
 
+function validNumberOfLessons(value) {
+  return value === undefined || (Number.isInteger(value) && value >= 0)
+}
+
 // month is "YYYY-MM", used only to build the Hebrew description shown on
 // Grow's payment page — callers must pass summary.month, never a live month
 // input (see CalculatorPage.jsx / design decision 12).
+//
+// studentName is the payer (a child's parent), shown on Grow's payment page
+// and invoice; lessonStudent is whose lessons they are (the child), used for
+// the product line and the description's {student}. paymentProfile picks
+// which branch of the Make scenario runs (e.g. a student paying with Bit);
+// invoiceDescription is a per-student {student}/{month} template replacing the
+// default description. previewImage is the Settings photo shown in WhatsApp's
+// preview; one that isn't ours is dropped. All optional so a cached older tab
+// keeps working.
+//
+// With linkSecret and baseUrl set, the returned link is our /api/pay page
+// (see payRedirect.js) so WhatsApp's preview shows the invoice text; without
+// them it is the raw Grow link.
 export async function createPaymentLink({
   accessToken,
   studentName,
   phone,
   amount,
   month,
-  lessons,
+  numberOfLessons,
+  paymentProfile,
+  invoiceDescription,
+  lessonStudent,
+  previewImage,
   allowedEmail,
   clientId,
   webhookUrl,
   apiKey,
+  linkSecret,
+  baseUrl,
   fetchImpl = fetch,
 }) {
   await verifyCaller(accessToken, { allowedEmail, clientId, fetchImpl })
@@ -111,6 +137,37 @@ export async function createPaymentLink({
     throw new ServiceError(400, 'Invalid phone number.')
   }
 
+  if (typeof studentName !== 'string' || !studentName.trim() || studentName.trim().length > MAX_STUDENT_NAME) {
+    throw new ServiceError(400, 'Invalid name.')
+  }
+  if (lessonStudent != null && (typeof lessonStudent !== 'string' || lessonStudent.trim().length > MAX_STUDENT_NAME)) {
+    throw new ServiceError(400, 'Invalid student name.')
+  }
+  const payer = studentName.trim()
+  const student = lessonStudent?.trim() || payer
+
+  if (!validNumberOfLessons(numberOfLessons)) {
+    throw new ServiceError(400, 'Invalid number of lessons.')
+  }
+
+  if (paymentProfile != null && typeof paymentProfile !== 'string') {
+    throw new ServiceError(400, 'Invalid payment profile.')
+  }
+  const profile = paymentProfile?.trim() || DEFAULT_PAYMENT_PROFILE
+  if (!isValidPaymentProfile(profile)) {
+    throw new ServiceError(400, 'Invalid payment profile.')
+  }
+
+  if (invoiceDescription != null && typeof invoiceDescription !== 'string') {
+    throw new ServiceError(400, 'Invalid invoice description.')
+  }
+  const customDescription = invoiceDescription?.trim()
+    ? buildGrowDescription(student, month, invoiceDescription)
+    : ''
+  if (customDescription.length > MAX_INVOICE_DESCRIPTION) {
+    throw new ServiceError(400, 'Invoice description is too long.')
+  }
+
   if (!webhookUrl) {
     throw new ServiceError(500, 'Payment service is not configured.')
   }
@@ -119,16 +176,27 @@ export async function createPaymentLink({
     webhookUrl,
     apiKey,
     payload: {
-      customer_name: studentName,
+      customer_name: payer,
+      student_name: student,
       amount,
       phone: normalizePhoneForGrow(phone),
-      description: buildGrowDescription(studentName, month),
-      lessons: Number.isInteger(lessons) && lessons > 0 ? lessons : null,
-      month_name: monthNameFromKey(month),
-      year: (month ?? '').split('-')[0],
+      description: customDescription || buildGrowDescription(student, month),
+      // Empty when the student uses the default wording, so the scenario can
+      // tell a custom invoice apart.
+      invoice_description: customDescription,
+      payment_profile: profile,
+      ...(numberOfLessons !== undefined ? { number_of_lessons: numberOfLessons } : {}),
     },
     fetchImpl,
   })
 
-  return { link }
+  return {
+    link: await wrapPaymentLink({
+      growUrl: link,
+      title: buildInvoiceTitle(student, month, customDescription),
+      image: previewImage,
+      baseUrl,
+      secret: linkSecret,
+    }),
+  }
 }

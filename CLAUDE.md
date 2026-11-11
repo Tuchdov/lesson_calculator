@@ -2,8 +2,9 @@
 
 Personal tool for a vocal teacher: reads Google Calendar events for a month,
 counts lessons per student, applies per-student pricing, and sends each student
-a WhatsApp payment message. Vite + React 19 SPA, deployed to Vercel. Tests are
-pure-function only, run with `deno test`.
+a WhatsApp payment message. Vite + React 19 SPA, deployed to Vercel. Pure-function
+tests run with `deno test`; React hook and component tests (`tests/hooks/`) run
+with vitest (`npm run test:hooks`). `npm test` runs both.
 
 ## Skill routing
 

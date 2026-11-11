@@ -1,15 +1,23 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { validateIsraeliPhone, buildPaymentMessage, buildWhatsAppUrl } from '../lib/whatsapp.js'
-import { invoiceKey, hasFullName, getStoredLink, amountChanged, isValidAmount } from '../lib/payments.js'
+import { hasFullName, invoiceRecord, invoiceRecordNames, invoiceTemplateFor, isEntryUsable, isValidAmount, linkInputs } from '../lib/payments.js'
 import { requestPaymentLink } from '../lib/paymentLinkClient.js'
-import { resolveRowPrices, computeLessonAmount } from '../lib/rowPricing.js'
+import { TYPE_LABEL } from '../lib/priceConstants.js'
+import { resolveRowPrices, effectiveStudentType, computeRowAmount, detailsFor, billedLessonCount, reviewKey, reviewResolution, storedReviewResolution, storedReviewNames, reviewItemAmount, baseLessonPrice, proRataPrice, defaultReviewMode, payerName, lessonStudentName } from '../lib/rowPricing.js'
 import styles from './EditableTable.module.css'
 
 const DURATION_COLS = ['60', '45', '30']
-const TYPE_LABEL = { regular: 'Regular', non_regular: 'Non-regular' }
 const TYPE_CHIP = { regular: styles.chipGreen, non_regular: styles.chipAmber }
+const STALE_HINT = 'Press Calculate again first'
+const CONFLICT_LABEL = { phone: 'phone', full_name: 'full name', price: 'prices' }
+const CONFLICT_HINT = 'These saved spellings disagree, so this is probably two students. Give their calendar events distinct names (e.g. add a surname), or remove the wrong spelling on Custom Prices, then press Calculate again.'
 
-export function EditableTable({ rows, config, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, month, defaultMessage, amountOverrides, onAmountOverrideChange, paymentLinks, onPaymentLinkChange, getAccessToken, prepareStatus }) {
+/**
+ * The invoice table, grouped by student type, with one editable StudentRow each.
+ * @param {object} props Rows plus pricing, override and payment-link state and callbacks.
+ * @returns {import('react').ReactNode} The grouped table.
+ */
+export function EditableTable({ rows, config, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, month, defaultMessage, defaultInvoiceDescription, previewImage, amountOverrides, onAmountOverrideChange, lessonOverrides, onLessonOverrideChange, tierOverrides, onTierOverrideChange, paymentLinks, onPaymentLinkChange, getAccessToken, prepareStatus, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange, onRemoveRow }) {
   const grouped = groupByType(rows)
   const [expandedRow, setExpandedRow] = useState(null)
 
@@ -40,19 +48,31 @@ export function EditableTable({ rows, config, customPrices, onCustomPriceChange,
                   config={config}
                   customPrices={customPrices}
                   onCustomPriceChange={onCustomPriceChange}
-                  phone={customerDetails?.[row.student]?.phone}
-                  fullName={customerDetails?.[row.student]?.full_name}
+                  details={detailsFor(customerDetails, row)}
                   onCustomerDetailChange={onCustomerDetailChange}
                   month={month}
                   defaultMessage={defaultMessage}
+                  defaultInvoiceDescription={defaultInvoiceDescription}
+                  previewImage={previewImage}
                   expandedRow={expandedRow}
                   setExpandedRow={setExpandedRow}
-                  amountOverride={amountOverrides?.[invoiceKey(month, row.student)] ?? null}
+                  amountOverride={invoiceRecord(amountOverrides, month, row)}
+                  amountOverrideNames={invoiceRecordNames(amountOverrides, month, row)}
                   onAmountOverrideChange={onAmountOverrideChange}
-                  linkEntry={getStoredLink(paymentLinks, month, row.student)}
+                  studentType={effectiveStudentType(row, tierOverrides, month)}
+                  tierOverrideNames={invoiceRecordNames(tierOverrides, month, row)}
+                  onTierOverrideChange={onTierOverrideChange}
+                  lessonOverrideNames={invoiceRecordNames(lessonOverrides, month, row)}
+                  onLessonOverrideChange={onLessonOverrideChange}
+                  linkEntry={invoiceRecord(paymentLinks, month, row)}
                   onPaymentLinkChange={onPaymentLinkChange}
                   getAccessToken={getAccessToken}
                   batchState={prepareStatus?.[row.student]}
+                  onRowStatusChange={onRowStatusChange}
+                  sendBlocked={sendBlocked}
+                  reviewResolutions={reviewResolutions}
+                  onReviewResolutionChange={onReviewResolutionChange}
+                  onRemove={onRemoveRow}
                 />
               )),
             ]
@@ -73,12 +93,22 @@ function GroupHeader({ type }) {
   )
 }
 
-function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, fullName, onCustomerDetailChange, month, defaultMessage, expandedRow, setExpandedRow, amountOverride, onAmountOverrideChange, linkEntry, onPaymentLinkChange, getAccessToken, batchState }) {
+/**
+ * Render one student's invoice row, including price edits, contact details,
+ * payment-link preparation, review items, and WhatsApp actions.
+ * @param {object} props Student data, pricing, payment state, and callbacks.
+ * @returns {import('react').ReactNode} The invoice row and optional details rows.
+ */
+function StudentRow({ row, config, customPrices, onCustomPriceChange, details, onCustomerDetailChange, month, defaultMessage, defaultInvoiceDescription, previewImage, expandedRow, setExpandedRow, amountOverride, amountOverrideNames, onAmountOverrideChange, lessonOverrideNames, onLessonOverrideChange, studentType, tierOverrideNames, onTierOverrideChange, linkEntry, onPaymentLinkChange, getAccessToken, batchState, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange, onRemove }) {
+  const { phone, full_name: fullName } = details
   const custom = customPrices?.[row.student]
-  const prices = resolveRowPrices(row.student, row.student_type === 'regular', config, custom)
+  // A full-price student can be given the discounted price for this month.
+  const discountGranted = studentType !== row.student_type
+  const prices = resolveRowPrices(row.student, studentType === 'regular', config, custom)
 
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(custom ? { ...custom } : null)
+  const [previousCustom, setPreviousCustom] = useState(custom)
   const [phoneInput, setPhoneInput] = useState('')
   const [phoneError, setPhoneError] = useState(false)
   const [nameInput, setNameInput] = useState('')
@@ -86,31 +116,53 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
   const [editingAmount, setEditingAmount] = useState(false)
   const [amountDraft, setAmountDraft] = useState('')
   const [amountSaveError, setAmountSaveError] = useState(null)
-  const [localBusy, setLocalBusy] = useState(false)
-  const [localError, setLocalError] = useState(null)
+  const [tierSaving, setTierSaving] = useState(false)
+  const [tierSaveError, setTierSaveError] = useState(null)
+  const [editingCounts, setEditingCounts] = useState(false)
+  const [countDraft, setCountDraft] = useState({})
+  const [countSaveError, setCountSaveError] = useState(null)
+  const [removeError, setRemoveError] = useState(null)
 
-  useEffect(() => {
+  if (previousCustom !== custom) {
+    setPreviousCustom(custom)
     setDraft(custom ? { ...custom } : null)
     setEditing(false)
-  }, [custom])
+  }
 
-  const computedAmount = computeLessonAmount(row, prices)
+  const { amount: computedAmount, extra: reviewExtra, unresolved: reviewUnresolved } = computeRowAmount(row, prices, reviewResolutions, month)
   const roundedAmount = amountOverride ?? computedAmount
-  const totalLessons = row.lessons_60 + row.lessons_45 + row.lessons_30
+  const lessonCount = billedLessonCount(row, reviewResolutions, month)
+  // An amount override is the teacher's final number, so it settles review.
+  const needsReview = amountOverride == null && reviewUnresolved > 0
+  const hasReviewItems = row.review_items?.length > 0
 
-  const effectiveName = fullName || row.student
+  // The payer (a child's parent) is who the payment page, invoice and WhatsApp
+  // greeting address; the product line names the student.
+  const effectiveName = payerName(details, row)
+  const lessonStudent = lessonStudentName(row)
   const nameOk = hasFullName(effectiveName)
   const needsDetails = !phone || !nameOk
-  const linkUsable = !!linkEntry && !amountChanged(linkEntry.amount, roundedAmount)
-  const busy = localBusy || batchState === 'loading'
-  const errorMessage = localError || (batchState === 'error' ? 'Failed to create the link. Try again.' : null)
+  const invoiceDescription = invoiceTemplateFor(details, defaultInvoiceDescription)
+  const inputs = linkInputs({ payerName: effectiveName, phone, lessonStudent, paymentProfile: details.payment_profile, invoiceDescription })
+  const linkUsable = isEntryUsable(linkEntry, roundedAmount, inputs)
+  // Mint progress lives in App (prepareStatus), so it survives page switches.
+  const busy = batchState === 'loading'
+  const errorMessage = batchState?.error || null
+  // Saved spellings that contradict each other are probably two students.
+  const nameConflict = row.name_conflicts?.length > 0
+  // A stale table (sendBlocked) still names the students it was calculated
+  // with, so an edit here would save under a spelling that may have been
+  // removed or remapped since. Edits wait for Calculate, like sending.
+  const editLocked = !!sendBlocked
 
   const handleStartAmountEdit = () => {
+    if (editLocked) return
     setAmountDraft(String(roundedAmount))
     setEditingAmount(true)
   }
 
   const handleSaveAmount = async () => {
+    if (editLocked) return
     const v = parseFloat(amountDraft)
     if (isNaN(v)) {
       setEditingAmount(false)
@@ -127,8 +179,13 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
   }
 
   const handleResetAmount = async () => {
+    if (editLocked) return
     try {
-      await onAmountOverrideChange?.(month, row.student, null)
+      // Clear the adjustment under every spelling it was saved under, so an
+      // older one can't reappear after the reset.
+      for (const name of new Set([row.student, ...(amountOverrideNames ?? [])])) {
+        await onAmountOverrideChange?.(month, name, null)
+      }
       setEditingAmount(false)
       setAmountSaveError(null)
     } catch (err) {
@@ -136,7 +193,111 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
     }
   }
 
+  const handleRemove = async () => {
+    if (editLocked || busy) return
+    setRemoveError(null)
+    try {
+      await onRemove?.(row)
+    } catch (err) {
+      setRemoveError(err.message ?? 'Failed to save. Try again.')
+    }
+  }
+
+  const handleToggleTier = async () => {
+    if (editLocked || tierSaving) return
+    setTierSaving(true)
+    setTierSaveError(null)
+    try {
+      if (discountGranted) {
+        // Clear it under every spelling, so an older one can't reappear. If
+        // this stops part way, the spellings still saved keep the row showing
+        // "granted", so clicking again clears the rest.
+        for (const name of new Set([row.student, ...(tierOverrideNames ?? [])])) {
+          await onTierOverrideChange?.(month, name, null)
+        }
+      } else {
+        await onTierOverrideChange?.(month, row.student, 'regular')
+      }
+    } catch (err) {
+      setTierSaveError(err.message ?? 'Failed to save. Try again.')
+    } finally {
+      setTierSaving(false)
+    }
+  }
+
+  // The calendar's counts, before any manual change (applyLessonOverride).
+  const calendarCounts = row.calendar_lessons ?? { '60': row.lessons_60, '45': row.lessons_45, '30': row.lessons_30 }
+
+  // The count input that takes focus: the first duration with lessons.
+  const firstCountCol = DURATION_COLS.find(d => row[`lessons_${d}`] > 0) ?? DURATION_COLS[0]
+
+  /** Opens the lesson-count editor, seeded with the row's current counts; a no-op while another edit is open or the row is stale. */
+  const handleStartCountEdit = () => {
+    if (editLocked || editing || editingAmount) return
+    setCountDraft(Object.fromEntries(DURATION_COLS.map(d => [d, String(row[`lessons_${d}`])])))
+    setCountSaveError(null)
+    setEditingCounts(true)
+  }
+
+  /**
+   * Clears the counts under every spelling they were saved under, so an
+   * older one can't reappear after a reset.
+   * @returns {Promise<void>}
+   */
+  const clearCounts = async () => {
+    for (const name of new Set([row.student, ...(lessonOverrideNames ?? [])])) {
+      await onLessonOverrideChange?.(month, name, null)
+    }
+  }
+
+  /**
+   * Validates the draft (whole numbers, 0 or more) and saves it. Counts equal to
+   * the calendar's are treated as a reset; other spellings' overrides are cleared.
+   * Failures are shown through `countSaveError`.
+   * @returns {Promise<void>}
+   */
+  const handleSaveCounts = async () => {
+    if (editLocked) return
+    const counts = {}
+    for (const d of DURATION_COLS) {
+      const raw = (countDraft[d] ?? '').trim()
+      const v = raw === '' ? 0 : Number(raw)
+      if (!Number.isInteger(v) || v < 0) {
+        setCountSaveError('Enter whole numbers (0 or more)')
+        return
+      }
+      counts[d] = v
+    }
+    try {
+      // Back to the calendar's counts is a reset, not an override.
+      if (DURATION_COLS.every(d => counts[d] === calendarCounts[d])) await clearCounts()
+      else {
+        await onLessonOverrideChange?.(month, row.student, counts)
+        for (const name of (lessonOverrideNames ?? []).filter(n => n !== row.student)) {
+          await onLessonOverrideChange?.(month, name, null)
+        }
+      }
+      setEditingCounts(false)
+      setCountSaveError(null)
+    } catch (err) {
+      setCountSaveError(err.message ?? 'Failed to save. Try again.')
+    }
+  }
+
+  /** Drops the manual lesson counts and closes the editor, restoring the calendar's counts. */
+  const handleResetCounts = async () => {
+    if (editLocked) return
+    try {
+      await clearCounts()
+      setEditingCounts(false)
+      setCountSaveError(null)
+    } catch (err) {
+      setCountSaveError(err.message ?? 'Failed to save. Try again.')
+    }
+  }
+
   const handleSave = () => {
+    if (editLocked) return
     const parsed = {}
     for (const d of DURATION_COLS) {
       const v = parseFloat(draft?.[d])
@@ -144,15 +305,23 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
     }
     let update
     if (custom && ('regular' in custom || 'non_regular' in custom)) {
-      update = { ...custom, [row.student_type]: parsed }
+      update = { ...custom, [studentType]: parsed }
     } else {
-      update = { regular: parsed, non_regular: parsed }
+      // A granted row edits only the discounted tier; the full price stays as
+      // it is, so it isn't lowered once the grant is cleared or next month.
+      const fullPrices = discountGranted ? resolveRowPrices(row.student, false, config, custom) : parsed
+      update = { regular: parsed, non_regular: fullPrices }
     }
-    onCustomPriceChange?.(row.student, update)
+    // A rate saved under other spellings of this student moves with it, so the
+    // spellings don't end up with two different prices (a name conflict).
+    const priced = row.name_conflicts?.length ? [] : (row.aliases ?? []).filter(a => customPrices?.[a])
+    onCustomPriceChange?.([row.student, ...priced], update)
     setEditing(false)
   }
 
   const isExpanded = expandedRow === row.student
+  const reviewOpen = expandedRow === `review:${row.student}`
+  const toggleReview = () => setExpandedRow(reviewOpen ? null : `review:${row.student}`)
 
   const handleToggleExpand = () => {
     if (isExpanded) {
@@ -165,12 +334,13 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
       setExpandedRow(row.student)
       setPhoneInput('')
       setPhoneError(false)
-      setNameInput(fullName || (hasFullName(row.student) ? '' : row.student))
+      setNameInput(fullName ?? '')
       setNameError(false)
     }
   }
 
   const handleSaveDetails = async () => {
+    if (editLocked) return
     if (!phone) {
       if (!validateIsraeliPhone(phoneInput)) {
         setPhoneError(true)
@@ -195,31 +365,34 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
 
   const mintLink = async () => {
     if (!isValidAmount(roundedAmount)) {
-      setLocalError('Invalid amount.')
+      onRowStatusChange?.(row.student, { error: 'Invalid amount.' })
       return
     }
-    setLocalBusy(true)
-    setLocalError(null)
+    onRowStatusChange?.(row.student, 'loading')
     try {
       const link = await requestPaymentLink(getAccessToken, {
         studentName: effectiveName,
+        lessonStudent,
         phone,
         amount: roundedAmount,
         month,
-        lessons: totalLessons,
+        numberOfLessons: lessonCount,
+        paymentProfile: details.payment_profile,
+        invoiceDescription,
+        previewImage,
       })
-      await onPaymentLinkChange?.(month, row.student, link, roundedAmount)
+      await onPaymentLinkChange?.(month, row.student, link, roundedAmount, inputs)
+      onRowStatusChange?.(row.student, null)
     } catch (err) {
-      setLocalError(err.message ?? 'Failed to create the link. Try again.')
-    } finally {
-      setLocalBusy(false)
+      onRowStatusChange?.(row.student, { error: err.message ?? 'Failed to create the link. Try again.' })
     }
   }
 
   const handleSendClick = async () => {
-    if (busy) return
+    if (busy || needsReview || nameConflict || sendBlocked) return
     if (linkUsable) {
-      const msg = buildPaymentMessage(effectiveName, roundedAmount, month, defaultMessage || undefined, totalLessons, linkEntry.link)
+      const template = details.message || defaultMessage || undefined
+      const msg = buildPaymentMessage(effectiveName, roundedAmount, month, template, lessonCount, linkEntry.link)
       window.open(buildWhatsAppUrl(phone, msg), '_blank', 'noopener')
       return
     }
@@ -228,7 +401,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
 
   const handleRegenerate = async (e) => {
     e.stopPropagation()
-    if (busy) return
+    if (busy || needsReview || nameConflict || sendBlocked) return
     await mintLink()
   }
 
@@ -237,20 +410,95 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
       <tr className={styles.row}>
         <td>
           <span className={styles.studentCell}>
+            {onRemove && (
+              <button
+                className={styles.removeBtn}
+                onClick={handleRemove}
+                disabled={editLocked || busy}
+                aria-label={`Remove ${row.student} from ${month}`}
+                title={editLocked ? STALE_HINT : `Remove from ${month} only — nothing saved for this student is deleted`}
+              >
+                ✕
+              </button>
+            )}
             {row.student}
             {custom && <span className={styles.customBadge}>custom</span>}
+            {row.calendar_lessons && (
+              <span
+                className={styles.customBadge}
+                title={`Lesson count changed manually. Calendar: ${DURATION_COLS.map(d => `${calendarCounts[d]}×${d}`).join(', ')} min`}
+              >
+                lessons edited
+              </span>
+            )}
           </span>
+          {removeError && <div className={styles.phoneErrorMsg} role="alert">{removeError}</div>}
+          {nameConflict && (
+            <span className={styles.conflictChip} title={`${CONFLICT_HINT} Saved as: ${[row.student, ...(row.aliases ?? [])].join(' / ')}`}>
+              ⚠️ two students? different {row.name_conflicts.map(f => CONFLICT_LABEL[f] ?? f).join(' / ')}
+            </span>
+          )}
+          {hasReviewItems && (
+            needsReview ? (
+              <button className={styles.reviewChip} onClick={toggleReview} title="Lessons with a non-standard duration — choose how to charge them">
+                ⚠️ {reviewUnresolved} not counted
+              </button>
+            ) : (
+              <button className={styles.reviewChipDone} onClick={toggleReview} title="Review how non-standard lessons are charged">
+                +₪{reviewExtra} extra
+              </button>
+            )
+          )}
         </td>
         <td>
-          <span className={`${styles.chip} ${TYPE_CHIP[row.student_type]}`}>
-            {TYPE_LABEL[row.student_type]}
-          </span>
+          {row.student_type === 'non_regular' ? (
+            <button
+              className={`${styles.chip} ${styles.chipToggle} ${TYPE_CHIP[studentType]}`}
+              onClick={handleToggleTier}
+              disabled={editLocked || tierSaving}
+              aria-pressed={discountGranted}
+              title={editLocked ? STALE_HINT : discountGranted
+                ? 'Discount granted for this month — click to charge the full price'
+                : 'Click to give the discounted price this month'}
+            >
+              {TYPE_LABEL[studentType]}
+              {discountGranted && <span className={styles.grantedBadge}>granted</span>}
+            </button>
+          ) : (
+            <span className={`${styles.chip} ${TYPE_CHIP[studentType]}`}>
+              {TYPE_LABEL[studentType]}
+            </span>
+          )}
+          {tierSaveError && <div className={styles.phoneErrorMsg} role="alert">{tierSaveError}</div>}
         </td>
         {DURATION_COLS.map(d => (
-          <td key={d} className={styles.center}>
-            {row[`lessons_${d}`] > 0 && (
+          <td
+            key={d}
+            className={styles.center}
+            title={row[`lessons_${d}`] > 0 || editLocked ? undefined : `Double-click to add ${d}-min lessons`}
+            onDoubleClick={row[`lessons_${d}`] > 0 || editingCounts ? undefined : handleStartCountEdit}
+          >
+            {editingCounts ? (
               <span>
-                {row[`lessons_${d}`]} × {editing
+                <input
+                  className={styles.priceInput}
+                  aria-label={`${d}-min lessons`}
+                  inputMode="numeric"
+                  value={countDraft[d] ?? ''}
+                  onChange={e => { setCountDraft(prev => ({ ...prev, [d]: e.target.value })); setCountSaveError(null) }}
+                  onKeyDown={e => e.key === 'Enter' && handleSaveCounts()}
+                  autoFocus={d === firstCountCol}
+                /> × <span className={styles.priceMuted}>₪{prices[d]}</span>
+              </span>
+            ) : row[`lessons_${d}`] > 0 && (
+              <span>
+                <span
+                  className={styles.priceEditable}
+                  title={editLocked ? STALE_HINT : 'Double-click to change the number of lessons this month'}
+                  onDoubleClick={handleStartCountEdit}
+                >
+                  {row[`lessons_${d}`]}
+                </span> × {editing
                   ? <input
                       className={styles.priceInput}
                       value={draft?.[d] ?? prices[d]}
@@ -259,9 +507,9 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
                     />
                   : <span
                       className={styles.priceEditable}
-                      title="Double-click to change this student's ₪/lesson rate"
+                      title={editLocked ? STALE_HINT : "Double-click to change this student's ₪/lesson rate"}
                       onDoubleClick={() => {
-                        if (editingAmount) return
+                        if (editingAmount || editingCounts || editLocked) return
                         setDraft({ '60': prices['60'], '45': prices['45'], '30': prices['30'] })
                         setEditing(true)
                       }}
@@ -289,6 +537,16 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
               )}
               {amountSaveError && <span className={styles.phoneErrorMsg}>{amountSaveError}</span>}
             </div>
+          ) : editingCounts ? (
+            <div className={styles.amountEditRow}>
+              <span className={styles.amountValue}>₪{roundedAmount}</span>
+              <button className={styles.miniSave} onClick={handleSaveCounts} title="Save lesson count">✓</button>
+              <button className={styles.miniCancel} onClick={() => { setEditingCounts(false); setCountSaveError(null) }} title="Cancel">✕</button>
+              {row.calendar_lessons && (
+                <button className={styles.miniReset} onClick={handleResetCounts} title="Reset to the calendar's lesson count">↺</button>
+              )}
+              {countSaveError && <span className={styles.phoneErrorMsg}>{countSaveError}</span>}
+            </div>
           ) : editing ? (
             <div className={styles.amountEditRow}>
               <span className={styles.amountValue}>₪{roundedAmount}</span>
@@ -298,9 +556,9 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
           ) : (
             <span
               className={styles.amountEditable}
-              title="Double-click to set a one-off amount due for this invoice"
+              title={editLocked ? STALE_HINT : 'Double-click to set a one-off amount due for this invoice'}
               onDoubleClick={() => {
-                if (editing) return
+                if (editing || editingCounts) return
                 handleStartAmountEdit()
               }}
             >
@@ -312,21 +570,29 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
           )}
         </td>
         <td className={styles.waCell}>
-          {needsDetails ? (
-            <button className={`${styles.waChipMissing} ${isExpanded ? styles.waChipActive : ''}`} onClick={handleToggleExpand}>
-              {!phone ? '📱 הוסף טלפון' : '⚠️ השלם שם מלא'}
+          {nameConflict ? (
+            <span className={`${styles.waChipMissing} ${styles.waChipStatic}`} title={`${CONFLICT_HINT} Saved as: ${[row.student, ...(row.aliases ?? [])].join(' / ')}`}>
+              ⚠️ שני תלמידים?
+            </span>
+          ) : needsReview ? (
+            <button className={`${styles.waChipMissing} ${reviewOpen ? styles.waChipActive : ''}`} onClick={toggleReview}>
+              ⚠️ דרושה בדיקה
+            </button>
+          ) : needsDetails ? (
+            <button className={`${styles.waChipMissing} ${isExpanded ? styles.waChipActive : ''}`} onClick={handleToggleExpand} disabled={editLocked && !isExpanded} title={editLocked ? STALE_HINT : undefined}>
+              {!phone ? '📱 הוסף טלפון' : '⚠️ הוסף שם משלם'}
             </button>
           ) : errorMessage ? (
-            <button className={styles.waChipError} onClick={handleSendClick} title={errorMessage} disabled={busy}>
+            <button className={styles.waChipError} onClick={handleSendClick} title={sendBlocked ? STALE_HINT : errorMessage} disabled={busy || sendBlocked}>
               {busy ? '…' : '⚠️ נסה שוב'}
             </button>
           ) : linkUsable ? (
             <span className={styles.waReadyGroup}>
-              <button className={styles.waChipReady} onClick={handleSendClick} disabled={busy}>📱 שלח</button>
-              <button className={styles.regenBtn} onClick={handleRegenerate} disabled={busy} title="Create a new link">↻</button>
+              <button className={styles.waChipReady} onClick={handleSendClick} disabled={busy || sendBlocked} title={sendBlocked ? STALE_HINT : undefined}>📱 שלח</button>
+              <button className={styles.regenBtn} onClick={handleRegenerate} disabled={busy || sendBlocked} title={sendBlocked ? STALE_HINT : 'Create a new link'}>↻</button>
             </span>
           ) : (
-            <button className={styles.waChipPrepare} onClick={handleSendClick} disabled={busy} title="Creates the payment link — click again to send once it's ready">
+            <button className={styles.waChipPrepare} onClick={handleSendClick} disabled={busy || sendBlocked} title={sendBlocked ? STALE_HINT : "Creates the payment link — click again to send once it's ready"}>
               {busy ? '…' : '🔗 הכן קישור'}
             </button>
           )}
@@ -336,7 +602,7 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
         <tr className={styles.expandRow}>
           <td colSpan={7} className={styles.expandCell}>
             <div className={styles.expandInner}>
-              <span className={styles.expandLabel}>📱 {row.student}:</span>
+              <span className={styles.expandLabel}>{phone ? `שם המשלם עבור ${row.student}:` : `📱 ${row.student}:`}</span>
               {!phone && (
                 <div className={styles.expandInputWrap}>
                   <input
@@ -357,17 +623,48 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
                   <input
                     type="text"
                     className={`${styles.phoneInput} ${nameError ? styles.phoneInputError : ''}`}
-                    placeholder="שם פרטי ושם משפחה"
+                    placeholder="שם פרטי ומשפחה"
+                    title="Who pays: the student, or a parent for a young student"
+                    aria-label={`שם המשלם עבור ${row.student}`}
                     value={nameInput}
                     onChange={e => { setNameInput(e.target.value); setNameError(false) }}
                     onKeyDown={e => e.key === 'Enter' && handleSaveDetails()}
                     dir="rtl"
                   />
-                  {nameError && <div className={styles.phoneErrorMsg}>נדרש שם פרטי ושם משפחה</div>}
+                  {nameError && <div className={styles.phoneErrorMsg}>נדרש שם פרטי ושם משפחה של המשלם</div>}
                 </div>
               )}
-              <button className={styles.btnSavePhone} onClick={handleSaveDetails}>שמור</button>
+              <button className={styles.btnSavePhone} onClick={handleSaveDetails} disabled={editLocked} title={editLocked ? STALE_HINT : undefined}>שמור</button>
               <button className={styles.btnCancelPhone} onClick={handleToggleExpand}>ביטול</button>
+            </div>
+          </td>
+        </tr>
+      )}
+      {reviewOpen && (
+        <tr className={styles.expandRow}>
+          <td colSpan={7} className={styles.expandCell}>
+            <div className={styles.reviewList}>
+              {row.review_items.map(item => (
+                <ReviewItem
+                  key={item.id}
+                  item={item}
+                  prices={prices}
+                  resolution={reviewResolution(item, reviewResolutions, month, row)}
+                  stored={storedReviewResolution(item, reviewResolutions, month, row)}
+                  locked={editLocked}
+                  onSave={async resolution => {
+                    if (editLocked) return
+                    // Answers under older spellings are cleared, so the one
+                    // just saved (or the cleared state) is what shows.
+                    const older = storedReviewNames(item, reviewResolutions, month, row).filter(n => n !== row.student)
+                    await onReviewResolutionChange?.(reviewKey(month, row.student, item.id), resolution)
+                    for (const name of older) await onReviewResolutionChange?.(reviewKey(month, name, item.id), null)
+                  }}
+                />
+              ))}
+              {amountOverride != null && (
+                <div className={styles.reviewHint}>The amount is manually adjusted, so these choices don't change it.</div>
+              )}
             </div>
           </td>
         </tr>
@@ -376,9 +673,84 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, phone, ful
   )
 }
 
+const REVIEW_MODE_LABEL = { prorata: 'Pro-rata', base: 'Standard lesson only', fixed: 'Fixed amount', free: "Don't charge" }
+
+function ReviewItem({ item, prices, resolution, stored, locked, onSave }) {
+  const [mode, setMode] = useState(() => resolution?.mode ?? defaultReviewMode(item, prices))
+  const [fixedAmount, setFixedAmount] = useState(() => (resolution?.mode === 'fixed' ? String(resolution.amount) : ''))
+  const [error, setError] = useState(null)
+
+  const base = baseLessonPrice(item.minutes ?? 0, prices)
+  const optionAmount = {
+    prorata: proRataPrice(item.minutes, prices),
+    base,
+    free: 0,
+  }
+  const date = new Date(item.start).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })
+
+  const persist = async (next) => {
+    try {
+      await onSave(next)
+      setError(null)
+    } catch (err) {
+      setError(err.message ?? 'Failed to save. Try again.')
+    }
+  }
+
+  const handleSave = async () => {
+    let next = { mode }
+    if (mode === 'fixed') {
+      const v = parseFloat(fixedAmount)
+      if (isNaN(v) || v < 0) {
+        setError('Enter an amount')
+        return
+      }
+      next = { mode, amount: Math.round(v * 100) / 100 }
+    }
+    await persist(next)
+  }
+
+  return (
+    <div className={styles.reviewItem}>
+      <div className={styles.reviewTitle}>
+        <span dir="rtl">{item.summary}</span>
+        <span className={styles.reviewMeta}>{date} · {item.minutes ?? '?'} min</span>
+        {resolution && (
+          <span className={styles.reviewMeta}>
+            → ₪{reviewItemAmount(item, resolution, prices)} ({REVIEW_MODE_LABEL[resolution.mode]}{!stored ? ', make-up phrase' : ''})
+          </span>
+        )}
+      </div>
+      <div className={styles.reviewOptions}>
+        {['prorata', 'base', 'fixed', 'free'].filter(m => m !== 'base' || base > 0).map(m => (
+          <label key={m} className={styles.reviewOption}>
+            <input type="radio" name={`review-${item.id}`} checked={mode === m} onChange={() => { setMode(m); setError(null) }} />
+            {REVIEW_MODE_LABEL[m]}
+            {m === 'fixed'
+              ? (
+                <input
+                  className={styles.amountInput}
+                  value={fixedAmount}
+                  placeholder="₪"
+                  onFocus={() => setMode('fixed')}
+                  onChange={e => { setFixedAmount(e.target.value); setError(null) }}
+                />
+              )
+              : <span className={styles.reviewMeta}>₪{optionAmount[m]}</span>}
+          </label>
+        ))}
+        <button className={styles.btnSavePhone} onClick={handleSave} disabled={locked} title={locked ? STALE_HINT : undefined}>שמור</button>
+        {stored && <button className={styles.btnCancelPhone} onClick={() => persist(null)} disabled={locked} title={locked ? STALE_HINT : undefined}>נקה</button>}
+        {error && <span className={styles.phoneErrorMsg}>{error}</span>}
+      </div>
+    </div>
+  )
+}
+
 function groupByType(rows = []) {
   const g = { regular: [], non_regular: [] }
   for (const r of rows) g[r.student_type]?.push(r)
+  for (const type of Object.keys(g)) g[type].sort((a, b) => a.student.localeCompare(b.student, 'he'))
   return g
 }
 

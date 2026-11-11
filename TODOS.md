@@ -58,34 +58,6 @@ path.
 **Depends on / blocked by:** Nothing — can be done anytime after the
 token-refresh fix (branch `Add-csv`) lands.
 
-## Preserve calculation state across a forced re-authentication
-
-**What:** When a background silent token refresh fails and the app falls
-back to `AuthScreen`, the user currently loses whatever calculation was on
-screen (`rows`/`summary` in `useCalendarData`, owned inside `CalculatorPage`,
-which unmounts when `App.jsx`'s `!accessToken` gate flips). Lift that state
-above the auth gate (e.g. into `App.jsx` or a context), or replace the full
-unmount with a lighter "session expired, click to continue" overlay that
-doesn't destroy the underlying page.
-
-**Why:** A user reviewing a completed calculation who then clicks Calculate
-again (e.g. to switch months) and hits an unlucky re-auth loses the table
-they were looking at and has to redo it — not data loss (custom price edits
-persist immediately elsewhere), but a real, avoidable UX rough edge.
-
-**Pros:** Removes the only user-visible rough edge left after the
-token-refresh fix (`plan-eng-review`, 2026-08-11, Outside Voice Issue 11).
-
-**Cons:** Touches state ownership/component architecture beyond the
-auth-refresh fix itself — real scope, not a one-line change.
-
-**Context:** Surfaced during the outside-voice pass of the token-refresh
-plan review. Deliberately deferred out of that PR to keep it scoped to the
-auth bug fix.
-
-**Depends on / blocked by:** The token-refresh fix (branch `Add-csv`)
-landing first.
-
 ## Track payment status from Grow's server-to-server callback
 
 **What:** Show a paid/unpaid indicator per student in the calculator table, fed
@@ -122,6 +94,24 @@ from `DESIGN.md`'s "no Node.js backend server" constraint than the proxy
 function itself.
 
 **Depends on / blocked by:** The Grow payment-link integration landing first.
+
+## Carry unpaid months into the next payment request
+
+**What:** If a student did not pay last month, the new payment request should cover the
+whole outstanding amount (last month's unpaid balance plus the current month), instead of
+only the current month's lessons.
+
+**Why:** Each month is calculated and messaged on its own, so an unpaid month is easy to
+lose track of and the teacher has to chase and add it up by hand.
+
+**Open questions:** Whether the message shows the months as separate line items or one
+combined total, and how far back to carry.
+
+**Context:** Requested by the user on 2026-10-10. Not started on 2026-10-27 because the
+app has no record of who paid.
+
+**Depends on / blocked by:** "Track payment status from Grow's server-to-server callback"
+above.
 
 ## Make payment-link creation idempotent
 
@@ -208,228 +198,30 @@ deploy.
 
 **Depends on / blocked by:** Nothing technical. This is a sequencing decision.
 
-
-# Add an option to select whc make automation to do
-there are certian individuals that owant to pay in methods that other people are not allowed to on only for them the paymnet options are open for the others they are close.
-
-# add an option in Make.com to send a cetain invoice with specific details i.e adivisory etc..
-
-
-## Searching for a student in Custom Prices doesn't take you to them
-
-**What:** On the Custom Prices (overrides) page, typing a student's name to find them does
-not filter the list or scroll to their card, so you still have to hunt through every
-student by hand.
-
-**Why it happens:** The only text box on the page is the "Student name" *add* input in
-`src/components/CustomPricesPage.jsx`. Its datalist suggestions deliberately exclude
-students who already have an override (`.filter(s => !customPrices[s])`), and nothing
-filters, scrolls to, or highlights the existing cards below.
-
-**Possible directions:** Filter the student cards as you type, or scroll to and
-highlight the matching card, or add a separate search box apart from "Add student".
-
-**Context:** Reported by the user on 2026-10-10. Logged only, not fixed yet.
-
-**Depends on / blocked by:** Nothing.
-
-## Carry unpaid months into the next payment request
-
-**What:** If a student did not pay last month, the new payment request should cover the
-whole outstanding amount (last month's unpaid balance plus the current month), instead of
-only the current month's lessons.
-
-**Why:** Today each month is calculated and messaged on its own, so an unpaid month is
-easy to lose track of and the teacher has to chase and add it up by hand.
-
-**Open questions:** The app has no record of who paid. This needs paid-status tracking
-first (see "Track payment status from Grow's server-to-server callback"). Also decide
-whether the message should show the months as separate line items or one combined total,
-and how far back to carry.
-
-**Context:** Future feature requested by the user on 2026-10-10. Logged only.
-
-**Depends on / blocked by:** Paid-status tracking.
-
-## Sort students alphabetically within the regular / non-regular groups
-
-**What:** In the calculator table, sort the students alphabetically inside each group
-(Regular, Non-regular).
-
-**Where to look:** Rows are split into the two groups in `src/components/EditableTable.jsx`
-(the grouping near the bottom of the file, `g[r.student_type]?.push(r)`). Sorting each
-group there, with a Hebrew-aware comparison such as `localeCompare(b, 'he')`, would do it.
-
-**Context:** Requested by the user on 2026-10-10. Logged only, not implemented.
-
-**Depends on / blocked by:** Nothing.
-
-## Let the user add more lesson keywords (e.g. כתיבה והלחנה)
-
-**What:** Let the user configure which calendar event titles count as lessons. Today only
-events containing `פיתוח קול` are counted. The user wants to add others, such as
-`כתיבה והלחנה`, and similar lesson types.
-
-**Where to look:** The phrase is a hard-coded constant, `REQUIRED_LESSON_PHRASE`, in
-`src/lib/calendarPayments.js`. It is used in three places: `isTargetLesson` (decides
-whether an event counts), and `nameAroundLessonPhrase` (finds the student's name before or
-after the phrase). The Settings page already has editable lists for cancelled keywords and
-paid-cancellation phrases (`src/components/SettingsPage.jsx`, `src/lib/userSettings.js`),
-so a new `lesson_keywords` list could follow the same pattern, with `פיתוח קול` as the
-default.
-
-**Things to decide:** `nameAroundLessonPhrase` needs to find whichever keyword matched, so
-the name is still cut out correctly. Also decide whether all lesson types share the same
-price tables or can have their own.
-
-**Context:** Requested by the user on 2026-10-10. Logged only, not implemented.
-
-**Depends on / blocked by:** Nothing.
-
-## Flag lessons with non-standard durations or add-ons for review
-
-**What:** Events that don't fit the 60/45/30-minute tiers, such as
-`יובל חייט פיתוח קול - תוספת 15 דק השלמה` (15 extra minutes added to a 60-minute lesson),
-should be surfaced for the teacher to resolve instead of being dropped.
-
-**Why:** In `calculatePayments` (`src/lib/calendarPayments.js`) an event with no
-recognised duration is skipped without any message, so the total is silently too low and
-looks correct. Silent drops are the worst failure mode here.
-
-**Proposed UX:** Don't block calculation with a modal, and don't guess silently.
-1. Show the table and totals right away, with a "needs review" marker on the student's
-   row, e.g. "1 lesson not counted: תוספת 15 דק השלמה".
-2. Resolve inline with one click: charge pro-rata (15/60 of the lesson price), charge a
-   fixed amount the teacher types, or don't charge.
-3. Pre-select a default from the wording. "השלמה" usually means a make-up, so default to
-   "don't charge".
-4. Remember the answer: offer "always treat 'השלמה' as free" or "treat +15 min as
-   pro-rata" as a rule in Settings, like the paid-cancellation phrases, so the same event
-   type never asks again.
-5. Block "Prepare links" and WhatsApp sending while review items are unresolved, because
-   those messages carry money.
-
-**Open question:** Is `תוספת 15 דק` a separate 15-minute calendar event, or text on the
-60-minute event itself? The two need different handling (a standalone short event vs. an
-adjustment attached to a normal lesson).
-
-**Context:** Raised by the user on 2026-10-10 and discussed as a UX question. Logged only,
-not implemented. Related to "Let the user add more lesson keywords", since both rely on
-configurable title rules.
-
-**Depends on / blocked by:** Nothing.
-
-## Custom price not applied: student shown as "ענבר אמא" at 200 instead of 230
-
-**What:** The customer saved as `ענבר 11.5 (אמא עינת)` has a custom price of 230, but the
-calculator lists her as `ענבר אמא` and prices her at the default 200.
-
-**Likely cause (not yet confirmed):** Custom prices are looked up by the exact student
-name (`resolvePriceTable` in `src/lib/calendarPayments.js`, `student in customPrices`).
-The name the calendar parser produces (`ענבר אמא`) differs from the saved key
-(`ענבר 11.5 (אמא עינת)`), so the lookup misses and the default price is used. The
-parser keeps only two words and handles parentheses word by word
-(`normalizeStudentName`), so names containing a number or a multi-word parenthetical come
-out mangled. This is probably the same root problem as the אלה עוז entry (one student
-appearing under different names), so fix them together.
-
-**To do first:** Get the real calendar event title for her, and reproduce the output in a
-`tests/*.test.js` case before changing anything.
-
-**Possible directions:** Strip whole `(...)` groups when building the name, and/or let
-Settings map several calendar spellings to one saved student. Matching custom prices
-loosely would be risky, since it could apply one student's price to another.
-
-**Context:** Reported by the user on 2026-10-10. Logged only, not investigated or fixed.
-
-**Depends on / blocked by:** Nothing.
-
-## Send number_of_lessons to the Make webhook
-
-**What:** Include a `number_of_lessons` field in the payload sent to the Make webhook, next
-to the existing `customer_name`, `amount`, `phone` and `description`.
-
-**Where to look:** The field has to be passed along the whole chain:
-1. The two call sites of `requestPaymentLink`, in `src/components/CalculatorPage.jsx` ("Prepare all links") and `src/components/EditableTable.jsx` (single row), add the row's lesson count.
-2. `src/lib/paymentLinkClient.js` adds it to the request body.
-3. `api/create-payment-link.js` reads it and `src/api/paymentLinkService.js` validates it and adds it to the Make payload (`customer_name`, `amount`, ... around line 119).
-
-**Things to decide:** The row only stores per-duration counts (`count_60`, `count_45`,
-`count_30`), so `number_of_lessons` would be their sum. Check how a doubled lesson
-(`doubleDuration`) is counted, since it adds 2 to a count. Also decide whether the Make
-scenario and the Grow description should use the field, which is a change on the Make side.
-
-**Context:** Requested by the user on 2026-10-10. Logged only, not implemented.
-
-**Depends on / blocked by:** Nothing in the app. The Make scenario must accept the new field.
-
-## Same student split into two names by calendar title parsing
-
-**What:** The student אלה עוז shows up under two different names when lessons are read from
-the calendar: `אלה עוז (אמה נועה)` and `אלה עוז (9.5)`. They should be counted, priced,
-and messaged as one student. The calendar import has the same problem. One event title
-reads `אלה עוז (9.5) - פיתוח קול ✨ אמא נועה`.
-
-**Why:** Her lessons get split across two rows. That means two lesson counts, possibly
-the wrong tier (each half may not count as "regular"), two WhatsApp messages and two
-payment links, and a custom price that matches only one of the keys.
-
-**Where to look:** Names come from `inferStudentName` → `nameAroundLessonPhrase` →
-`normalizeStudentName` in `src/lib/calendarPayments.js`. On paper that keeps the first
-two non-`(` words, so both spellings *should* collapse to `אלה עוז`. The split is
-therefore probably coming from somewhere else, e.g. the regex path (`student_name_regex`),
-the separator split on ` - `, the ✨ or the trailing parent note (`אמא נועה`), or from
-saved keys (custom prices / CSV import) that store the full parenthetical name. Collect
-her real event titles and saved custom-price keys first, then reproduce in a
-`tests/*.test.js` case before fixing.
-
-**Possible directions:** Strip whole parenthetical groups `(...)` from the name, or
-support a per-student alias map in Settings (e.g. several calendar spellings → one
-canonical student), or both. Related to the "Custom price not applied: student shown as
-'ענבר אמא'" entry, which is probably the same root problem, so fix them together.
-
-**Context:** Reported by the user on 2026-10-10. Logged only, not investigated or fixed
-yet.
-
-**Depends on / blocked by:** Nothing.
-
-## Remember the calculation when navigating to Settings / Custom Prices and back
-
-**What:** After calculating a month, going to Settings or Custom Prices and then back to the
-calculator should show the same calculation (rows, summary, selected month) instead of an
-empty page that needs recalculating.
-
-**Why it happens:** `App.jsx` renders only the active page (`page === 'calculator' && ...`),
-so `CalculatorPage` unmounts on navigation and its `rows`/`summary` state in
-`useCalendarData` is lost.
-
-**Possible directions:** Lift the calculation state into `App.jsx` (or a context), or keep
-`CalculatorPage` mounted and just hide it when another page is active. Whichever is chosen,
-the returned page should reflect any price or phone changes made on the other pages,
-so the cached rows may need re-pricing rather than being shown as they were.
-
-**Context:** Requested by the user on 2026-10-10. Logged only, not implemented. Closely
-related to "Preserve calculation state across a forced re-authentication", which needs the
-same state lifted above the auth gate, so do them together.
-
-**Depends on / blocked by:** Nothing.
-
-## Custom WhatsApp message per student in the Custom Prices table
-
-**What:** Let each student in the Custom Prices page have their own WhatsApp message
-template, used instead of the default message when set.
-
-**Where to look:** The default message is `default_message` in the user settings
-(`src/lib/userSettings.js`), and the message is built in `src/lib/whatsapp.js`. Per-student
-phone numbers already live in `customer_details`, so a per-student message could be stored
-there too (e.g. `customer_details[student].message`), with an empty value meaning "use the
-default". The input would go on each student's card in `src/components/CustomPricesPage.jsx`.
-
-**Things to decide:** Which placeholders the custom message supports (name, amount,
-payment link, month, number of lessons), and whether to show a preview. Fall back to the
-default message when the field is blank, so existing students are unaffected.
-
-**Context:** Requested by the user on 2026-10-10. Logged only, not implemented. Related to
-the Make "special payment options per student" note at the top of the free-form items.
-
-**Depends on / blocked by:** Nothing.
+## Bulk-send the prepared payment messages on WhatsApp
+
+**What:** Once "Prepare all links" has made a link for every student, add a
+way to send all the WhatsApp payment messages in one go. Each student gets a
+checkbox so the teacher picks who is included (for example, leaving out a student
+who already paid or is away this month).
+
+**Why:** Today each message is sent one at a time from its row: click the
+student's 📱 chip, WhatsApp opens, press send, return, repeat. With ~30 students a
+month, that's the slowest part of collecting payment.
+
+**Pros:** Turns ~30 manual round-trips into choose-and-confirm. The checkboxes also
+give a clear "who still needs a message" view.
+
+**Cons:** `wa.me` links (`src/lib/whatsapp.js`) open one chat per click, and browsers
+block opening many tabs at once. True one-click bulk sending needs the WhatsApp
+Business Cloud API (Meta business verification, approved message templates,
+per-message cost). The cheaper middle ground is a guided queue: send the checked
+students one after another, opening the next chat as each one is sent.
+
+**Context:** Requested by the user on 2026-10-30, after the payment-profile dropdown
+fix (PR #11). Builds on the per-row send in `src/components/EditableTable.jsx` and
+prepare-all in `src/components/CalculatorPage.jsx`.
+
+**Depends on / blocked by:** Choosing between the Business API and the guided
+queue. Fits well with "Track payment status from Grow's server-to-server callback"
+above, which could untick students who already paid.

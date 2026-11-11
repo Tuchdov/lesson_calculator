@@ -236,3 +236,40 @@
 }
 
 .addPhraseRow .input { flex: 1; width: auto; }
+
+.fullInput { width: 100%; box-sizing: border-box; }
+.inputError { border-color: var(--md-red); }
+.fieldError {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--md-red);
+}
+
+.previewImage {
+  display: block;
+  max-width: 320px;
+  max-height: 200px;
+  object-fit: cover;
+  border: 1px solid var(--md-border);
+  border-radius: var(--radius);
+}
+
+.uploadRow {
+  position: relative;
+  align-self: flex-start;
+}
+
+/* Visually hidden but still focusable, so the styled span acts as the button. */
+.fileInput {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.fileInput:disabled { cursor: default; }
+.uploadRow:focus-within .btnPrimary { outline: 2px solid var(--md-blue); outline-offset: 2px; }
+.uploadRow .btnPrimary[aria-disabled] { opacity: 0.6; }
+.resetBtn:disabled { opacity: 0.5; cursor: default; }
+.resetBtn:disabled:hover { background: none; }

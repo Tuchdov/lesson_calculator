@@ -10,6 +10,11 @@ const SESSION_KEYS = {
   EMAIL: 'gis_user_email',
 }
 
+/**
+ * Manage the Google session, including sign-in, sign-out, and token refresh.
+ * Concurrent token requests share a result; sign-out invalidates pending work.
+ * @returns {{accessToken: string|null, userEmail: string|null, signIn: Function, signOut: Function, error: string|null, getValidAccessToken: Function}} Session state and actions.
+ */
 export function useAuth() {
   const [accessToken, setAccessToken] = useState(
     () => sessionStorage.getItem(SESSION_KEYS.TOKEN)
@@ -19,6 +24,8 @@ export function useAuth() {
   )
   const [error, setError] = useState(null)
   const inFlightRef = useRef(null)
+  const cancelInFlightRef = useRef(null)
+  const authGeneration = useRef(0)
 
   // Creates a fresh GIS token client per call (cheap — no network/UI cost)
   // instead of retaining one instance with a shared callback. Each request
@@ -48,11 +55,13 @@ export function useAuth() {
         clearTimeout(timeoutId)
         fn(value)
       }
+      cancelInFlightRef.current = () => settle(reject, new Error('Google sign-in was cancelled.'))
 
-      const client = google.accounts.oauth2.initTokenClient({
+      const client = window.google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
         scope: 'https://www.googleapis.com/auth/calendar.readonly email profile',
         callback: (tokenResponse) => {
+          if (settled) return
           if (tokenResponse.error) {
             settle(reject, new Error(tokenResponse.error))
             return
@@ -77,28 +86,36 @@ export function useAuth() {
     })
 
     inFlightRef.current = promise
-    promise.finally(() => {
+    const clearInFlight = () => {
+      if (inFlightRef.current !== promise) return
       inFlightRef.current = null
-    })
+      cancelInFlightRef.current = null
+    }
+    // Handle both outcomes without creating an unobserved rejected promise
+    // (as an ignored .finally() would). Callers still receive the rejection.
+    promise.then(clearInFlight, clearInFlight)
     return promise
   }, [])
 
   const signIn = useCallback(async () => {
+    const generation = ++authGeneration.current
     setError(null)
     try {
       const token = await requestToken({ interactive: true })
+      if (authGeneration.current !== generation) return
       fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: { Authorization: `Bearer ${token}` },
       })
         .then(r => r.json())
         .then(info => {
+          if (authGeneration.current !== generation) return
           const email = info.email ?? ''
           sessionStorage.setItem(SESSION_KEYS.EMAIL, email)
           setUserEmail(email)
         })
         .catch(() => {})
     } catch (err) {
-      setError(err.message ?? String(err))
+      if (authGeneration.current === generation) setError(err.message ?? String(err))
     }
   }, [requestToken])
 
@@ -108,9 +125,12 @@ export function useAuth() {
     if (!forceRefresh && storedToken && !isTokenExpired(storedExpiresAt)) {
       return storedToken
     }
+    const generation = authGeneration.current
     try {
       return await requestToken({ interactive: false })
     } catch (err) {
+      if (authGeneration.current !== generation) throw err
+      authGeneration.current++
       sessionStorage.removeItem(SESSION_KEYS.TOKEN)
       sessionStorage.removeItem(SESSION_KEYS.EXPIRES_AT)
       sessionStorage.removeItem(SESSION_KEYS.EMAIL)
@@ -122,8 +142,17 @@ export function useAuth() {
   }, [requestToken])
 
   const signOut = useCallback(() => {
+    authGeneration.current++
+    cancelInFlightRef.current?.()
+    inFlightRef.current = null
+    cancelInFlightRef.current = null
     const token = sessionStorage.getItem(SESSION_KEYS.TOKEN)
-    if (token) google.accounts.oauth2.revoke(token, () => {})
+    // Revocation is best effort; local sign-out must work even if GIS failed.
+    try {
+      if (token) window.google?.accounts?.oauth2?.revoke?.(token, () => {})
+    } catch {
+      // Continue clearing the local session if the SDK throws.
+    }
     sessionStorage.removeItem(SESSION_KEYS.TOKEN)
     sessionStorage.removeItem(SESSION_KEYS.EXPIRES_AT)
     sessionStorage.removeItem(SESSION_KEYS.EMAIL)

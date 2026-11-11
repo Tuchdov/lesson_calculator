@@ -1,5 +1,11 @@
 import { createPaymentLink, ServiceError } from '../src/api/paymentLinkService.js'
 
+// Links point back at whichever deployment minted them.
+function requestOrigin(req) {
+  const host = req.headers['x-forwarded-host'] || req.headers.host
+  return host ? `https://${host}` : undefined
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' })
@@ -8,7 +14,7 @@ export default async function handler(req, res) {
 
   const authHeader = req.headers.authorization || ''
   const accessToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
-  const { studentName, phone, amount, month, lessons } = req.body ?? {}
+  const { studentName, phone, amount, month, numberOfLessons, paymentProfile, invoiceDescription, lessonStudent, previewImage } = req.body ?? {}
 
   try {
     const result = await createPaymentLink({
@@ -17,11 +23,17 @@ export default async function handler(req, res) {
       phone,
       amount,
       month,
-      lessons,
+      numberOfLessons,
+      paymentProfile,
+      invoiceDescription,
+      lessonStudent,
+      previewImage,
       allowedEmail: process.env.ALLOWED_EMAIL,
       clientId: process.env.VITE_GOOGLE_CLIENT_ID,
       webhookUrl: process.env.MAKE_WEBHOOK_URL,
       apiKey: process.env.MAKE_API_KEY,
+      linkSecret: process.env.PAY_LINK_SECRET,
+      baseUrl: requestOrigin(req),
     })
     res.status(200).json(result)
   } catch (err) {
