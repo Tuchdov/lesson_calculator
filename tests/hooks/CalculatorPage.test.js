@@ -136,3 +136,37 @@ describe('CalculatorPage failed mint', () => {
     expect(props.onPreparingChange.mock.calls).toEqual([[true], [false]])
   })
 })
+
+describe('CalculatorPage removed students', () => {
+  // Value: protects=a student removed from the month drops out of the table, total and Prepare all for that month only, and ✕ / the chip save and clear it; fails_when=removed rows still mint links or count in the total, or the buttons save the wrong month or student; why_new=remove-for-month is new; seam=none
+  it('leaves a removed student out and can bring them back', async () => {
+    const props = pageProps({
+      excludedStudents: { [`${month}:Omer Paz`]: true },
+      onExcludedStudentChange: vi.fn(),
+    })
+    render(createElement(CalculatorPage, props))
+    expect(screen.queryByText('Omer Paz')).toBeNull()
+    expect(screen.getByText('Removed from 2026-03:')).toBeTruthy()
+
+    await act(async () => { fireEvent.click(screen.getByText('Prepare all links')) })
+    const minted = requestPaymentLink.mock.calls.map(([, req]) => [req.lessonStudent, req.amount])
+    expect(minted).toEqual([['Dana Levy', 250]])
+
+    await act(async () => { fireEvent.click(screen.getByLabelText('Remove Dana Levy from 2026-03')) })
+    expect(props.onExcludedStudentChange).toHaveBeenCalledWith(month, 'Dana Levy', true)
+    await act(async () => { fireEvent.click(screen.getByText('Omer Paz ↺')) })
+    expect(props.onExcludedStudentChange).toHaveBeenCalledWith(month, 'Omer Paz', false)
+  })
+
+  // Value: protects=a failed restore save is reported next to the chips and the student stays removed for a retry; fails_when=the rejection from the store goes unhandled and the chip click fails silently; why_new=restore had no error path; seam=onExcludedStudentChange
+  it('shows an error when adding a student back fails', async () => {
+    const props = pageProps({
+      excludedStudents: { [`${month}:Omer Paz`]: true },
+      onExcludedStudentChange: vi.fn(async () => { throw new Error('storage is full') }),
+    })
+    render(createElement(CalculatorPage, props))
+    await act(async () => { fireEvent.click(screen.getByText('Omer Paz ↺')) })
+    expect(screen.getByRole('alert').textContent).toBe("Couldn't add Omer Paz back: storage is full. Try again.")
+    expect(screen.getByText('Omer Paz ↺')).toBeTruthy()
+  })
+})

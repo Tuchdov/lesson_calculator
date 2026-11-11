@@ -20,7 +20,11 @@ import {
   saveLessonOverride,
   invoiceRecord,
   loadReviewResolutions,
+  saveTierOverride,
+  loadTierOverrides,
   saveReviewResolution,
+  saveExcludedStudent,
+  loadExcludedStudents,
 } from '../src/lib/payments.js'
 import { sha256Hex } from '../src/lib/userSettings.js'
 
@@ -399,6 +403,18 @@ Deno.test('invoiceRecordNames: cached scan matches a fresh scan after the record
   assertEquals(invoiceRecordNames(answers, '2026-10', row, ':e2'), [])
 })
 
+// ── price tier override store ───────────────────────────────────────────────
+
+Deno.test('saveTierOverride: a granted discount stays in its month and null clears it', async () => {
+  const stub = makeStub()
+  await saveTierOverride('user@example.com', '2026-03', 'Alice', 'regular', stub)
+  const overrides = await loadTierOverrides('user@example.com', stub)
+  assertEquals(invoiceRecord(overrides, '2026-03', { student: 'Alice' }), 'regular')
+  assertEquals(invoiceRecord(overrides, '2026-04', { student: 'Alice' }), null)
+  await saveTierOverride('user@example.com', '2026-03', 'Alice', null, stub)
+  assertEquals(await loadTierOverrides('user@example.com', stub), {})
+})
+
 // ── lesson count override store ──────────────────────────────────────────────
 
 // Value: protects=a manual lesson count is kept per invoice and can be cleared; fails_when=counts are saved without the month or null doesn't delete; why_new=new store; seam=none
@@ -409,4 +425,16 @@ Deno.test('saveLessonOverride + loadLessonOverrides: round-trips, stays in its m
   assertEquals(await loadLessonOverrides('user@example.com', stub), { '2026-08:Alice': { '60': 5, '45': 0, '30': 0 } })
   await saveLessonOverride('user@example.com', '2026-08', 'Alice', null, stub)
   assertEquals(await loadLessonOverrides('user@example.com', stub), {})
+})
+
+// ── excluded student store ──────────────────────────────────────────────────
+
+Deno.test('saveExcludedStudent: stays in its month and false restores', async () => {
+  const stub = makeStub()
+  await saveExcludedStudent('user@example.com', '2026-03', 'Bob', true, stub)
+  const excluded = await loadExcludedStudents('user@example.com', stub)
+  assertEquals(invoiceRecord(excluded, '2026-03', { student: 'Bob' }), true)
+  assertEquals(invoiceRecord(excluded, '2026-04', { student: 'Bob' }), null)
+  await saveExcludedStudent('user@example.com', '2026-03', 'Bob', false, stub)
+  assertEquals(await loadExcludedStudents('user@example.com', stub), {})
 })

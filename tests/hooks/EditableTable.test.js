@@ -72,6 +72,74 @@ describe('EditableTable price editing across spellings', () => {
   })
 })
 
+describe('EditableTable discount toggle', () => {
+  const fullPrice = { ...row, student_type: 'non_regular', amount_due: 250 }
+
+  it('grants the discounted price for the month on a full-price row', () => {
+    const onTierOverrideChange = vi.fn()
+    render(createElement(EditableTable, { rows: [fullPrice], config, month: '2026-03', onTierOverrideChange }))
+    fireEvent.click(screen.getByTitle('Click to give the discounted price this month'))
+    expect(onTierOverrideChange).toHaveBeenCalledWith('2026-03', 'Alice', 'regular')
+  })
+
+  it('bills a granted row at the discounted price and can switch it back', async () => {
+    const onTierOverrideChange = vi.fn()
+    render(createElement(EditableTable, { rows: [fullPrice], config, month: '2026-03', tierOverrides: { '2026-03:Alice': 'regular' }, onTierOverrideChange }))
+    expect(screen.getByTitle('Double-click to set a one-off amount due for this invoice').textContent).toBe('₪200')
+    fireEvent.click(screen.getByTitle('Discount granted for this month — click to charge the full price'))
+    await vi.waitFor(() => expect(onTierOverrideChange).toHaveBeenCalledWith('2026-03', 'Alice', null))
+  })
+
+  it('shows the error and allows a retry when the save fails', async () => {
+    const onTierOverrideChange = vi.fn().mockRejectedValueOnce(new Error('Storage is full'))
+    render(createElement(EditableTable, { rows: [fullPrice], config, month: '2026-03', onTierOverrideChange }))
+    const toggle = screen.getByTitle('Click to give the discounted price this month')
+    fireEvent.click(toggle)
+    expect((await screen.findByRole('alert')).textContent).toBe('Storage is full')
+    expect(toggle.disabled).toBe(false)
+
+    fireEvent.click(toggle)
+    await vi.waitFor(() => expect(onTierOverrideChange).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+  })
+
+  it('reports a clear that stops part way through the spellings', async () => {
+    const onTierOverrideChange = vi.fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('Storage is full'))
+    const spelled = { ...fullPrice, aliases: ['Alice Cohen'], name_conflicts: [] }
+    const tierOverrides = { '2026-03:Alice': 'regular', '2026-03:Alice Cohen': 'regular' }
+    render(createElement(EditableTable, { rows: [spelled], config, month: '2026-03', tierOverrides, onTierOverrideChange }))
+    fireEvent.click(screen.getByTitle('Discount granted for this month — click to charge the full price'))
+    expect((await screen.findByRole('alert')).textContent).toBe('Storage is full')
+    expect(onTierOverrideChange.mock.calls.map(c => c[1])).toEqual(['Alice', 'Alice Cohen'])
+  })
+
+  // Value: protects=editing a granted row's rate never lowers the student's full price; fails_when=the edit is saved to both tiers, so clearing the grant (or next month) still bills the discounted rate; why_new=granted rows edit the discounted tier; seam=none
+  it.each([
+    ['no custom price', undefined, { '60': 250, '45': 180, '30': 120 }],
+    ['a flat custom price', { '60': 240, '45': 170, '30': 110 }, { '60': 240, '45': 170, '30': 110 }],
+  ])('editing the rate of a granted row with %s keeps the full price', (_, custom, fullPrices) => {
+    const onCustomPriceChange = vi.fn()
+    render(createElement(EditableTable, {
+      rows: [fullPrice], config, month: '2026-03', tierOverrides: { '2026-03:Alice': 'regular' },
+      customPrices: custom ? { Alice: custom } : undefined, onCustomPriceChange,
+    }))
+    const rate = screen.getByTitle("Double-click to change this student's ₪/lesson rate")
+    fireEvent.doubleClick(rate)
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '190' } })
+    fireEvent.click(screen.getByTitle('Save price'))
+    const [, update] = onCustomPriceChange.mock.calls[0]
+    expect(update.regular['60']).toBe(190)
+    expect(update.non_regular).toEqual(fullPrices)
+  })
+
+  it('offers no toggle on a row that already qualifies for the discount', () => {
+    render(createElement(EditableTable, { rows: [row], config, month: '2026-03' }))
+    expect(screen.queryByRole('button', { name: /Discounted price/ })).toBeNull()
+  })
+})
+
 describe('EditableTable lesson count editing', () => {
   const COUNT_HINT = 'Double-click to change the number of lessons this month'
 

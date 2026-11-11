@@ -1,6 +1,7 @@
 import { assertEquals } from '@std/assert'
 import {
   resolveRowPrices,
+  effectiveStudentType,
   computeLessonAmount,
   baseLessonPrice,
   proRataPrice,
@@ -13,6 +14,7 @@ import {
   payerName,
   lessonStudentName,
   applyLessonOverride,
+  splitExcluded,
 } from '../src/lib/rowPricing.js'
 import { invoiceRecord, invoiceRecordName } from '../src/lib/payments.js'
 
@@ -219,6 +221,14 @@ Deno.test('billedLessonCount: regular lessons plus items charged as a standard l
   assertEquals(billedLessonCount({ ...row, review_items: undefined }, {}, '2026-10'), 3)
 })
 
+Deno.test('effectiveStudentType: a granted discount wins for its month only', () => {
+  const row = { student: 'Alice', student_type: 'non_regular' }
+  const overrides = { '2026-03:Alice': 'regular' }
+  assertEquals(effectiveStudentType(row, overrides, '2026-03'), 'regular')
+  assertEquals(effectiveStudentType(row, overrides, '2026-04'), 'non_regular')
+  assertEquals(effectiveStudentType(row, undefined, '2026-03'), 'non_regular')
+})
+
 // ── applyLessonOverride ──────────────────────────────────────────────────────
 
 // Value: protects=the teacher's lesson count replaces the calendar's for the amount and the billed count, and the calendar's is kept for display/reset; fails_when=the override only changes the display, or bad input yields NaN amounts; why_new=new feature; seam=none
@@ -230,4 +240,14 @@ Deno.test('applyLessonOverride: replaces the counts, keeps the calendar ones, an
   assertEquals(edited.calendar_lessons, { '60': 3, '45': 1, '30': 0 })
   assertEquals(billedLessonCount(edited, {}, '2026-08'), 4)
   assertEquals(computeRowAmount(edited, CONFIG.prices.regular, {}, '2026-08').amount, 4 * 260)
+})
+
+// ── students left out of a month ─────────────────────────────────────────
+
+Deno.test('splitExcluded: a student left out of the month is found under any spelling, other months untouched', () => {
+  const rows = [{ student: 'Dana (mom Rina)', aliases: ['Dana'] }, { student: 'Gil', aliases: [] }]
+  const excluded = { '2026-03:Dana': true, '2026-04:Gil': true }
+  const { kept, removed } = splitExcluded(rows, excluded, '2026-03')
+  assertEquals(kept.map(r => r.student), ['Gil'])
+  assertEquals(removed.map(r => r.student), ['Dana (mom Rina)'])
 })

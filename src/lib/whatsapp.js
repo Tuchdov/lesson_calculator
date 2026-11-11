@@ -18,15 +18,17 @@ export function validateIsraeliPhone(phone) {
 }
 
 export const DEFAULT_MESSAGE_TEMPLATE =
-  ` שלום {payer} :)\nהנה סיכום השיעורים שלך לחודש {month}:\n מספר שיעורים: {lessons}\n סה״כ לתשלום: ₪{amount}\n לתשלום: [קישור לתשלום]\nתודה ונתראה! `
+  `היי {first_name} :)\nהנה סיכום השיעורים שלך לחודש {month}:\n מספר שיעורים: {lessons}\n סה״כ לתשלום: ₪{amount}\n לתשלום: [קישור לתשלום]\nתודה ונתראה! `
 // Substitutes {payer} and {student} (both are who pays: a parent, else the
 // student, so templates written when {student} held the payer keep working),
-// {amount}, {month} and {lessons}.
+// {first_name} (the payer's first word), {amount}, {month} and {lessons}.
 export function renderMessageTemplate(template, { payerName, amount, monthName, lessons }) {
   const name = (payerName ?? '').replace(/[\r\n]+/g, ' ').trim()
+  const firstName = name.split(/\s+/)[0]
   return (template ?? '')
     .replaceAll('{student}', name)
     .replaceAll('{payer}', name)
+    .replaceAll('{first_name}', firstName)
     .replaceAll('{amount}', String(amount))
     .replaceAll('{month}', monthName ?? '')
     .replaceAll('{lessons}', String(lessons ?? ''))

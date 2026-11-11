@@ -22,6 +22,13 @@ export function resolveRowPrices(student, regular, config, custom) {
   )
 }
 
+// The tier the row is billed at: the teacher's per-month choice (e.g. a
+// discount granted to a student who didn't qualify) wins over the calculated
+// one.
+export function effectiveStudentType(row, tierOverrides, month) {
+  return invoiceRecord(tierOverrides, month, row) ?? row.student_type
+}
+
 export function computeLessonAmount(row, prices) {
   const amount = row.lessons_60 * Number(prices['60'])
     + row.lessons_45 * Number(prices['45'])
@@ -164,4 +171,13 @@ export function lessonStudentName(row) {
 // table ask for the payer (hasFullName).
 export function payerName(details, row) {
   return details?.full_name || lessonStudentName(row)
+}
+
+// Splits the month's rows into the ones billed and the ones the teacher left
+// out of this month (payments.js saveExcludedStudent), under any spelling.
+export function splitExcluded(rows, excluded, month) {
+  const kept = []
+  const removed = []
+  for (const row of rows ?? []) (invoiceRecord(excluded, month, row) ? removed : kept).push(row)
+  return { kept, removed }
 }

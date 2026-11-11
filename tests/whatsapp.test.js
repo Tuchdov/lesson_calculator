@@ -182,9 +182,22 @@ Deno.test('buildPaymentMessage: DEFAULT_MESSAGE_TEMPLATE includes the lesson cou
 Deno.test('buildPaymentMessage: {student} and {payer} both name who pays', () => {
   assertEquals(buildPaymentMessage('עינת שמש', 230, '2026-10', 'שלום {payer}, השיעורים של {student}', 4), 'שלום עינת שמש, השיעורים של עינת שמש')
   assertEquals(buildPaymentMessage('עינת שמש', 230, '2026-10', 'היי {student}', 4), 'היי עינת שמש')
-  assertMatch(buildPaymentMessage('עינת שמש', 230, '2026-10', undefined, 4), /^ שלום עינת שמש :\)/)
-  // A default message saved before {payer} existed still greets the payer.
-  assertMatch(buildPaymentMessage('עינת שמש', 230, '2026-10', DEFAULT_MESSAGE_TEMPLATE.replace('{payer}', '{student}'), 4), /^ שלום עינת שמש :\)/)
+})
+
+// ── {first_name} ─────────────────────────────────────────────────────────────
+
+Deno.test('buildPaymentMessage: default template greets the payer by first name', () => {
+  assertMatch(buildPaymentMessage('עינת שמש', 230, '2026-10', undefined, 4), /^היי עינת :\)\n/)
+  // A default message saved before {first_name} existed still greets by full name.
+  assertMatch(buildPaymentMessage('עינת שמש', 230, '2026-10', DEFAULT_MESSAGE_TEMPLATE.replace('{first_name}', '{payer}'), 4), /^היי עינת שמש :\)/)
+})
+
+Deno.test('renderMessageTemplate: {first_name} is the first word of the payer name', () => {
+  const render = (payerName) => renderMessageTemplate('{first_name}|{payer}', { payerName, amount: 1, monthName: 'July' })
+  assertEquals(render('  Alice   Smith '), 'Alice|Alice   Smith')
+  assertEquals(render('Bob'), 'Bob|Bob')
+  assertEquals(render('Carol\nEvil'), 'Carol|Carol Evil')
+  assertEquals(render(undefined), '|')
 })
 
 // ── HEBREW_MONTHS ─────────────────────────────────────────────────────────
@@ -241,7 +254,7 @@ Deno.test('buildWhatsAppUrl: full round-trip produces valid URL', () => {
   const parsed = new URL(url)
   assertEquals(parsed.hostname, 'wa.me')
   assertEquals(parsed.pathname, '/972547654321')
-  assertMatch(parsed.searchParams.get('text') ?? '', /רחל כהן/)
+  assertMatch(parsed.searchParams.get('text') ?? '', /^היי רחל :\)/)
   assertMatch(parsed.searchParams.get('text') ?? '', /יוני/)
   assertMatch(parsed.searchParams.get('text') ?? '', /₪350/)
 })
