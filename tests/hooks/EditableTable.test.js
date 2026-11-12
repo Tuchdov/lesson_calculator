@@ -33,9 +33,42 @@ describe('EditableTable price editing', () => {
     expect(screen.getByDisplayValue('300')).toBeTruthy()
     fireEvent.change(screen.getByDisplayValue('300'), { target: { value: '325' } })
     fireEvent.click(screen.getByTitle('Save price'))
+    // Only the tier the row bills at changes; the flat price stays for the other.
     expect(onCustomPriceChange).toHaveBeenCalledWith(['Alice'], {
       regular: { '60': 325, '45': 150, '30': 100 },
-      non_regular: { '60': 325, '45': 150, '30': 100 },
+      non_regular: { '60': 300, '45': 150, '30': 100 },
+    })
+  })
+
+  // Value: protects=editing a full-price row's rate saves the full price only, so the student's discounted price is unchanged on Custom Prices; fails_when=the edit is written to both tiers (the old behaviour without a tiered custom price); why_new=prices edited on the calculator must land on the tier shown; seam=none
+  it('saves an edited full price to the full-price tier only', () => {
+    const onCustomPriceChange = vi.fn()
+    const fullPrice = { ...row, student_type: 'non_regular', amount_due: 250 }
+    render(createElement(EditableTable, { rows: [fullPrice], config, month: '2026-03', onCustomPriceChange }))
+    fireEvent.doubleClick(screen.getByTitle("Double-click to change this student's ₪/lesson rate"))
+    fireEvent.change(screen.getByDisplayValue('250'), { target: { value: '270' } })
+    fireEvent.click(screen.getByTitle('Save price'))
+    expect(onCustomPriceChange).toHaveBeenCalledWith(['Alice'], {
+      regular: { '60': 200, '45': 150, '30': 100 },
+      non_regular: { '60': 270, '45': 180, '30': 120 },
+    })
+  })
+
+  // Value: protects=after toggling to the discounted price, an edited rate is saved as the student's discounted price even when a tiered price exists; fails_when=the edit lands on the full-price tier or wipes the other tier; why_new=user-reported: discount edits after toggling must reach Custom Prices; seam=none
+  it('saves an edit made after granting the discount to the discounted tier', () => {
+    const onCustomPriceChange = vi.fn()
+    const fullPrice = { ...row, student_type: 'non_regular', amount_due: 260 }
+    const tiered = { regular: { '60': 210, '45': 160, '30': 110 }, non_regular: { '60': 260, '45': 190, '30': 130 } }
+    render(createElement(EditableTable, {
+      rows: [fullPrice], config, month: '2026-03', tierOverrides: { '2026-03:Alice': 'regular' },
+      customPrices: { Alice: tiered }, onCustomPriceChange,
+    }))
+    fireEvent.doubleClick(screen.getByTitle("Double-click to change this student's ₪/lesson rate"))
+    fireEvent.change(screen.getByDisplayValue('210'), { target: { value: '195' } })
+    fireEvent.click(screen.getByTitle('Save price'))
+    expect(onCustomPriceChange).toHaveBeenCalledWith(['Alice'], {
+      regular: { '60': 195, '45': 160, '30': 110 },
+      non_regular: tiered.non_regular,
     })
   })
 })

@@ -303,14 +303,13 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
       const v = parseFloat(draft?.[d])
       parsed[d] = isNaN(v) ? prices[d] : v
     }
-    let update
-    if (custom && ('regular' in custom || 'non_regular' in custom)) {
-      update = { ...custom, [studentType]: parsed }
-    } else {
-      // A granted row edits only the discounted tier; the full price stays as
-      // it is, so it isn't lowered once the grant is cleared or next month.
-      const fullPrices = discountGranted ? resolveRowPrices(row.student, false, config, custom) : parsed
-      update = { regular: parsed, non_regular: fullPrices }
+    // Only the tier the row is billed at changes (the discounted one on a
+    // granted row); the other keeps what it bills today, so editing the full
+    // price never moves the discount and vice versa.
+    const update = {
+      regular: resolveRowPrices(row.student, true, config, custom),
+      non_regular: resolveRowPrices(row.student, false, config, custom),
+      [studentType]: parsed,
     }
     // A rate saved under other spellings of this student moves with it, so the
     // spellings don't end up with two different prices (a name conflict).
