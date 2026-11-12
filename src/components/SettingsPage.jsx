@@ -10,17 +10,35 @@ const DURATION_LABELS = { '60': '60 min', '45': '45 min', '30': '30 min' }
 // Sample student for the invoice preview and its length check.
 const SAMPLE_STUDENT = 'דנה לוי'
 
+/**
+ * The default prices to start editing from: the saved ones when both tiers are
+ * set, else the pricing config.
+ * @param {object} settings Saved settings.
+ * @param {object} config The pricing config.
+ * @returns {object} A copy of the prices per tier.
+ */
 function initialPrices(settings, config) {
   const saved = settings?.default_prices
   if (saved?.regular && saved?.non_regular) return deepClone(saved)
   return deepClone(config?.prices ?? { regular: {}, non_regular: {} })
 }
 
-// Saved list if customized (null = never customized), else the default.
+/**
+ * Saved list if customized (null = never customized), else the default.
+ * @param {string[] | null} saved The saved list.
+ * @param {string[]} defaults The built-in list.
+ * @returns {string[]} A copy to edit.
+ */
 function initialList(saved, defaults) {
   return saved != null ? [...saved] : [...defaults]
 }
 
+/**
+ * Settings: default prices, the WhatsApp message and invoice text, the preview
+ * photo, and the phrase lists that decide which events count.
+ * @param {object} props config, settings, onSave and getAccessToken.
+ * @returns {import('react').ReactNode} The page.
+ */
 export function SettingsPage({ config, settings, onSave, getAccessToken }) {
   const [prices, setPrices] = useState(() => initialPrices(settings, config))
   const [messageTemplate, setMessageTemplate] = useState(
@@ -289,6 +307,12 @@ export function SettingsPage({ config, settings, onSave, getAccessToken }) {
   )
 }
 
+/**
+ * An editable list of phrases (add, remove, reset to the defaults).
+ * @param {object} props title, hint, items, defaults, onChange, emptyText,
+ *   placeholder and addLabel.
+ * @returns {import('react').ReactNode} The card.
+ */
 function PhraseListCard({ title, hint, items, defaults, onChange, emptyText, placeholder, addLabel }) {
   const [draft, setDraft] = useState('')
 
@@ -335,6 +359,11 @@ function PhraseListCard({ title, hint, items, defaults, onChange, emptyText, pla
   )
 }
 
+/**
+ * A deep copy of plain JSON data.
+ * @param {object} obj Data to copy.
+ * @returns {object} The copy.
+ */
 function deepClone(obj) {
   return JSON.parse(JSON.stringify(obj))
 }

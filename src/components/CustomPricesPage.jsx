@@ -6,6 +6,11 @@ import { normalizeStudentName, hasSavedPrice } from '../lib/calendarPayments.js'
 import { ImportPricesPanel } from './ImportPricesPanel.jsx'
 import styles from './CustomPricesPage.module.css'
 
+/**
+ * Saved phones by student, as the page edits them.
+ * @param {object} settings Saved settings.
+ * @returns {Record<string, string>} Phones by student.
+ */
 function initialPhones(settings) {
   const p = {}
   for (const [student, det] of Object.entries(settings?.customer_details ?? {})) {
@@ -21,13 +26,34 @@ const EXTRA_FIELDS = ['full_name', 'payment_profile', 'invoice_description', 'me
 const DEFAULT_INVOICE_PLACEHOLDER = 'תשלום עבור שיעורי שירה - {student} - {month}'
 const EMPTY_TIERS = { regular: { '60': '', '45': '', '30': '' }, non_regular: { '60': '', '45': '', '30': '' } }
 
-// The saved profile as a dropdown value: blank is the default route, and the
-// Router ignores case, so 'Extended' selects the extended option. Anything else
-// stays selectable as itself so a legacy value is visible, not silently dropped.
+/**
+ * The PAYMENT_PROFILES entry a saved profile selects; the Router ignores case,
+ * so 'Extended' selects the extended option.
+ * @param {string} saved The saved profile.
+ * @returns {object | undefined} The matching PAYMENT_PROFILES entry.
+ */
 const findProfile = saved => PAYMENT_PROFILES.find(p => p.id === (saved ?? '').trim().toLowerCase())
+/**
+ * Whether the saved profile is blank or one of PAYMENT_PROFILES.
+ * @param {string} saved The saved profile.
+ * @returns {boolean} Whether it is known.
+ */
 const isKnownProfile = saved => !(saved ?? '').trim() || Boolean(findProfile(saved))
+/**
+ * The saved profile as a dropdown value: blank is the default route. Anything
+ * unknown stays selectable as itself so a legacy value is visible, not
+ * silently dropped.
+ * @param {string} saved The saved profile.
+ * @returns {string} The option value.
+ */
 const profileChoice = saved => (saved ?? '').trim() ? (findProfile(saved)?.id ?? saved) : DEFAULT_PAYMENT_PROFILE
 
+/**
+ * Saved per-student overrides (EXTRA_FIELDS) by student, as the page edits
+ * them.
+ * @param {object} settings Saved settings.
+ * @returns {Record<string, object>} Filled-in fields by student.
+ */
 function initialExtras(settings) {
   const e = {}
   for (const [student, det] of Object.entries(settings?.customer_details ?? {})) {
@@ -38,12 +64,27 @@ function initialExtras(settings) {
   return e
 }
 
+/**
+ * Whether a student or their payer matches the search (case-insensitive; blank
+ * matches all).
+ * @param {string} student Student key.
+ * @param {string} payer Saved payer name.
+ * @param {string} query The search text.
+ * @returns {boolean} Whether to show the student.
+ */
 function matchesQuery(student, payer, query) {
   const q = query.trim().toLowerCase()
   if (!q) return true
   return [student, payer].some(v => (v ?? '').toLowerCase().includes(q))
 }
 
+/**
+ * Per-student prices, contact details and message overrides, edited locally and
+ * written with Save all; also adds students and imports them from a file.
+ * @param {object} props settings, onSave, availableStudents (calendar names)
+ *   and onDirtyChange.
+ * @returns {import('react').ReactNode} The page.
+ */
 export function CustomPricesPage({ settings, onSave, availableStudents = [], onDirtyChange = () => {} }) {
   const [customPrices, setCustomPrices] = useState(
     () => deepClone(settings?.custom_prices ?? {})
@@ -481,12 +522,23 @@ export function CustomPricesPage({ settings, onSave, availableStudents = [], onD
   )
 }
 
+/**
+ * A copy of an object without one key.
+ * @param {object} obj The object.
+ * @param {string} key Key to drop.
+ * @returns {object} The copy.
+ */
 function without(obj, key) {
   const next = { ...obj }
   delete next[key]
   return next
 }
 
+/**
+ * A deep copy of plain JSON data.
+ * @param {object} obj Data to copy.
+ * @returns {object} The copy.
+ */
 function deepClone(obj) {
   return JSON.parse(JSON.stringify(obj))
 }

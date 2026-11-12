@@ -18,7 +18,15 @@ const STALE_DEFAULTS = {
   makeup_phrases: DEFAULT_MAKEUP_PHRASES,
   student_name_regex: null,
   calendar_id: 'primary',
+  student_merges: {},
 }
+/**
+ * A Calculate-time setting as it applies, for comparison (see STALE_DEFAULTS
+ * above).
+ * @param {object} c A config.
+ * @param {string} k Setting name.
+ * @returns {string} Its JSON.
+ */
 const effectiveSetting = (c, k) => JSON.stringify(c?.[k] ?? STALE_DEFAULTS[k])
 
 /**
@@ -39,12 +47,22 @@ function csvStatus(row, unresolved, adjusted, discounted) {
   return parts.join('; ')
 }
 
-// Runs `worker` over `items` with at most `limit` in flight at once. Each
-// item settles independently the moment it's done — a caller updating state
-// per item (rather than waiting for the whole batch) is how a crash mid-run
-// still leaves everything that finished intact.
+/**
+ * Runs `worker` over `items` with at most `limit` in flight at once. Each item
+ * settles independently the moment it's done — a caller updating state per item
+ * (rather than waiting for the whole batch) is how a crash mid-run still leaves
+ * everything that finished intact.
+ * @param {Array} items Work to do.
+ * @param {number} limit Most in flight at once.
+ * @param {Function} worker Async function run on each item.
+ * @returns {Promise<void>} Resolves when every item is done.
+ */
 async function runWithConcurrency(items, limit, worker) {
   let index = 0
+  /**
+   * Runs the next item, then the one after, until none are left.
+   * @returns {Promise<void>}
+   */
   async function next() {
     const i = index++
     if (i >= items.length) return
@@ -61,7 +79,7 @@ async function runWithConcurrency(items, limit, worker) {
  * @param {object} props Calendar state, pricing/override stores, and their change callbacks.
  * @returns {import('react').ReactNode} The calculator page.
  */
-export function CalculatorPage({ getAccessToken, config, calendar, month, onMonthChange, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, defaultMessage, defaultInvoiceDescription, previewImage, amountOverrides, onAmountOverrideChange, lessonOverrides, onLessonOverrideChange, excludedStudents, onExcludedStudentChange, tierOverrides, onTierOverrideChange, paymentLinks, onPaymentLinkChange, reviewResolutions, onReviewResolutionChange, preparing, onPreparingChange, prepareStatus, onPrepareStatusChange }) {
+export function CalculatorPage({ getAccessToken, config, calendar, month, onMonthChange, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, defaultMessage, defaultInvoiceDescription, previewImage, amountOverrides, onAmountOverrideChange, lessonOverrides, onLessonOverrideChange, excludedStudents, onExcludedStudentChange, tierOverrides, onTierOverrideChange, paymentLinks, onPaymentLinkChange, reviewResolutions, onReviewResolutionChange, preparing, onPreparingChange, prepareStatus, onPrepareStatusChange, onMergeStudents, onUnmergeStudent }) {
   const { rows: calendarRows, summary, loading, error, calculate, calculatedWith } = calendar
   // The calendar's students, less the ones left out of this month. Lesson
   // counts the teacher changed for this month replace the calendar's before
@@ -279,6 +297,8 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
           reviewResolutions={reviewResolutions}
           onReviewResolutionChange={onReviewResolutionChange}
           onRemoveRow={handleRemoveRow}
+          onMergeStudents={onMergeStudents}
+          onUnmergeStudent={onUnmergeStudent}
         />
       )}
 

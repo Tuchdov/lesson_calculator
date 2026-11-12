@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useAuth } from './hooks/useAuth.js'
 import { useUserSettings } from './hooks/useUserSettings.js'
 import { useCalendarData } from './hooks/useCalendarData.js'
-import { normalizeStudentName, currentMonthKey } from './lib/calendarPayments.js'
+import { normalizeStudentName, currentMonthKey, addStudentMerge, removeStudentMerge } from './lib/calendarPayments.js'
+import { loadCalculation, saveCalculation } from './lib/calculationStore.js'
 import { loadAmountOverrides, saveAmountOverride, loadLessonOverrides, saveLessonOverride, loadPaymentLinks, savePaymentLink, loadReviewResolutions, saveReviewResolution, loadTierOverrides, saveTierOverride, loadExcludedStudents, saveExcludedStudent } from './lib/payments.js'
 import { AuthScreen } from './components/AuthScreen.jsx'
 import { Sidebar } from './components/Sidebar.jsx'
@@ -157,7 +158,8 @@ export default function App() {
     const hasCustomKeywords = settings.cancelled_keywords != null
     const hasLessonKeywords = settings.lesson_keywords != null
     const hasMakeupPhrases = settings.makeup_phrases != null
-    if (!hasCustomDefaults && !hasCustomPhrases && !hasCustomKeywords && !hasLessonKeywords && !hasMakeupPhrases) return config
+    const hasMerges = Object.keys(settings.student_merges ?? {}).length > 0
+    if (!hasCustomDefaults && !hasCustomPhrases && !hasCustomKeywords && !hasLessonKeywords && !hasMakeupPhrases && !hasMerges) return config
     return {
       ...config,
       ...(hasCustomDefaults ? { prices: settings.default_prices } : {}),
@@ -165,8 +167,9 @@ export default function App() {
       ...(hasCustomKeywords ? { cancelled_keywords: settings.cancelled_keywords } : {}),
       ...(hasLessonKeywords ? { lesson_keywords: settings.lesson_keywords } : {}),
       ...(hasMakeupPhrases ? { makeup_phrases: settings.makeup_phrases } : {}),
+      ...(hasMerges ? { student_merges: settings.student_merges } : {}),
     }
-  }, [config, settings.default_prices, settings.paid_cancellation_phrases, settings.cancelled_keywords, settings.lesson_keywords, settings.makeup_phrases])
+  }, [config, settings.default_prices, settings.paid_cancellation_phrases, settings.cancelled_keywords, settings.lesson_keywords, settings.makeup_phrases, settings.student_merges])
 
   // The calculation lives here, not in CalculatorPage, so it survives both
   // navigating to Settings / Custom Prices and a forced re-authentication
@@ -178,7 +181,43 @@ export default function App() {
     customer_details: settings.customer_details,
   }, [effectiveConfig, settings.custom_prices, settings.customer_details])
   const calendar = useCalendarData(getValidAccessToken, calcConfig)
-  const { reset: resetCalculation } = calendar
+  const { reset: resetCalculation, restore: restoreCalculation, rows: calcRows, summary: calcSummary, calculatedWith } = calendar
+
+  // The last calculation comes back when the site is opened again, with its
+  // month, unless a new one was started meanwhile. A load for an earlier
+  // account is discarded.
+  useEffect(() => {
+    if (!userEmail) return
+    let current = true
+    loadCalculation(userEmail)
+      .then(saved => { if (current && saved && restoreCalculation(saved)) setMonth(saved.summary.month) })
+      .catch(err => console.error('Failed to load the last calculation:', err))
+    return () => { current = false }
+  }, [userEmail, restoreCalculation])
+
+  /**
+   * Bills `from` as `into` from now on and recalculates the month, so the
+   * table shows them as one student straight away.
+   * @param {string} from The row key of the student merged away.
+   * @param {string} into The row key of the student that bills.
+   * @returns {Promise<void>}
+   */
+  const handleMergeStudents = async (from, into) => {
+    const student_merges = addStudentMerge(settings.student_merges, from, into)
+    await saveSettings({ ...settings, student_merges })
+    await calendar.calculate(calcSummary?.month ?? month, { ...calcConfig, student_merges })
+  }
+
+  /**
+   * Gives a merged calendar name its own row again and recalculates the month.
+   * @param {string} name The merged calendar name.
+   * @returns {Promise<void>}
+   */
+  const handleUnmergeStudent = async (name) => {
+    const student_merges = removeStudentMerge(settings.student_merges, name)
+    await saveSettings({ ...settings, student_merges })
+    await calendar.calculate(calcSummary?.month ?? month, { ...calcConfig, student_merges })
+  }
   // Every spelling a row answers to, so an imported price under the plain
   // calendar name (no notes or ages) isn't reported as unmatched.
   const knownStudents = useMemo(() => [...new Set((calendar.rows ?? []).flatMap(r => [r.student, normalizeStudentName(r.student), ...(r.aliases ?? [])]))], [calendar.rows])
@@ -195,6 +234,16 @@ export default function App() {
     if (lastEmailRef.current && lastEmailRef.current !== userEmail) resetForAccount()
     lastEmailRef.current = userEmail
   }, [userEmail, resetForAccount])
+
+  // Saved under the account it was calculated for (lastEmailRef, updated just
+  // above), not the one signing in: on an account switch the rows don't change
+  // in that render, and they are cleared before the next account's are shown.
+  useEffect(() => {
+    const email = lastEmailRef.current
+    if (!email || !calcRows || !calcSummary) return
+    saveCalculation(email, { rows: calcRows, summary: calcSummary, calculatedWith })
+      .catch(err => console.error('Failed to save the calculation:', err))
+  }, [calcRows, calcSummary, calculatedWith])
 
   if (!accessToken) {
     return <AuthScreen onSignIn={signIn} error={authError} />
@@ -243,6 +292,8 @@ export default function App() {
             onPrepareStatusChange={handlePrepareStatusChange}
             reviewResolutions={reviewResolutions}
             onReviewResolutionChange={handleReviewResolutionChange}
+            onMergeStudents={handleMergeStudents}
+            onUnmergeStudent={handleUnmergeStudent}
           />
         )}
         {page === 'custom-prices' && (

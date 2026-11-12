@@ -5,6 +5,12 @@ import { verifyCaller, ServiceError } from './paymentLinkService.js'
 export const MAX_PREVIEW_IMAGE_BYTES = 1024 * 1024
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/
 
+/**
+ * Decodes a base64 JPEG under the size cap.
+ * @param {string} base64 The uploaded image.
+ * @returns {Uint8Array | null} The bytes, or null when it is not a JPEG or too
+ *   big.
+ */
 function decodeJpeg(base64) {
   if (typeof base64 !== 'string' || !BASE64.test(base64)) return null
   if (base64.length > Math.ceil(MAX_PREVIEW_IMAGE_BYTES / 3) * 4) return null
@@ -18,9 +24,14 @@ function decodeJpeg(base64) {
   return bytes
 }
 
-// Stores the WhatsApp preview photo publicly — the preview bot can't sign in —
-// and returns its URL. Each upload gets a new name, so links already sent keep
-// the photo they were sent with. `put` is @vercel/blob's, injected for tests.
+/**
+ * Stores the WhatsApp preview photo publicly — the preview bot can't sign in —
+ * and returns its URL. Each upload gets a new name, so links already sent keep
+ * the photo they were sent with. `put` is @vercel/blob's, injected for tests.
+ * @param {object} request accessToken, image, allowedEmail, clientId, blob
+ *   config, put and fetchImpl.
+ * @returns {Promise<{url: string}>} The public URL.
+ */
 export async function uploadPreviewImage({
   accessToken,
   image,

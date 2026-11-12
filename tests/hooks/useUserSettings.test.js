@@ -13,7 +13,7 @@ vi.mock('../../src/lib/userSettings.js', async importOriginal => ({
 
 const defaults = {
   custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '', default_invoice_description: '', preview_image: '',
-  paid_cancellation_phrases: null, cancelled_keywords: null, lesson_keywords: null, makeup_phrases: null,
+  paid_cancellation_phrases: null, cancelled_keywords: null, lesson_keywords: null, makeup_phrases: null, student_merges: {},
 }
 const saved = { ...defaults, default_message: 'Hello {student}' }
 const next = { ...defaults, default_message: 'New message', cancelled_keywords: [] }

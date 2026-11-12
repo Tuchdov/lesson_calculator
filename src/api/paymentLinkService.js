@@ -15,8 +15,14 @@ export class ServiceError extends Error {
   }
 }
 
-// Identity is read from Google's answer, never from the request body — the
-// caller cannot claim to be anyone by changing what it sends.
+/**
+ * Identity is read from Google's answer, never from the request body — the
+ * caller cannot claim to be anyone by changing what it sends.
+ * @param {string} accessToken The caller's Google access token.
+ * @param {object} options allowedEmail, clientId and fetchImpl.
+ * @returns {Promise<void>} Resolves for the allowed account; throws
+ *   ServiceError otherwise.
+ */
 export async function verifyCaller(accessToken, { allowedEmail, clientId, fetchImpl }) {
   if (!accessToken) throw new ServiceError(401, 'Sign in again.')
 
@@ -52,13 +58,16 @@ export async function verifyCaller(accessToken, { allowedEmail, clientId, fetchI
   }
 }
 
-// Confirmed against the live Make scenario (T1): the webhook expects
-// {customer_name, student_name, amount, phone, description,
-// invoice_description, payment_profile, number_of_lessons?} (see
-// createPaymentLink) and, on
-// success, returns
-// {status: 1, err: {}, data: {paymentLinkProcessId, paymentLinkProcessToken,
-// url}}. Grow's amount is shekels, sent as-is — no agorot conversion.
+/**
+ * Confirmed against the live Make scenario (T1): the webhook expects
+ * {customer_name, student_name, amount, phone, description,
+ * invoice_description, payment_profile, number_of_lessons?} (see
+ * createPaymentLink) and, on success, returns {status: 1, err: {}, data:
+ * {paymentLinkProcessId, paymentLinkProcessToken, url}}. Grow's amount is
+ * shekels, sent as-is — no agorot conversion.
+ * @param {object} options webhookUrl, apiKey, payload and fetchImpl.
+ * @returns {Promise<string>} The Grow payment link.
+ */
 async function callMakeWebhook({ webhookUrl, apiKey, payload, fetchImpl }) {
   let res
   try {
@@ -88,26 +97,35 @@ async function callMakeWebhook({ webhookUrl, apiKey, payload, fetchImpl }) {
   return link
 }
 
+/**
+ * Whether a lesson count is absent or a whole number of 0 or more.
+ * @param {*} value The count from the request.
+ * @returns {boolean} Whether it is valid.
+ */
 function validNumberOfLessons(value) {
   return value === undefined || (Number.isInteger(value) && value >= 0)
 }
 
-// month is "YYYY-MM", used only to build the Hebrew description shown on
-// Grow's payment page — callers must pass summary.month, never a live month
-// input (see CalculatorPage.jsx / design decision 12).
-//
-// studentName is the payer (a child's parent), shown on Grow's payment page
-// and invoice; lessonStudent is whose lessons they are (the child), used for
-// the product line and the description's {student}. paymentProfile picks
-// which branch of the Make scenario runs (e.g. a student paying with Bit);
-// invoiceDescription is a per-student {student}/{month} template replacing the
-// default description. previewImage is the Settings photo shown in WhatsApp's
-// preview; one that isn't ours is dropped. All optional so a cached older tab
-// keeps working.
-//
-// With linkSecret and baseUrl set, the returned link is our /api/pay page
-// (see payRedirect.js) so WhatsApp's preview shows the invoice text; without
-// them it is the raw Grow link.
+/**
+ * month is "YYYY-MM", used only to build the Hebrew description shown on Grow's
+ * payment page — callers must pass summary.month, never a live month input (see
+ * CalculatorPage.jsx / design decision 12).
+ *
+ * studentName is the payer (a child's parent), shown on Grow's payment page and
+ * invoice; lessonStudent is whose lessons they are (the child), used for the
+ * product line and the description's {student}. paymentProfile picks which
+ * branch of the Make scenario runs (e.g. a student paying with Bit);
+ * invoiceDescription is a per-student {student}/{month} template replacing the
+ * default description. previewImage is the Settings photo shown in WhatsApp's
+ * preview; one that isn't ours is dropped. All optional so a cached older tab
+ * keeps working.
+ *
+ * With linkSecret and baseUrl set, the returned link is our /api/pay page (see
+ * payRedirect.js) so WhatsApp's preview shows the invoice text; without them it
+ * is the raw Grow link.
+ * @param {object} request The invoice fields plus server config (see above).
+ * @returns {Promise<string>} The link to send.
+ */
 export async function createPaymentLink({
   accessToken,
   studentName,

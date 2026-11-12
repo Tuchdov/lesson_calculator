@@ -4,13 +4,29 @@ export const SETTINGS_KEY_PREFIX = 'vocalCalc:settings:'
 // default list" — an explicit
 // `[]` means the user intentionally cleared the list, which must be
 // distinguishable from "not customized yet" everywhere these are read.
-export const DEFAULT_SETTINGS = { custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '', default_invoice_description: '', preview_image: '', paid_cancellation_phrases: null, cancelled_keywords: null, lesson_keywords: null, makeup_phrases: null }
+// student_merges maps a calendar name to the student it bills as
+// (calendarPayments.js mergedStudentName).
+export const DEFAULT_SETTINGS = { custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '', default_invoice_description: '', preview_image: '', paid_cancellation_phrases: null, cancelled_keywords: null, lesson_keywords: null, makeup_phrases: null, student_merges: {} }
 
+/**
+ * SHA-256 of a string as hex, used to key storage by account without storing
+ * the email.
+ * @param {string} str Text to hash.
+ * @returns {Promise<string>} The hex digest.
+ */
 export async function sha256Hex(str) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str))
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
+/**
+ * Load an account's settings, filled in with the defaults; corrupt data loads
+ * as the defaults.
+ * @param {string} email The signed-in user's email, hashed into the storage
+ *   key.
+ * @param {Storage} [storage] Defaults to localStorage.
+ * @returns {Promise<object>} The settings.
+ */
 export async function loadUserSettings(email, storage = globalThis.localStorage) {
   const key = SETTINGS_KEY_PREFIX + await sha256Hex(email)
   const raw = storage.getItem(key)
@@ -22,6 +38,14 @@ export async function loadUserSettings(email, storage = globalThis.localStorage)
   }
 }
 
+/**
+ * Save an account's settings.
+ * @param {string} email The signed-in user's email, hashed into the storage
+ *   key.
+ * @param {object} settings The full settings.
+ * @param {Storage} [storage] Defaults to localStorage.
+ * @returns {Promise<void>}
+ */
 export async function saveUserSettings(email, settings, storage = globalThis.localStorage) {
   const key = SETTINGS_KEY_PREFIX + await sha256Hex(email)
   storage.setItem(key, JSON.stringify(settings))

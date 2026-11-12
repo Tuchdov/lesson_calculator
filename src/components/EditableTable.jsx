@@ -17,8 +17,9 @@ const CONFLICT_HINT = 'These saved spellings disagree, so this is probably two s
  * @param {object} props Rows plus pricing, override and payment-link state and callbacks.
  * @returns {import('react').ReactNode} The grouped table.
  */
-export function EditableTable({ rows, config, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, month, defaultMessage, defaultInvoiceDescription, previewImage, amountOverrides, onAmountOverrideChange, lessonOverrides, onLessonOverrideChange, tierOverrides, onTierOverrideChange, paymentLinks, onPaymentLinkChange, getAccessToken, prepareStatus, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange, onRemoveRow }) {
+export function EditableTable({ rows, config, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, month, defaultMessage, defaultInvoiceDescription, previewImage, amountOverrides, onAmountOverrideChange, lessonOverrides, onLessonOverrideChange, tierOverrides, onTierOverrideChange, paymentLinks, onPaymentLinkChange, getAccessToken, prepareStatus, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange, onRemoveRow, onMergeStudents, onUnmergeStudent }) {
   const grouped = groupByType(rows)
+  const studentNames = (rows ?? []).map(r => r.student).sort((a, b) => a.localeCompare(b, 'he'))
   const [expandedRow, setExpandedRow] = useState(null)
 
   return (
@@ -73,6 +74,9 @@ export function EditableTable({ rows, config, customPrices, onCustomPriceChange,
                   reviewResolutions={reviewResolutions}
                   onReviewResolutionChange={onReviewResolutionChange}
                   onRemove={onRemoveRow}
+                  mergeTargets={studentNames.filter(name => name !== row.student)}
+                  onMerge={onMergeStudents}
+                  onUnmerge={onUnmergeStudent}
                 />
               )),
             ]
@@ -83,6 +87,11 @@ export function EditableTable({ rows, config, customPrices, onCustomPriceChange,
   )
 }
 
+/**
+ * The heading row of a student-type group (discounted or full price).
+ * @param {object} props type: "regular" or "non_regular".
+ * @returns {import('react').ReactNode} The row.
+ */
 function GroupHeader({ type }) {
   return (
     <tr className={`${styles.groupRow} ${type === 'regular' ? styles.groupRegular : styles.groupNonRegular}`}>
@@ -99,7 +108,7 @@ function GroupHeader({ type }) {
  * @param {object} props Student data, pricing, payment state, and callbacks.
  * @returns {import('react').ReactNode} The invoice row and optional details rows.
  */
-function StudentRow({ row, config, customPrices, onCustomPriceChange, details, onCustomerDetailChange, month, defaultMessage, defaultInvoiceDescription, previewImage, expandedRow, setExpandedRow, amountOverride, amountOverrideNames, onAmountOverrideChange, lessonOverrideNames, onLessonOverrideChange, studentType, tierOverrideNames, onTierOverrideChange, linkEntry, onPaymentLinkChange, getAccessToken, batchState, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange, onRemove }) {
+function StudentRow({ row, config, customPrices, onCustomPriceChange, details, onCustomerDetailChange, month, defaultMessage, defaultInvoiceDescription, previewImage, expandedRow, setExpandedRow, amountOverride, amountOverrideNames, onAmountOverrideChange, lessonOverrideNames, onLessonOverrideChange, studentType, tierOverrideNames, onTierOverrideChange, linkEntry, onPaymentLinkChange, getAccessToken, batchState, onRowStatusChange, sendBlocked, reviewResolutions, onReviewResolutionChange, onRemove, mergeTargets, onMerge, onUnmerge }) {
   const { phone, full_name: fullName } = details
   const custom = customPrices?.[row.student]
   // A full-price student can be given the discounted price for this month.
@@ -122,6 +131,9 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
   const [countDraft, setCountDraft] = useState({})
   const [countSaveError, setCountSaveError] = useState(null)
   const [removeError, setRemoveError] = useState(null)
+  const [mergeTarget, setMergeTarget] = useState('')
+  const [mergeError, setMergeError] = useState(null)
+  const [merging, setMerging] = useState(false)
 
   if (previousCustom !== custom) {
     setPreviousCustom(custom)
@@ -303,14 +315,13 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
       const v = parseFloat(draft?.[d])
       parsed[d] = isNaN(v) ? prices[d] : v
     }
-    let update
-    if (custom && ('regular' in custom || 'non_regular' in custom)) {
-      update = { ...custom, [studentType]: parsed }
-    } else {
-      // A granted row edits only the discounted tier; the full price stays as
-      // it is, so it isn't lowered once the grant is cleared or next month.
-      const fullPrices = discountGranted ? resolveRowPrices(row.student, false, config, custom) : parsed
-      update = { regular: parsed, non_regular: fullPrices }
+    // Only the tier the row is billed at changes (the discounted one on a
+    // granted row); the other keeps what it bills today, so editing the full
+    // price never moves the discount and vice versa.
+    const update = {
+      regular: resolveRowPrices(row.student, true, config, custom),
+      non_regular: resolveRowPrices(row.student, false, config, custom),
+      [studentType]: parsed,
     }
     // A rate saved under other spellings of this student moves with it, so the
     // spellings don't end up with two different prices (a name conflict).
@@ -322,6 +333,53 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
   const isExpanded = expandedRow === row.student
   const reviewOpen = expandedRow === `review:${row.student}`
   const toggleReview = () => setExpandedRow(reviewOpen ? null : `review:${row.student}`)
+  const mergeOpen = expandedRow === `merge:${row.student}`
+  const mergedNames = row.merged_names ?? []
+  const canMerge = !!onMerge && (mergeTargets?.length > 0 || mergedNames.length > 0)
+
+  /** Opens or closes the merge panel, starting with no target picked. */
+  const toggleMerge = () => {
+    setMergeTarget('')
+    setMergeError(null)
+    setExpandedRow(mergeOpen ? null : `merge:${row.student}`)
+  }
+
+  /**
+   * Bills this student as the picked one from now on (App recalculates), and
+   * closes the panel; a failed save keeps it open with the error.
+   * @returns {Promise<void>}
+   */
+  const handleMerge = async () => {
+    if (editLocked || merging || !mergeTarget) return
+    setMerging(true)
+    setMergeError(null)
+    try {
+      await onMerge?.(row.student, mergeTarget)
+      setExpandedRow(null)
+    } catch (err) {
+      setMergeError(err.message ?? 'Failed to save. Try again.')
+    } finally {
+      setMerging(false)
+    }
+  }
+
+  /**
+   * Gives a name merged into this student its own row again.
+   * @param {string} name The merged calendar name.
+   * @returns {Promise<void>}
+   */
+  const handleUnmerge = async (name) => {
+    if (editLocked || merging) return
+    setMerging(true)
+    setMergeError(null)
+    try {
+      await onUnmerge?.(name)
+    } catch (err) {
+      setMergeError(err.message ?? 'Failed to save. Try again.')
+    } finally {
+      setMerging(false)
+    }
+  }
 
   const handleToggleExpand = () => {
     if (isExpanded) {
@@ -421,8 +479,24 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
                 ✕
               </button>
             )}
+            {canMerge && (
+              <button
+                className={styles.removeBtn}
+                onClick={toggleMerge}
+                aria-expanded={mergeOpen}
+                aria-label={`Merge ${row.student} with another student`}
+                title="Same person under another name? Merge them into one student"
+              >
+                ⇄
+              </button>
+            )}
             {row.student}
             {custom && <span className={styles.customBadge}>custom</span>}
+            {mergedNames.length > 0 && (
+              <span className={styles.customBadge} title={`Calendar events named ${mergedNames.join(', ')} are billed as ${row.student}`}>
+                merged
+              </span>
+            )}
             {row.calendar_lessons && (
               <span
                 className={styles.customBadge}
@@ -640,6 +714,45 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
           </td>
         </tr>
       )}
+      {mergeOpen && (
+        <tr className={styles.expandRow}>
+          <td colSpan={7} className={styles.expandCell}>
+            <div className={styles.reviewList}>
+              {mergedNames.map(name => (
+                <div key={name} className={styles.expandInner}>
+                  <span className={styles.expandLabel}>Events named “{name}” are billed as {row.student}.</span>
+                  <button className={styles.btnCancelPhone} onClick={() => handleUnmerge(name)} disabled={editLocked || merging} title={editLocked ? STALE_HINT : 'Give this name its own row again'}>
+                    הפרד
+                  </button>
+                </div>
+              ))}
+              {mergeTargets?.length > 0 && (
+                <div className={styles.expandInner}>
+                  <label className={styles.expandLabel} htmlFor={`merge-${row.student}`}>Bill {row.student} as:</label>
+                  <select
+                    id={`merge-${row.student}`}
+                    className={styles.phoneInput}
+                    value={mergeTarget}
+                    onChange={e => { setMergeTarget(e.target.value); setMergeError(null) }}
+                    dir="auto"
+                  >
+                    <option value="">Choose a student…</option>
+                    {mergeTargets.map(name => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                  <button className={styles.btnSavePhone} onClick={handleMerge} disabled={editLocked || merging || !mergeTarget} title={editLocked ? STALE_HINT : undefined}>
+                    {merging ? '…' : 'מזג'}
+                  </button>
+                  <button className={styles.btnCancelPhone} onClick={toggleMerge}>ביטול</button>
+                </div>
+              )}
+              <div className={styles.reviewHint}>
+                From now on, calendar events under this name count as the chosen student&apos;s lessons, this month and every later one. Adjustments saved for this month under the old name are not carried over.
+              </div>
+              {mergeError && <span className={styles.phoneErrorMsg} role="alert">{mergeError}</span>}
+            </div>
+          </td>
+        </tr>
+      )}
       {reviewOpen && (
         <tr className={styles.expandRow}>
           <td colSpan={7} className={styles.expandCell}>
@@ -659,6 +772,9 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
                     const older = storedReviewNames(item, reviewResolutions, month, row).filter(n => n !== row.student)
                     await onReviewResolutionChange?.(reviewKey(month, row.student, item.id), resolution)
                     for (const name of older) await onReviewResolutionChange?.(reviewKey(month, name, item.id), null)
+                    // The last open item answered: the row is settled, so the panel closes.
+                    const othersSettled = row.review_items.every(other => other.id === item.id || reviewResolution(other, reviewResolutions, month, row))
+                    if (resolution && othersSettled) setExpandedRow(null)
                   }}
                 />
               ))}
@@ -675,6 +791,13 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
 
 const REVIEW_MODE_LABEL = { prorata: 'Pro-rata', base: 'Standard lesson only', fixed: 'Fixed amount', free: "Don't charge" }
 
+/**
+ * One lesson of a non-standard length, with the ways to charge it and
+ * save/clear buttons.
+ * @param {object} props item, prices, resolution (applied), stored (saved),
+ *   locked and onSave.
+ * @returns {import('react').ReactNode} The item.
+ */
 function ReviewItem({ item, prices, resolution, stored, locked, onSave }) {
   const [mode, setMode] = useState(() => resolution?.mode ?? defaultReviewMode(item, prices))
   const [fixedAmount, setFixedAmount] = useState(() => (resolution?.mode === 'fixed' ? String(resolution.amount) : ''))
@@ -747,6 +870,11 @@ function ReviewItem({ item, prices, resolution, stored, locked, onSave }) {
   )
 }
 
+/**
+ * Rows by student type, each sorted by name in Hebrew order.
+ * @param {object[]} [rows] The rows.
+ * @returns {{regular: object[], non_regular: object[]}} The groups.
+ */
 function groupByType(rows = []) {
   const g = { regular: [], non_regular: [] }
   for (const r of rows) g[r.student_type]?.push(r)

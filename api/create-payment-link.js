@@ -1,11 +1,22 @@
 import { createPaymentLink, ServiceError } from '../src/api/paymentLinkService.js'
 
-// Links point back at whichever deployment minted them.
+/**
+ * Links point back at whichever deployment minted them.
+ * @param {object} req The Vercel request.
+ * @returns {string | undefined} The https origin.
+ */
 function requestOrigin(req) {
   const host = req.headers['x-forwarded-host'] || req.headers.host
   return host ? `https://${host}` : undefined
 }
 
+/**
+ * POST /api/create-payment-link: mints a payment link for the signed-in teacher
+ * (paymentLinkService.js).
+ * @param {object} req The Vercel request.
+ * @param {object} res The Vercel response.
+ * @returns {Promise<void>}
+ */
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' })

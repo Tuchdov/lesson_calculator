@@ -6,6 +6,12 @@ const NAV_ITEMS = [
   { id: 'settings', label: 'Settings', icon: '⚙️' },
 ]
 
+/**
+ * Navigation between the calculator, Custom Prices and Settings, with the
+ * signed-in account and sign-out.
+ * @param {object} props page, onNavigate, userEmail and onSignOut.
+ * @returns {import('react').ReactNode} The sidebar.
+ */
 export function Sidebar({ page, onNavigate, userEmail, onSignOut }) {
   return (
     <nav className={styles.sidebar}>
