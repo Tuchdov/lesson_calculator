@@ -2,6 +2,13 @@ import { put } from '@vercel/blob'
 import { ServiceError } from '../src/api/paymentLinkService.js'
 import { uploadPreviewImage } from '../src/api/previewImageService.js'
 
+/**
+ * POST /api/upload-preview-image: stores the WhatsApp preview photo
+ * (previewImageService.js).
+ * @param {object} req The Vercel request.
+ * @param {object} res The Vercel response.
+ * @returns {Promise<void>}
+ */
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' })

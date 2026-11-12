@@ -12,6 +12,12 @@ export const MAKEUP_AUTO_MAX = 90
 // dropped. A marker in first position is kept so the name is never emptied.
 const PARENT_MARKERS = ['אמא', 'אבא']
 
+/**
+ * The UTC start and end of a month.
+ * @param {string} monthStr Month key, "YYYY-MM".
+ * @returns {{start: Date, end: Date}} Start of the month and start of the next
+ *   one (exclusive).
+ */
 export function monthWindow(monthStr) {
   const [year, month] = monthStr.split('-').map(Number)
   const start = new Date(Date.UTC(year, month - 1, 1))
@@ -21,6 +27,12 @@ export function monthWindow(monthStr) {
   return { start, end }
 }
 
+/**
+ * A timed event's lesson length, allowing ±3 minutes around 30, 45 and 60.
+ * @param {object} event A Google Calendar event.
+ * @returns {number | null} 30, 45 or 60; null for any other length or an
+ *   all-day event.
+ */
 export function lessonDurationMinutes(event) {
   const startRaw = event?.start?.dateTime
   const endRaw = event?.end?.dateTime
@@ -34,10 +46,14 @@ export function lessonDurationMinutes(event) {
   return null
 }
 
-// Detects a single calendar block that covers two back-to-back lessons booked
-// as one event (e.g. a 120-min block instead of two separate 60-min events).
-// Returns the half-duration (45 or 60) so the caller can count it twice, or
-// null if the event isn't a recognized double-length block.
+/**
+ * Detects a single calendar block that covers two back-to-back lessons booked
+ * as one event (e.g. a 120-min block instead of two separate 60-min events).
+ * Returns the half-duration (45 or 60) so the caller can count it twice, or
+ * null if the event isn't a recognized double-length block.
+ * @param {object} event A Google Calendar event.
+ * @returns {number | null} 45 or 60 (the length of each half), or null.
+ */
 export function doubleLessonDurationMinutes(event) {
   const startRaw = event?.start?.dateTime
   const endRaw = event?.end?.dateTime
@@ -49,7 +65,11 @@ export function doubleLessonDurationMinutes(event) {
   return null
 }
 
-// Raw minutes of a timed event, or null for all-day / malformed events.
+/**
+ * Raw minutes of a timed event, or null for all-day / malformed events.
+ * @param {object} event A Google Calendar event.
+ * @returns {number | null} Length in whole minutes.
+ */
 export function eventMinutes(event) {
   const startRaw = event?.start?.dateTime
   const endRaw = event?.end?.dateTime
@@ -57,33 +77,63 @@ export function eventMinutes(event) {
   return Math.round((new Date(endRaw) - new Date(startRaw)) / 60000)
 }
 
-// Longest keyword first, so "פיתוח קול מתקדם" wins over "פיתוח קול" when
-// both are configured and the name is cut around the right one.
+/**
+ * Longest keyword first, so "פיתוח קול מתקדם" wins over "פיתוח קול" when both
+ * are configured and the name is cut around the right one.
+ * @param {string} summary Event title.
+ * @param {string[]} keywords Configured lesson keywords.
+ * @returns {string | null} The keyword found, or null.
+ */
 function matchedLessonKeyword(summary, keywords) {
   if (!summary) return null
   const sorted = keywords.filter(k => typeof k === 'string' && k).sort((a, b) => b.length - a.length)
   return sorted.find(k => summary.includes(k)) ?? null
 }
 
+/**
+ * Whether an event title is a lesson (contains a lesson keyword).
+ * @param {string} summary Event title.
+ * @param {string[]} [keywords] Lesson keywords; the built-in list by default.
+ * @returns {boolean} Whether it is a lesson.
+ */
 export function isTargetLesson(summary, keywords = DEFAULT_LESSON_KEYWORDS) {
   return matchedLessonKeyword(summary, keywords) !== null
 }
 
+/**
+ * Whether an event title marks a cancelled lesson (case-insensitive).
+ * @param {string} summary Event title.
+ * @param {string[]} [keywords] Cancellation keywords; the built-in list by
+ *   default.
+ * @returns {boolean} Whether it was cancelled.
+ */
 export function isCancelledLesson(summary, keywords = DEFAULT_CANCELLED_KEYWORDS) {
   if (!summary) return false
   const lower = summary.toLowerCase()
   return keywords.some(kw => lower.includes(kw.toLowerCase()))
 }
 
+/**
+ * Whether an event title marks a cancellation that is still charged.
+ * @param {string} summary Event title.
+ * @param {string[]} [phrases] Paid-cancellation phrases; the built-in list by
+ *   default.
+ * @returns {boolean} Whether it is a paid cancellation.
+ */
 export function isPaidCancellation(summary, phrases = DEFAULT_PAID_CANCELLATION_PHRASES) {
   return Boolean(summary) && phrases.some(phrase => summary.includes(phrase))
 }
 
-// Keeps the first two words of the student's own name. Whole "(...)" groups
-// are notes ("(9.5)", "(אמא עינת)"), words with digits are dates, words with
-// no letters are decoration (✨), and a parent marker ends the name. A plain
-// 1-2 digit number after the first word ("דנה 1") tells two students with the
-// same first name apart, so it stays part of the name.
+/**
+ * Keeps the first two words of the student's own name. Whole "(...)" groups are
+ * notes ("(9.5)", "(אמא עינת)"), words with digits are dates, words with no
+ * letters are decoration (✨), and a parent marker ends the name. A plain 1-2
+ * digit number after the first word ("דנה 1") tells two students with the same
+ * first name apart, so it stays part of the name.
+ * @param {string} name A name as written in a title or saved key.
+ * @returns {string} The student's own name, or `name` unchanged when nothing is
+ *   left.
+ */
 export function normalizeStudentName(name) {
   const words = []
   for (const w of name.replace(/\([^)]*\)?/g, ' ').replace(/\)/g, ' ').split(/\s+/)) {
@@ -151,12 +201,19 @@ export function removeStudentMerge(merges = {}, name) {
   return next
 }
 
-// Saved data can be keyed by a fuller spelling than the calendar yields, e.g.
-// a CSV import stored "ענבר 11.5 (אמא עינת)" while titles give "ענבר". A saved
-// key matches when it normalizes to the parsed name (exact, not fuzzy). The
-// canonical key prefers one with a custom price, so pricing never misses;
-// `aliases` lists every matching key so details split across spellings
-// (phone under one, price under another) can still be merged.
+/**
+ * Saved data can be keyed by a fuller spelling than the calendar yields, e.g. a
+ * CSV import stored "ענבר 11.5 (אמא עינת)" while titles give "ענבר". A saved
+ * key matches when it normalizes to the parsed name (exact, not fuzzy). The
+ * canonical key prefers one with a custom price, so pricing never misses;
+ * `aliases` lists every matching key so details split across spellings (phone
+ * under one, price under another) can still be merged.
+ * @param {string} student The parsed calendar name.
+ * @param {object} [customPrices] Saved prices by student.
+ * @param {object} [customerDetails] Saved details by student.
+ * @returns {{key: string, aliases: string[]}} The key the row is saved under
+ *   and its other spellings.
+ */
 export function resolveSavedStudent(student, customPrices = {}, customerDetails = {}) {
   const matches = (record) => Object.keys(record ?? {})
     .filter(k => k === student || normalizeStudentName(k) === student)
@@ -179,6 +236,15 @@ const CONFLICT_FIELDS = {
   phone: v => String(v).replace(/\D/g, ''),
   full_name: v => String(v).trim().replace(/\s+/g, ' '),
 }
+/**
+ * The fields on which the saved spellings of one row disagree (see
+ * CONFLICT_FIELDS above).
+ * @param {string[]} keys The spellings merged into one row.
+ * @param {object} [customPrices] Saved prices by student.
+ * @param {object} [customerDetails] Saved details by student.
+ * @param {object} [defaults] Default prices per tier.
+ * @returns {string[]} Conflicting fields: "phone", "full_name", "price".
+ */
 export function savedNameConflicts(keys, customPrices = {}, customerDetails = {}, defaults = {}) {
   const conflicts = []
   for (const [field, normalize] of Object.entries(CONFLICT_FIELDS)) {
@@ -190,24 +256,38 @@ export function savedNameConflicts(keys, customPrices = {}, customerDetails = {}
   return conflicts
 }
 
-// A price entry only counts as custom when at least one price is filled in
-// (inputs hold strings like "230"; saved entries hold numbers). Parsed with
-// parseFloat, as Custom Prices does when it saves, so what the page accepts is
-// what gets billed.
+/**
+ * A price entry only counts as custom when at least one price is filled in
+ * (inputs hold strings like "230"; saved entries hold numbers). Parsed with
+ * parseFloat, as Custom Prices does when it saves, so what the page accepts is
+ * what gets billed.
+ * @param {object} entry A saved price entry, flat or tiered.
+ * @returns {boolean} Whether any price is filled in.
+ */
 export function hasSavedPrice(entry) {
   const filled = v => !isNaN(parseFloat(v))
   return Object.values(entry ?? {}).some(v => (v && typeof v === 'object') ? Object.values(v).some(filled) : filled(v))
 }
 
-// "YYYY-MM" for today, the key the calculator and Settings preview use.
+/**
+ * "YYYY-MM" for today, the key the calculator and Settings preview use.
+ * @param {Date} [now] The date to use; today by default.
+ * @returns {string} The month key.
+ */
 export function currentMonthKey(now = new Date()) {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
-// What a saved key's custom price actually bills, per tier, via the same
-// resolvePriceTable the calculation uses (so a partial flat price that falls
-// back to the defaults compares as the defaults). Null when the key has no
-// price filled in.
+/**
+ * What a saved key's custom price actually bills, per tier, via the same
+ * resolvePriceTable the calculation uses (so a partial flat price that falls
+ * back to the defaults compares as the defaults). Null when the key has no
+ * price filled in.
+ * @param {string} key Saved student key.
+ * @param {object} customPrices Saved prices by student.
+ * @param {object} defaults Default prices per tier.
+ * @returns {string | null} A comparable fingerprint of both tiers.
+ */
 function billedPriceKey(key, customPrices, defaults) {
   if (!hasSavedPrice(customPrices?.[key])) return null
   const tier = regular => {
@@ -217,10 +297,17 @@ function billedPriceKey(key, customPrices, defaults) {
   return JSON.stringify([tier(true), tier(false)])
 }
 
-// A calculated row was matched to saved students at Calculate time. It needs
-// recalculating (and sending waits) when, with the saved students as they are
-// now, its key, its other spellings or its conflicts would come out different,
-// e.g. a conflicting spelling added on Custom Prices since then.
+/**
+ * A calculated row was matched to saved students at Calculate time. It needs
+ * recalculating (and sending waits) when, with the saved students as they are
+ * now, its key, its other spellings or its conflicts would come out different,
+ * e.g. a conflicting spelling added on Custom Prices since then.
+ * @param {object} row A calculated row.
+ * @param {object} [customPrices] Saved prices now.
+ * @param {object} [customerDetails] Saved details now.
+ * @param {object} [defaults] Default prices per tier.
+ * @returns {boolean} Whether the row is stale.
+ */
 export function rowNeedsRecalc(row, customPrices = {}, customerDetails = {}, defaults = {}) {
   const now = resolveSavedStudent(normalizeStudentName(row.student), customPrices, customerDetails)
   if (now.key !== row.student) return true
@@ -229,6 +316,12 @@ export function rowNeedsRecalc(row, customPrices = {}, customerDetails = {}, def
   return !same(savedNameConflicts([now.key, ...now.aliases], customPrices, customerDetails, defaults), row.name_conflicts ?? [])
 }
 
+/**
+ * Trims separators ("-", "|", ":") and extra spaces from both ends of a name
+ * candidate.
+ * @param {string} name Part of an event title.
+ * @returns {string} The cleaned text.
+ */
 function cleanNameCandidate(name) {
   return name
     .replace(/^(?:\s*[-|:]\s*)+/, '')
@@ -237,6 +330,13 @@ function cleanNameCandidate(name) {
     .trim()
 }
 
+/**
+ * The student name next to the lesson keyword: the text before it, else the
+ * text after it.
+ * @param {string} text Part of an event title.
+ * @param {string[]} lessonKeywords Configured lesson keywords.
+ * @returns {string | null} The normalized name, or null when there is none.
+ */
 function nameAroundLessonPhrase(text, lessonKeywords) {
   const keyword = matchedLessonKeyword(text, lessonKeywords)
   if (!keyword) return normalizeStudentName(text)
@@ -249,6 +349,13 @@ function nameAroundLessonPhrase(text, lessonKeywords) {
   return suffix ? normalizeStudentName(suffix) : null
 }
 
+/**
+ * Removes labels (e.g. paid-cancellation phrases) from a title so they are
+ * never read as a name.
+ * @param {string} summary Event title.
+ * @param {string[]} ignoredPhrases Phrases to remove.
+ * @returns {string} The cleaned title.
+ */
 function withoutIgnoredPhrases(summary, ignoredPhrases) {
   let cleaned = summary
   // Prefer the most specific label when configured phrases overlap.
@@ -259,6 +366,16 @@ function withoutIgnoredPhrases(summary, ignoredPhrases) {
   return cleanNameCandidate(cleaned)
 }
 
+/**
+ * The student a lesson title is about: the configured regex first, then the
+ * part around a separator (" - ", " | ", ": "), then the text around the lesson
+ * keyword.
+ * @param {string} summary Event title.
+ * @param {string | null} [regex] Settings regex whose first group is the name.
+ * @param {string[]} [ignoredPhrases] Labels that are never part of a name.
+ * @param {string[]} [lessonKeywords] Configured lesson keywords.
+ * @returns {string | null} The normalized student name, or null.
+ */
 export function inferStudentName(summary, regex = null, ignoredPhrases = [], lessonKeywords = DEFAULT_LESSON_KEYWORDS) {
   if (!summary) return null
   const cleanedSummary = withoutIgnoredPhrases(summary, ignoredPhrases)
@@ -288,6 +405,14 @@ export function inferStudentName(summary, regex = null, ignoredPhrases = [], les
   return normalizeStudentName(cleanedSummary)
 }
 
+/**
+ * Whether a student qualifies for the regular (discounted) price: 4+ lessons in
+ * the month, or one in every 7-day stretch of it.
+ * @param {Date[]} lessons Lesson start times (any window).
+ * @param {Date} invoiceStart Start of the invoiced month.
+ * @param {Date} invoiceEnd Start of the next month.
+ * @returns {boolean} Whether the student is regular.
+ */
 export function isRegular(lessons, invoiceStart, invoiceEnd) {
   const inWindow = lessons.filter(dt => dt >= invoiceStart && dt < invoiceEnd)
   if (inWindow.length >= 4) return true
@@ -302,6 +427,17 @@ export function isRegular(lessons, invoiceStart, invoiceEnd) {
   return true
 }
 
+/**
+ * A student's per-lesson prices for a tier: their tiered custom price (missing
+ * durations from the defaults, a missing tier from the other tier), else a
+ * complete flat custom price, else the defaults.
+ * @param {string} student Saved student key.
+ * @param {boolean} regular Whether the regular (discounted) tier applies.
+ * @param {object} regularPrices Default regular prices.
+ * @param {object} nonRegularPrices Default full prices.
+ * @param {object} [customPrices] Saved prices by student.
+ * @returns {{'60': number, '45': number, '30': number}} Prices per duration.
+ */
 export function resolvePriceTable(student, regular, regularPrices, nonRegularPrices, customPrices) {
   const defaults = regular ? regularPrices : nonRegularPrices
   if (customPrices && student in customPrices) {
@@ -321,6 +457,12 @@ export function resolvePriceTable(student, regular, regularPrices, nonRegularPri
   return defaults
 }
 
+/**
+ * Fills the durations a tier leaves out from the defaults.
+ * @param {object} prices A tier of a custom price.
+ * @param {object} defaults Default prices for the tier.
+ * @returns {object} Prices for 60, 45 and 30 minutes.
+ */
 function fillDurations(prices, defaults) {
   return {
     '60': prices['60'] ?? defaults['60'],
@@ -329,6 +471,17 @@ function fillDurations(prices, defaults) {
   }
 }
 
+/**
+ * Counts each student's lessons in the month from calendar events and prices
+ * them. Events from the two months before only decide who is regular. Lessons
+ * of a non-standard length become review items instead of counts.
+ * @param {object[]} events Calendar events covering the month and the two
+ *   before.
+ * @param {object} config Prices, keywords, saved students and merges.
+ * @param {string} monthStr Month key, "YYYY-MM".
+ * @returns {{rows: object[], summary: object}} One row per student, and the
+ *   month's totals.
+ */
 export function calculatePayments(events, config, monthStr) {
   const { start: monthStart, end: monthEnd } = monthWindow(monthStr)
   const lessonKeywords = config.lesson_keywords ?? DEFAULT_LESSON_KEYWORDS

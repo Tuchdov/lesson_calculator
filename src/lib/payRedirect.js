@@ -14,13 +14,26 @@ const MAX_TITLE = 200
 // Only those URLs may ride in a link, so it can't point at someone else's image.
 const PREVIEW_IMAGE = /^https:\/\/[a-z0-9]+\.public\.blob\.vercel-storage\.com\/[A-Za-z0-9._/-]{1,200}$/
 
+/**
+ * Whether a URL is a preview photo from our Blob store (see PREVIEW_IMAGE
+ * above).
+ * @param {string} url The image URL.
+ * @returns {boolean} Whether it may ride in a link.
+ */
 export function isPreviewImageUrl(url) {
   return typeof url === 'string' && PREVIEW_IMAGE.test(url)
 }
 
-// Same wording as the Make scenario's default product name, so the preview
-// matches the invoice. Uses the month the app calculated, which the scenario
-// derives as "last month" — the same month for a normal monthly run.
+/**
+ * Same wording as the Make scenario's default product name, so the preview
+ * matches the invoice. Uses the month the app calculated, which the scenario
+ * derives as "last month" — the same month for a normal monthly run.
+ * @param {string} student The student.
+ * @param {string} monthStr Month key.
+ * @param {string} [customDescription] The rendered invoice text, used instead
+ *   when set.
+ * @returns {string} The title.
+ */
 export function buildInvoiceTitle(student, monthStr, customDescription) {
   if (customDescription) return customDescription
   const [yyyy] = (monthStr ?? '').split('-')
@@ -29,18 +42,36 @@ export function buildInvoiceTitle(student, monthStr, customDescription) {
   return `פיתוח קול - ${student} - תשלום ${monthName} ${yyyy.slice(2)}`
 }
 
+/**
+ * URL-safe base64 without padding.
+ * @param {Uint8Array} bytes Data to encode.
+ * @returns {string} The encoded text.
+ */
 function toBase64Url(bytes) {
   let bin = ''
   for (const b of bytes) bin += String.fromCharCode(b)
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
+/**
+ * Decodes URL-safe base64 (toBase64Url).
+ * @param {string} text Encoded text.
+ * @returns {Uint8Array} The bytes.
+ */
 function fromBase64Url(text) {
   const bin = atob(text.replace(/-/g, '+').replace(/_/g, '/'))
   return Uint8Array.from(bin, (c) => c.charCodeAt(0))
 }
 
-// The image is signed only when present, so links sent before it existed stay valid.
+/**
+ * The image is signed only when present, so links sent before it existed stay
+ * valid.
+ * @param {string} secret PAY_LINK_SECRET.
+ * @param {string} growId The Grow link path.
+ * @param {string} encodedTitle Encoded title.
+ * @param {string} [encodedImage] Encoded image URL.
+ * @returns {Promise<string>} The shortened HMAC-SHA256 signature.
+ */
 async function sign(secret, growId, encodedTitle, encodedImage) {
   const key = await crypto.subtle.importKey(
     'raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
@@ -50,7 +81,12 @@ async function sign(secret, growId, encodedTitle, encodedImage) {
   return toBase64Url(new Uint8Array(mac)).slice(0, SIG_LENGTH)
 }
 
-// Constant-time, so the signature can't be guessed a character at a time.
+/**
+ * Constant-time, so the signature can't be guessed a character at a time.
+ * @param {string} a First string.
+ * @param {string} b Second string.
+ * @returns {boolean} Whether they are equal.
+ */
 function sameString(a, b) {
   if (a.length !== b.length) return false
   let diff = 0
@@ -58,9 +94,13 @@ function sameString(a, b) {
   return diff === 0
 }
 
-// Returns the Grow link unchanged when it can't be wrapped (no secret, no base
-// URL, or not a Grow link), so a missing env var never breaks sending. An
-// image that isn't a preview-photo URL is dropped rather than failing the link.
+/**
+ * Returns the Grow link unchanged when it can't be wrapped (no secret, no base
+ * URL, or not a Grow link), so a missing env var never breaks sending. An image
+ * that isn't a preview-photo URL is dropped rather than failing the link.
+ * @param {object} options growUrl, title, image, baseUrl and secret.
+ * @returns {Promise<string>} Our signed /api/pay link, or the Grow link.
+ */
 export async function wrapPaymentLink({ growUrl, title, image, baseUrl, secret }) {
   if (!secret || !baseUrl || !growUrl?.startsWith(GROW_ORIGIN)) return growUrl
   const growId = growUrl.slice(GROW_ORIGIN.length)
@@ -74,11 +114,22 @@ export async function wrapPaymentLink({ growUrl, title, image, baseUrl, secret }
   return `${baseUrl.replace(/\/+$/, '')}/api/pay?g=${growId}&t=${t}${imageParam}&s=${s}`
 }
 
+/**
+ * Decodes base64url UTF-8 text, throwing on invalid UTF-8.
+ * @param {string} encoded Encoded text.
+ * @returns {string} The text.
+ */
 function decodeText(encoded) {
   return new TextDecoder('utf-8', { fatal: true }).decode(fromBase64Url(encoded))
 }
 
-// Returns {growUrl, title, image?} for a genuine link, or null for anything else.
+/**
+ * Returns {growUrl, title, image?} for a genuine link, or null for anything
+ * else.
+ * @param {object} query The g, t, i and s query values.
+ * @param {string} secret PAY_LINK_SECRET.
+ * @returns {Promise<object | null>} The link, or null.
+ */
 export async function readPaymentLink({ g, t, i, s }, secret) {
   if (!secret || typeof g !== 'string' || typeof t !== 'string' || typeof s !== 'string') return null
   if (i != null && (typeof i !== 'string' || !/^[A-Za-z0-9_-]{1,400}$/.test(i))) return null
@@ -95,13 +146,22 @@ export async function readPaymentLink({ g, t, i, s }, secret) {
   return image ? { growUrl: GROW_ORIGIN + g, title, image } : { growUrl: GROW_ORIGIN + g, title }
 }
 
+/**
+ * Escapes text for HTML content and attribute values.
+ * @param {string} text Raw text.
+ * @returns {string} Escaped text.
+ */
 function escapeHtml(text) {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 }
 
-// A 200 page, not a 302: WhatsApp follows HTTP redirects and would read
-// Grow's tags instead. No meta refresh or og:url for the same reason — the
-// browser is forwarded by script, with a plain link as the fallback.
+/**
+ * A 200 page, not a 302: WhatsApp follows HTTP redirects and would read Grow's
+ * tags instead. No meta refresh or og:url for the same reason — the browser is
+ * forwarded by script, with a plain link as the fallback.
+ * @param {object} link growUrl, title and image (readPaymentLink).
+ * @returns {string} The HTML page.
+ */
 export function renderPaymentPage({ growUrl, title, image }) {
   const safeTitle = escapeHtml(title || 'תשלום')
   const imageTag = image ? `\n<meta property="og:image" content="${escapeHtml(image)}">` : ''
@@ -127,6 +187,10 @@ export function renderPaymentPage({ growUrl, title, image }) {
 `
 }
 
+/**
+ * The page shown for a link that is missing or not genuine.
+ * @returns {string} The HTML page.
+ */
 export function renderNotFoundPage() {
   return `<!doctype html>
 <html lang="he" dir="rtl">

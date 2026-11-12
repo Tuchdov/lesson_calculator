@@ -1,7 +1,15 @@
-// Browser-side call to /api/create-payment-link. Thin on purpose — the real
-// logic (auth, Make call, response validation) lives in
-// src/api/paymentLinkService.js and is covered by deno test there; this
-// wrapper is glue that only a running app can exercise.
+/**
+ * Browser-side call to /api/create-payment-link. Thin on purpose — the real
+ * logic (auth, Make call, response validation) lives in
+ * src/api/paymentLinkService.js and is covered by deno test there; this wrapper
+ * is glue that only a running app can exercise.
+ * @param {Function} getAccessToken Supplies a valid Google access token.
+ * @param {object} invoice studentName (payer), lessonStudent, phone, amount,
+ *   month, numberOfLessons, paymentProfile, invoiceDescription and
+ *   previewImage.
+ * @returns {Promise<string>} The payment link; throws with `retryable` and
+ *   `status` on failure.
+ */
 export async function requestPaymentLink(getAccessToken, { studentName, phone, amount, month, numberOfLessons, paymentProfile, invoiceDescription, lessonStudent, previewImage }) {
   const token = await getAccessToken()
   const res = await fetch('/api/create-payment-link', {

@@ -87,6 +87,11 @@ export function EditableTable({ rows, config, customPrices, onCustomPriceChange,
   )
 }
 
+/**
+ * The heading row of a student-type group (discounted or full price).
+ * @param {object} props type: "regular" or "non_regular".
+ * @returns {import('react').ReactNode} The row.
+ */
 function GroupHeader({ type }) {
   return (
     <tr className={`${styles.groupRow} ${type === 'regular' ? styles.groupRegular : styles.groupNonRegular}`}>
@@ -328,7 +333,6 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
   const isExpanded = expandedRow === row.student
   const reviewOpen = expandedRow === `review:${row.student}`
   const toggleReview = () => setExpandedRow(reviewOpen ? null : `review:${row.student}`)
-
   const mergeOpen = expandedRow === `merge:${row.student}`
   const mergedNames = row.merged_names ?? []
   const canMerge = !!onMerge && (mergeTargets?.length > 0 || mergedNames.length > 0)
@@ -787,6 +791,13 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
 
 const REVIEW_MODE_LABEL = { prorata: 'Pro-rata', base: 'Standard lesson only', fixed: 'Fixed amount', free: "Don't charge" }
 
+/**
+ * One lesson of a non-standard length, with the ways to charge it and
+ * save/clear buttons.
+ * @param {object} props item, prices, resolution (applied), stored (saved),
+ *   locked and onSave.
+ * @returns {import('react').ReactNode} The item.
+ */
 function ReviewItem({ item, prices, resolution, stored, locked, onSave }) {
   const [mode, setMode] = useState(() => resolution?.mode ?? defaultReviewMode(item, prices))
   const [fixedAmount, setFixedAmount] = useState(() => (resolution?.mode === 'fixed' ? String(resolution.amount) : ''))
@@ -859,6 +870,11 @@ function ReviewItem({ item, prices, resolution, stored, locked, onSave }) {
   )
 }
 
+/**
+ * Rows by student type, each sorted by name in Hebrew order.
+ * @param {object[]} [rows] The rows.
+ * @returns {{regular: object[], non_regular: object[]}} The groups.
+ */
 function groupByType(rows = []) {
   const g = { regular: [], non_regular: [] }
   for (const r of rows) g[r.student_type]?.push(r)

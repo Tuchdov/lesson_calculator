@@ -1,5 +1,11 @@
 const CALENDAR_API = 'https://www.googleapis.com/calendar/v3'
 
+/**
+ * A message the teacher can act on for a failed Calendar API call.
+ * @param {number} status HTTP status.
+ * @param {string} bodyText Response body.
+ * @returns {string} The message.
+ */
 export function formatCalendarApiError(status, bodyText) {
   let message = null
   try {
@@ -18,6 +24,15 @@ export function formatCalendarApiError(status, bodyText) {
     : `Failed to load calendar events (error ${status}).`
 }
 
+/**
+ * Fetches every event in a window, following pages; a 401 gets one retry with a
+ * fresh token.
+ * @param {Function} getAccessToken Supplies a valid Google access token.
+ * @param {string} calendarId Calendar to read.
+ * @param {Date} timeMin Window start.
+ * @param {Date} timeMax Window end.
+ * @returns {Promise<object[]>} The events.
+ */
 export async function fetchCalendarEvents(getAccessToken, calendarId, timeMin, timeMax) {
   const events = []
   let pageToken = null

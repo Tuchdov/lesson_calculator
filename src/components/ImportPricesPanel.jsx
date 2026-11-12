@@ -12,6 +12,13 @@ const MAPPING_FIELDS = [
 ]
 const FIELD_LABEL = Object.fromEntries(MAPPING_FIELDS.map(f => [f.key, f.label]))
 
+/**
+ * Imports students' prices and phones from an Excel or CSV file: pick a sheet,
+ * map its columns, review the plan, then hand the entries to Custom Prices.
+ * @param {object} props existingKeys (students on the page), availableStudents
+ *   (calendar names), onImport and onClose.
+ * @returns {import('react').ReactNode} The panel.
+ */
 export function ImportPricesPanel({ existingKeys, availableStudents, onImport, onClose }) {
   const [fileName, setFileName] = useState('')
   const [sheetNames, setSheetNames] = useState([])

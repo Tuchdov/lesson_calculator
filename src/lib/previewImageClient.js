@@ -10,6 +10,12 @@ const JPEG_QUALITY = 0.85
 const MAX_JPEG_BYTES = 1024 * 1024
 class TooLargeError extends Error {}
 
+/**
+ * Shrinks an image to MAX_SIDE and re-encodes it as JPEG.
+ * @param {Blob} file The chosen image.
+ * @returns {Promise<string>} Base64 JPEG; throws TooLargeError over
+ *   MAX_JPEG_BYTES.
+ */
 async function toJpegBase64(file) {
   const bitmap = await createImageBitmap(file)
   const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height))
@@ -28,6 +34,12 @@ async function toJpegBase64(file) {
   return base64
 }
 
+/**
+ * Uploads the WhatsApp preview photo.
+ * @param {Function} getAccessToken Supplies a valid Google access token.
+ * @param {Blob} file The chosen image.
+ * @returns {Promise<string>} The public URL of the photo.
+ */
 export async function uploadPreviewImage(getAccessToken, file) {
   let image
   try {

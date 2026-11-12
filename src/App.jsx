@@ -194,9 +194,6 @@ export default function App() {
       .catch(err => console.error('Failed to load the last calculation:', err))
     return () => { current = false }
   }, [userEmail, restoreCalculation])
-  // Every spelling a row answers to, so an imported price under the plain
-  // calendar name (no notes or ages) isn't reported as unmatched.
-  const knownStudents = useMemo(() => [...new Set((calendar.rows ?? []).flatMap(r => [r.student, normalizeStudentName(r.student), ...(r.aliases ?? [])]))], [calendar.rows])
 
   /**
    * Bills `from` as `into` from now on and recalculates the month, so the
@@ -221,6 +218,9 @@ export default function App() {
     await saveSettings({ ...settings, student_merges })
     await calendar.calculate(calcSummary?.month ?? month, { ...calcConfig, student_merges })
   }
+  // Every spelling a row answers to, so an imported price under the plain
+  // calendar name (no notes or ages) isn't reported as unmatched.
+  const knownStudents = useMemo(() => [...new Set((calendar.rows ?? []).flatMap(r => [r.student, normalizeStudentName(r.student), ...(r.aliases ?? [])]))], [calendar.rows])
 
   // A re-auth signs the same account back in and keeps the table; a different
   // account must never see the previous one's students.

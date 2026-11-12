@@ -11,7 +11,8 @@
     "test:unit": "deno test",
     "test:hooks": "vitest run",
     "test:hooks:watch": "vitest",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "docs:coverage": "node scripts/docstring-coverage.js"
   },
   "dependencies": {
     "@vercel/blob": "^2.9.0",
@@ -28,6 +29,7 @@
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "espree": "^11.2.0",
     "globals": "^17.6.0",
     "jsdom": "^30.1.3",
     "vite": "^8.0.12",

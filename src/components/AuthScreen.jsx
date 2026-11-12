@@ -1,5 +1,11 @@
 import styles from './AuthScreen.module.css'
 
+/**
+ * The sign-in screen shown until there is a Google session.
+ * @param {object} props onSignIn (starts Google sign-in) and error (shown when
+ *   sign-in failed).
+ * @returns {import('react').ReactNode} The screen.
+ */
 export function AuthScreen({ onSignIn, error }) {
   return (
     <div className={styles.root}>
