@@ -3,6 +3,7 @@ import { useAuth } from './hooks/useAuth.js'
 import { useUserSettings } from './hooks/useUserSettings.js'
 import { useCalendarData } from './hooks/useCalendarData.js'
 import { normalizeStudentName, currentMonthKey } from './lib/calendarPayments.js'
+import { loadCalculation, saveCalculation } from './lib/calculationStore.js'
 import { loadAmountOverrides, saveAmountOverride, loadLessonOverrides, saveLessonOverride, loadPaymentLinks, savePaymentLink, loadReviewResolutions, saveReviewResolution, loadTierOverrides, saveTierOverride, loadExcludedStudents, saveExcludedStudent } from './lib/payments.js'
 import { AuthScreen } from './components/AuthScreen.jsx'
 import { Sidebar } from './components/Sidebar.jsx'
@@ -178,7 +179,19 @@ export default function App() {
     customer_details: settings.customer_details,
   }, [effectiveConfig, settings.custom_prices, settings.customer_details])
   const calendar = useCalendarData(getValidAccessToken, calcConfig)
-  const { reset: resetCalculation } = calendar
+  const { reset: resetCalculation, restore: restoreCalculation, rows: calcRows, summary: calcSummary, calculatedWith } = calendar
+
+  // The last calculation comes back when the site is opened again, with its
+  // month, unless a new one was started meanwhile. A load for an earlier
+  // account is discarded.
+  useEffect(() => {
+    if (!userEmail) return
+    let current = true
+    loadCalculation(userEmail)
+      .then(saved => { if (current && saved && restoreCalculation(saved)) setMonth(saved.summary.month) })
+      .catch(err => console.error('Failed to load the last calculation:', err))
+    return () => { current = false }
+  }, [userEmail, restoreCalculation])
   // Every spelling a row answers to, so an imported price under the plain
   // calendar name (no notes or ages) isn't reported as unmatched.
   const knownStudents = useMemo(() => [...new Set((calendar.rows ?? []).flatMap(r => [r.student, normalizeStudentName(r.student), ...(r.aliases ?? [])]))], [calendar.rows])
@@ -195,6 +208,16 @@ export default function App() {
     if (lastEmailRef.current && lastEmailRef.current !== userEmail) resetForAccount()
     lastEmailRef.current = userEmail
   }, [userEmail, resetForAccount])
+
+  // Saved under the account it was calculated for (lastEmailRef, updated just
+  // above), not the one signing in: on an account switch the rows don't change
+  // in that render, and they are cleared before the next account's are shown.
+  useEffect(() => {
+    const email = lastEmailRef.current
+    if (!email || !calcRows || !calcSummary) return
+    saveCalculation(email, { rows: calcRows, summary: calcSummary, calculatedWith })
+      .catch(err => console.error('Failed to save the calculation:', err))
+  }, [calcRows, calcSummary, calculatedWith])
 
   if (!accessToken) {
     return <AuthScreen onSignIn={signIn} error={authError} />

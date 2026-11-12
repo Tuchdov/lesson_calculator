@@ -203,3 +203,34 @@ describe('useCalendarData', () => {
     expect(result.current.loading).toBe(false)
   })
 })
+
+describe('useCalendarData restore', () => {
+  const saved = {
+    rows: [{ student: 'Bob', student_type: 'regular', lessons_60: 4, lessons_45: 0, lessons_30: 0, review_items: [] }],
+    summary: { month: '2026-02', students: 1, total_amount_due: 800 },
+    calculatedWith: config,
+  }
+
+  // Value: protects=a calculation saved before the site was closed is shown again; fails_when=restore doesn't set rows, summary and calculatedWith; why_new=calculations now survive a reload; seam=none
+  it('shows a saved calculation', () => {
+    const { result } = renderHook(() => useCalendarData(vi.fn(), config))
+    let applied
+    act(() => { applied = result.current.restore(saved) })
+    expect(applied).toBe(true)
+    expect(result.current).toMatchObject({ rows: saved.rows, summary: saved.summary, calculatedWith: config })
+  })
+
+  // Value: protects=a slow restore never replaces a table the teacher calculated meanwhile; fails_when=restore applies after calculate started; why_new=restore is async on sign-in; seam=calendarApi mock
+  it('skips the saved calculation once a new one has started, until a reset', async () => {
+    const { result } = renderHook(() => useCalendarData(vi.fn(), config))
+    await act(async () => { await result.current.calculate('2026-03') })
+    let applied
+    act(() => { applied = result.current.restore(saved) })
+    expect(applied).toBe(false)
+    expect(result.current.summary.month).toBe('2026-03')
+
+    act(() => { result.current.reset() })
+    act(() => { applied = result.current.restore(saved) })
+    expect(applied).toBe(true)
+  })
+})

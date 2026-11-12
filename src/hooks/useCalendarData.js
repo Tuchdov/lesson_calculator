@@ -6,7 +6,7 @@ import { calculatePayments, monthWindow } from '../lib/calendarPayments.js'
  * Fetch calendar events and calculate lesson payments for a selected month.
  * @param {Function} getAccessToken Supplies a valid Google access token.
  * @param {object|null} config Calendar and pricing configuration.
- * @returns {{rows: Array|null, summary: object|null, loading: boolean, error: string|null, calculate: Function, reset: Function, calculatedWith: object|null}} Calculation state and actions; reset clears it and discards any run in flight; calculatedWith is the config the rows came from.
+ * @returns {{rows: Array|null, summary: object|null, loading: boolean, error: string|null, calculate: Function, reset: Function, restore: Function, calculatedWith: object|null}} Calculation state and actions; reset clears it and discards any run in flight; restore puts back a saved calculation; calculatedWith is the config the rows came from.
  */
 export function useCalendarData(getAccessToken, config) {
   const [rows, setRows] = useState(null)
@@ -17,6 +17,9 @@ export function useCalendarData(getAccessToken, config) {
   // Bumped by every calculate() and reset(); a run that finishes after a newer
   // one started (or after a reset on account switch) is discarded.
   const runRef = useRef(0)
+  // Whether a calculation was started since the last reset; a saved one
+  // restored after that would replace the teacher's newer table.
+  const startedRef = useRef(false)
 
   const calculate = useCallback(async (monthStr) => {
     // getAccessToken is a function reference, always truthy once wired up —
@@ -24,6 +27,7 @@ export function useCalendarData(getAccessToken, config) {
     // Left over from the original !accessToken (nullable string) check.
     if (!getAccessToken || !config) return
     const run = ++runRef.current
+    startedRef.current = true
     setLoading(true)
     setError(null)
     try {
@@ -53,6 +57,7 @@ export function useCalendarData(getAccessToken, config) {
 
   const reset = useCallback(() => {
     runRef.current++
+    startedRef.current = false
     setLoading(false)
     setRows(null)
     setSummary(null)
@@ -60,5 +65,19 @@ export function useCalendarData(getAccessToken, config) {
     setError(null)
   }, [])
 
-  return { rows, summary, loading, error, calculate, reset, calculatedWith }
+  /**
+   * Shows a calculation saved earlier (calculationStore.js), e.g. after the
+   * site was closed, unless one was started since the last reset.
+   * @param {{rows: Array, summary: object, calculatedWith: object|null}} saved The saved calculation.
+   * @returns {boolean} Whether it was applied.
+   */
+  const restore = useCallback((saved) => {
+    if (startedRef.current || !saved) return false
+    setRows(saved.rows)
+    setSummary(saved.summary)
+    setCalculatedWith(saved.calculatedWith ?? null)
+    return true
+  }, [])
+
+  return { rows, summary, loading, error, calculate, reset, restore, calculatedWith }
 }
