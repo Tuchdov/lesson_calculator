@@ -1,5 +1,5 @@
 import { createElement } from 'react'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { EditableTable } from '../../src/components/EditableTable.jsx'
 
@@ -202,5 +202,47 @@ describe('EditableTable lesson count editing', () => {
     fireEvent.click(screen.getByTitle('Save lesson count'))
     await vi.waitFor(() => expect(onLessonOverrideChange).toHaveBeenCalledWith('2026-03', 'Alice', null))
     expect(onLessonOverrideChange).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('EditableTable student merge', () => {
+  const dani = { ...row, student: 'Dani' }
+  const daniel = { ...row, student: 'Daniel Cohen', merged_names: ['Dan'] }
+
+  // Value: protects=the teacher can bill one name as another student from the table, and the panel closes once saved; fails_when=the merge is saved the wrong way round or not at all; why_new=new merge feature; seam=none
+  it('merges a student into the one picked', async () => {
+    const onMergeStudents = vi.fn(async () => {})
+    render(createElement(EditableTable, { rows: [dani, daniel], config, month: '2026-03', onMergeStudents, onUnmergeStudent: vi.fn() }))
+    fireEvent.click(screen.getByLabelText('Merge Dani with another student'))
+    fireEvent.change(screen.getByLabelText('Bill Dani as:'), { target: { value: 'Daniel Cohen' } })
+    await act(async () => { fireEvent.click(screen.getByText('מזג')) })
+    expect(onMergeStudents).toHaveBeenCalledWith('Dani', 'Daniel Cohen')
+    expect(screen.queryByText('מזג')).toBeNull()
+  })
+
+  it('keeps the panel open with the error when the save fails', async () => {
+    const onMergeStudents = vi.fn().mockRejectedValue(new Error('Storage is full'))
+    render(createElement(EditableTable, { rows: [dani, daniel], config, month: '2026-03', onMergeStudents }))
+    fireEvent.click(screen.getByLabelText('Merge Dani with another student'))
+    fireEvent.change(screen.getByLabelText('Bill Dani as:'), { target: { value: 'Daniel Cohen' } })
+    await act(async () => { fireEvent.click(screen.getByText('מזג')) })
+    expect(screen.getByRole('alert').textContent).toBe('Storage is full')
+  })
+
+  it('separates a merged name again', async () => {
+    const onUnmergeStudent = vi.fn(async () => {})
+    render(createElement(EditableTable, { rows: [dani, daniel], config, month: '2026-03', onMergeStudents: vi.fn(), onUnmergeStudent }))
+    expect(screen.getByText('merged')).toBeTruthy()
+    fireEvent.click(screen.getByLabelText('Merge Daniel Cohen with another student'))
+    await act(async () => { fireEvent.click(screen.getByText('הפרד')) })
+    expect(onUnmergeStudent).toHaveBeenCalledWith('Dan')
+  })
+
+  it('is locked while the table is stale', () => {
+    const onMergeStudents = vi.fn()
+    render(createElement(EditableTable, { rows: [dani, daniel], config, month: '2026-03', onMergeStudents, sendBlocked: true }))
+    fireEvent.click(screen.getByLabelText('Merge Dani with another student'))
+    fireEvent.change(screen.getByLabelText('Bill Dani as:'), { target: { value: 'Daniel Cohen' } })
+    expect(screen.getByText('מזג').disabled).toBe(true)
   })
 })

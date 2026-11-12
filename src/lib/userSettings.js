@@ -4,7 +4,9 @@ export const SETTINGS_KEY_PREFIX = 'vocalCalc:settings:'
 // default list" — an explicit
 // `[]` means the user intentionally cleared the list, which must be
 // distinguishable from "not customized yet" everywhere these are read.
-export const DEFAULT_SETTINGS = { custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '', default_invoice_description: '', preview_image: '', paid_cancellation_phrases: null, cancelled_keywords: null, lesson_keywords: null, makeup_phrases: null }
+// student_merges maps a calendar name to the student it bills as
+// (calendarPayments.js mergedStudentName).
+export const DEFAULT_SETTINGS = { custom_prices: {}, customer_details: {}, default_prices: {}, default_message: '', default_invoice_description: '', preview_image: '', paid_cancellation_phrases: null, cancelled_keywords: null, lesson_keywords: null, makeup_phrases: null, student_merges: {} }
 
 export async function sha256Hex(str) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str))

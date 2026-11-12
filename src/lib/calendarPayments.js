@@ -96,6 +96,61 @@ export function normalizeStudentName(name) {
   return own.slice(0, 2).join(' ') || name
 }
 
+/**
+ * The name a calendar name bills under once the teacher's merges (Settings
+ * `student_merges`, merged name -> name it joins) are followed, e.g. "דני"
+ * merged into "דניאל כהן". Looked up as written and normalized; a loop stops
+ * at the first repeat.
+ * @param {string} name A parsed student name.
+ * @param {Record<string, string>} [merges] The saved merges.
+ * @returns {string} The name to bill under; `name` itself when it isn't merged.
+ */
+export function mergedStudentName(name, merges = {}) {
+  const seen = new Set()
+  let current = name
+  while (!seen.has(current)) {
+    seen.add(current)
+    const next = merges?.[current] ?? merges?.[normalizeStudentName(current)]
+    if (!next) break
+    current = next
+  }
+  return current
+}
+
+/**
+ * Merges one student into another from now on. Both are stored by their
+ * calendar name (normalizeStudentName), so the target still finds its saved
+ * prices and details. Names already merged into `from` move to `into`, so
+ * nothing chains through a name that no longer has its own row.
+ * @param {Record<string, string>} merges The saved merges.
+ * @param {string} from The student (row key) to merge away.
+ * @param {string} into The student (row key) that bills from now on.
+ * @returns {Record<string, string>} The new merges; unchanged when both are the same student.
+ */
+export function addStudentMerge(merges = {}, from, into) {
+  const source = normalizeStudentName(from)
+  const target = mergedStudentName(normalizeStudentName(into), merges)
+  if (source === target) return merges
+  const next = {}
+  for (const [name, joined] of Object.entries(merges ?? {})) {
+    if (name !== target) next[name] = joined === source ? target : joined
+  }
+  next[source] = target
+  return next
+}
+
+/**
+ * Undoes a merge: the name gets its own row again at the next calculation.
+ * @param {Record<string, string>} merges The saved merges.
+ * @param {string} name The merged name to separate.
+ * @returns {Record<string, string>} The merges without `name`.
+ */
+export function removeStudentMerge(merges = {}, name) {
+  const next = { ...merges }
+  delete next[name]
+  return next
+}
+
 // Saved data can be keyed by a fuller spelling than the calendar yields, e.g.
 // a CSV import stored "ענבר 11.5 (אמא עינת)" while titles give "ענבר". A saved
 // key matches when it normalizes to the parsed name (exact, not fuzzy). The
@@ -285,8 +340,10 @@ export function calculatePayments(events, config, monthStr) {
   const nonRegularPrices = config.prices.non_regular
   const customPrices = config.custom_prices ?? {}
   const customerDetails = config.customer_details ?? {}
+  const merges = config.student_merges ?? {}
 
   const lessonDatetimes = {}
+  const mergedNames = {}
   const stats = {}
   const reviewItems = {}
   const aliases = {}
@@ -315,10 +372,16 @@ export function calculatePayments(events, config, monthStr) {
     // Paid-cancellation labels describe the event; they are not student names.
     // Remove them before applying the configured name parser so titles may put
     // the label either before or after the actual student name.
-    const parsed = inferStudentName(summary, nameRegex, paidCancellationPhrases, lessonKeywords)
+    const calendarName = inferStudentName(summary, nameRegex, paidCancellationPhrases, lessonKeywords)
     const startRaw = event?.start?.dateTime
-    if (!parsed || !startRaw) continue
+    if (!calendarName || !startRaw) continue
+    // A name the teacher merged into another student bills as that student.
+    const parsed = mergedStudentName(calendarName, merges)
     const student = canonicalStudent(parsed)
+    if (parsed !== calendarName) {
+      if (!mergedNames[student]) mergedNames[student] = new Set()
+      mergedNames[student].add(calendarName)
+    }
     const duration = lessonDurationMinutes(event)
     const doubleDuration = duration ? null : doubleLessonDurationMinutes(event)
     const startDt = new Date(startRaw)
@@ -393,6 +456,7 @@ export function calculatePayments(events, config, monthStr) {
       lessons_30: s.count_30,
       amount_due: Math.round(amount * 100) / 100,
       review_items: reviewItems[student] ?? [],
+      ...(mergedNames[student] ? { merged_names: [...mergedNames[student]] } : {}),
     })
   }
 

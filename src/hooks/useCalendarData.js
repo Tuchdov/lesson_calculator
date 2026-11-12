@@ -21,11 +21,19 @@ export function useCalendarData(getAccessToken, config) {
   // restored after that would replace the teacher's newer table.
   const startedRef = useRef(false)
 
-  const calculate = useCallback(async (monthStr) => {
+  /**
+   * Fetches the month's events and prices them.
+   * @param {string} monthStr Month key, "YYYY-MM".
+   * @param {object} [configOverride] Config to use instead of the current one,
+   *   for a change saved this moment that hasn't reached `config` yet.
+   * @returns {Promise<void>}
+   */
+  const calculate = useCallback(async (monthStr, configOverride) => {
+    const calcConfig = configOverride ?? config
     // getAccessToken is a function reference, always truthy once wired up —
     // only the !config half of this guard can actually fire in practice.
     // Left over from the original !accessToken (nullable string) check.
-    if (!getAccessToken || !config) return
+    if (!getAccessToken || !calcConfig) return
     const run = ++runRef.current
     startedRef.current = true
     setLoading(true)
@@ -39,15 +47,15 @@ export function useCalendarData(getAccessToken, config) {
       windowStart.setUTCMonth(windowStart.getUTCMonth() - 2)
       const events = await fetchCalendarEvents(
         getAccessToken,
-        config.calendar_id ?? 'primary',
+        calcConfig.calendar_id ?? 'primary',
         windowStart,
         end,
       )
       if (run !== runRef.current) return
-      const result = calculatePayments(events, config, monthStr)
+      const result = calculatePayments(events, calcConfig, monthStr)
       setRows(result.rows)
       setSummary(result.summary)
-      setCalculatedWith(config)
+      setCalculatedWith(calcConfig)
     } catch (err) {
       if (run === runRef.current) setError(err.message ?? String(err))
     } finally {

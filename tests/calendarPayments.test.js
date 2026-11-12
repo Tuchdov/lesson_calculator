@@ -16,6 +16,9 @@ import {
   resolveSavedStudent,
   savedNameConflicts,
   rowNeedsRecalc,
+  mergedStudentName,
+  addStudentMerge,
+  removeStudentMerge,
 } from '../src/lib/calendarPayments.js'
 import { computeRowAmount } from '../src/lib/rowPricing.js'
 
@@ -765,4 +768,65 @@ Deno.test('hasSavedPrice: any filled number in a flat or tiered entry', () => {
 Deno.test('currentMonthKey: formats YYYY-MM with a zero-padded month', () => {
   assertEquals(currentMonthKey(new Date(2026, 0, 15)), '2026-01')
   assertEquals(currentMonthKey(new Date(2026, 9, 28)), '2026-10')
+})
+
+// --- Student merges -----------------------------------------------------------
+
+// Value: protects=events under a merged name are counted as the target student (one row, lessons added up, regularity from both); fails_when=calculatePayments ignores config.student_merges and the merged name gets its own row; why_new=teacher can now merge two names into one student; seam=none
+Deno.test('calculatePayments: bills a merged name as the student it was merged into', () => {
+  const events = [
+    makeLessonEvent('Dani - פיתוח קול', '2026-03-03T10:00:00Z', '2026-03-03T11:00:00Z'),
+    makeLessonEvent('Daniel Cohen - פיתוח קול', '2026-03-10T10:00:00Z', '2026-03-10T11:00:00Z'),
+  ]
+  const config = { ...BASE_CONFIG, student_merges: { Dani: 'Daniel Cohen' } }
+  const { rows } = calculatePayments(events, config, '2026-03')
+  assertEquals(rows.length, 1)
+  assertEquals(rows[0].student, 'Daniel Cohen')
+  assertEquals(rows[0].lessons_60, 2)
+  assertEquals(rows[0].merged_names, ['Dani'])
+})
+
+Deno.test('calculatePayments: a merge into a saved spelling bills under that spelling', () => {
+  const events = [
+    makeLessonEvent('Dani - פיתוח קול', '2026-03-03T10:00:00Z', '2026-03-03T11:00:00Z'),
+  ]
+  const config = {
+    ...BASE_CONFIG,
+    custom_prices: { 'Daniel Cohen (9.5)': { '60': 300, '45': 250, '30': 200 } },
+    student_merges: { Dani: 'Daniel Cohen' },
+  }
+  const { rows } = calculatePayments(events, config, '2026-03')
+  assertEquals(rows[0].student, 'Daniel Cohen (9.5)')
+  assertEquals(rows[0].amount_due, 300)
+})
+
+Deno.test('calculatePayments: rows without merges carry no merged_names', () => {
+  const events = [makeLessonEvent('Dani - פיתוח קול', '2026-03-03T10:00:00Z', '2026-03-03T11:00:00Z')]
+  const { rows } = calculatePayments(events, BASE_CONFIG, '2026-03')
+  assertFalse('merged_names' in rows[0])
+})
+
+Deno.test('mergedStudentName: follows merges, by name or normalized name, and stops on a loop', () => {
+  assertEquals(mergedStudentName('Dani', {}), 'Dani')
+  assertEquals(mergedStudentName('Dani', { Dani: 'Daniel Cohen' }), 'Daniel Cohen')
+  assertEquals(mergedStudentName('Dani', { Dani: 'Dan', Dan: 'Daniel Cohen' }), 'Daniel Cohen')
+  assertEquals(mergedStudentName('Dani', { Dani: 'Dan', Dan: 'Dani' }), 'Dani')
+})
+
+Deno.test('addStudentMerge: stores calendar names and re-points earlier merges', () => {
+  assertEquals(addStudentMerge({}, 'Dani (9.5)', 'Daniel Cohen (mom)'), { Dani: 'Daniel Cohen' })
+  // Dan was merged into Dani; merging Dani away moves Dan along.
+  assertEquals(addStudentMerge({ Dan: 'Dani' }, 'Dani', 'Daniel Cohen'), { Dan: 'Daniel Cohen', Dani: 'Daniel Cohen' })
+  // Merging a student into itself changes nothing.
+  const merges = { Dan: 'Dani' }
+  assertEquals(addStudentMerge(merges, 'Dani', 'Dani (9.5)'), merges)
+})
+
+Deno.test('addStudentMerge: merging a target back into its merged name never loops', () => {
+  const merges = addStudentMerge({ Dani: 'Daniel Cohen' }, 'Daniel Cohen', 'Dani')
+  assertEquals(mergedStudentName('Dani', merges), mergedStudentName('Daniel Cohen', merges))
+})
+
+Deno.test('removeStudentMerge: drops only the given name', () => {
+  assertEquals(removeStudentMerge({ Dani: 'Daniel Cohen', Dan: 'Daniel Cohen' }, 'Dani'), { Dan: 'Daniel Cohen' })
 })

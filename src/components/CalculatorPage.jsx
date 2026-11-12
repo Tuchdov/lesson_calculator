@@ -18,6 +18,7 @@ const STALE_DEFAULTS = {
   makeup_phrases: DEFAULT_MAKEUP_PHRASES,
   student_name_regex: null,
   calendar_id: 'primary',
+  student_merges: {},
 }
 const effectiveSetting = (c, k) => JSON.stringify(c?.[k] ?? STALE_DEFAULTS[k])
 
@@ -61,7 +62,7 @@ async function runWithConcurrency(items, limit, worker) {
  * @param {object} props Calendar state, pricing/override stores, and their change callbacks.
  * @returns {import('react').ReactNode} The calculator page.
  */
-export function CalculatorPage({ getAccessToken, config, calendar, month, onMonthChange, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, defaultMessage, defaultInvoiceDescription, previewImage, amountOverrides, onAmountOverrideChange, lessonOverrides, onLessonOverrideChange, excludedStudents, onExcludedStudentChange, tierOverrides, onTierOverrideChange, paymentLinks, onPaymentLinkChange, reviewResolutions, onReviewResolutionChange, preparing, onPreparingChange, prepareStatus, onPrepareStatusChange }) {
+export function CalculatorPage({ getAccessToken, config, calendar, month, onMonthChange, customPrices, onCustomPriceChange, customerDetails, onCustomerDetailChange, defaultMessage, defaultInvoiceDescription, previewImage, amountOverrides, onAmountOverrideChange, lessonOverrides, onLessonOverrideChange, excludedStudents, onExcludedStudentChange, tierOverrides, onTierOverrideChange, paymentLinks, onPaymentLinkChange, reviewResolutions, onReviewResolutionChange, preparing, onPreparingChange, prepareStatus, onPrepareStatusChange, onMergeStudents, onUnmergeStudent }) {
   const { rows: calendarRows, summary, loading, error, calculate, calculatedWith } = calendar
   // The calendar's students, less the ones left out of this month. Lesson
   // counts the teacher changed for this month replace the calendar's before
@@ -279,6 +280,8 @@ export function CalculatorPage({ getAccessToken, config, calendar, month, onMont
           reviewResolutions={reviewResolutions}
           onReviewResolutionChange={onReviewResolutionChange}
           onRemoveRow={handleRemoveRow}
+          onMergeStudents={onMergeStudents}
+          onUnmergeStudent={onUnmergeStudent}
         />
       )}
 

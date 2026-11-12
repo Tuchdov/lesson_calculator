@@ -233,4 +233,12 @@ describe('useCalendarData restore', () => {
     act(() => { applied = result.current.restore(saved) })
     expect(applied).toBe(true)
   })
+
+  it('calculates with an override config when given one', async () => {
+    const { result } = renderHook(() => useCalendarData(vi.fn(), config))
+    const merged = { ...config, student_merges: { Alice: 'Alicia Keys' } }
+    await act(async () => { await result.current.calculate('2026-03', merged) })
+    expect(result.current.rows[0].student).toBe('Alicia Keys')
+    expect(result.current.calculatedWith).toBe(merged)
+  })
 })
