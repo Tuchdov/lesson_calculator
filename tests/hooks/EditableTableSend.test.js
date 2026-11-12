@@ -142,3 +142,33 @@ describe('EditableTable review answers while stale', () => {
     expect(onReviewResolutionChange).toHaveBeenCalledWith(`${month}:Dana Levy:e1`, { mode: 'free' })
   })
 })
+
+describe('EditableTable review panel', () => {
+  const second = { ...reviewItem, id: 'e2', start: '2026-03-17T10:00:00Z' }
+
+  // Value: protects=saving the last open review answer closes the panel, so the teacher sees the row settled; fails_when=the panel stays open after שמור (user-reported); why_new=the panel never closed after a save; seam=none
+  it('closes once the last open item is saved', async () => {
+    const onReviewResolutionChange = vi.fn()
+    render(createElement(EditableTable, baseProps({ rows: [{ ...cleanRow, review_items: [reviewItem] }], onReviewResolutionChange })))
+    await act(async () => { fireEvent.click(screen.getByText(/1 not counted/)) })
+    await act(async () => { fireEvent.click(screen.getByText('שמור')) })
+    expect(onReviewResolutionChange).toHaveBeenCalledWith(`${month}:Dana Levy:e1`, { mode: 'prorata' })
+    expect(screen.queryByText('שמור')).toBeNull()
+  })
+
+  it('stays open while another item still needs an answer', async () => {
+    render(createElement(EditableTable, baseProps({ rows: [{ ...cleanRow, review_items: [reviewItem, second] }], onReviewResolutionChange: vi.fn() })))
+    await act(async () => { fireEvent.click(screen.getByText(/2 not counted/)) })
+    await act(async () => { fireEvent.click(screen.getAllByText('שמור')[0]) })
+    expect(screen.getAllByText('שמור')).toHaveLength(2)
+  })
+
+  it('stays open with the error when the save fails', async () => {
+    const onReviewResolutionChange = vi.fn().mockRejectedValue(new Error('Storage is full'))
+    render(createElement(EditableTable, baseProps({ rows: [{ ...cleanRow, review_items: [reviewItem] }], onReviewResolutionChange })))
+    await act(async () => { fireEvent.click(screen.getByText(/1 not counted/)) })
+    await act(async () => { fireEvent.click(screen.getByText('שמור')) })
+    expect(screen.getByText('Storage is full')).toBeTruthy()
+    expect(screen.getByText('שמור')).toBeTruthy()
+  })
+})

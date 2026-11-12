@@ -659,6 +659,9 @@ function StudentRow({ row, config, customPrices, onCustomPriceChange, details, o
                     const older = storedReviewNames(item, reviewResolutions, month, row).filter(n => n !== row.student)
                     await onReviewResolutionChange?.(reviewKey(month, row.student, item.id), resolution)
                     for (const name of older) await onReviewResolutionChange?.(reviewKey(month, name, item.id), null)
+                    // The last open item answered: the row is settled, so the panel closes.
+                    const othersSettled = row.review_items.every(other => other.id === item.id || reviewResolution(other, reviewResolutions, month, row))
+                    if (resolution && othersSettled) setExpandedRow(null)
                   }}
                 />
               ))}
